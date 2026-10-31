@@ -487,6 +487,7 @@ export class Renderer {
     for (const p of game.puddles) this.drawPuddle(ctx, p);
     for (const z of game.radZones) this.drawRadiation(ctx, z);
     for (const h of game.holes) this.drawHoleGround(ctx, h);
+    if (ui.aim) this.drawAimGround(ctx, ui);
     for (const e of game.enemies) {
       const m = Models.meta(e.def.model);
       const s = (m ? m.w * m.scale * 0.6 : 60) * e.def.scale;
@@ -539,6 +540,7 @@ export class Renderer {
     this.drawStrikes(ctx, game);
     this.drawNukes(ctx, game);
     for (const h of game.holes) this.drawHole(ctx, h);
+    if (ui.aim) this.drawAimTop(ctx, game, ui);
     this.drawDrops(ctx, game);
     game.fx.draw(ctx);
     for (const e of game.enemies) this.drawHp(ctx, e);
@@ -663,7 +665,7 @@ export class Renderer {
     ctx.restore();
   }
   // the hole itself: event horizon + accretion disk (video sprite), hovering above the ground
-  drawHole(ctx, h) {
+  drawHole(ctx, h, alpha = 1) {
     const c = toWorld(h.gx, h.gy), t = h.t;
     const ex = Assets.vfx.hole;
     const S = 470 * Math.min(1, t / 0.45) * Math.min(1, Math.max(0, (h.dur - t) / 0.5));
@@ -676,6 +678,7 @@ export class Renderer {
       else { const p = Math.floor((t - open) * 10) % (2 * (ex.n - 1 - top)); f = top + (p < ex.n - 1 - top ? p : 2 * (ex.n - 1 - top) - p); }
     }
     ctx.save();
+    ctx.globalAlpha = alpha;
     // event horizon (always pitch black)
     const r = S * (0.045 + 0.09 * f / Math.max(1, (ex ? ex.n : 2) - 1));
     ctx.fillStyle = '#000';
@@ -685,13 +688,132 @@ export class Renderer {
       ctx.drawImage(ex.img, sx, sy, ex.size, ex.size, cx - S / 2, cy - S / 2, S, S);
     }
     ctx.globalCompositeOperation = 'lighter';
-    ctx.globalAlpha = 0.35 + 0.15 * Math.sin(this.time * 5);
+    ctx.globalAlpha = alpha * (0.35 + 0.15 * Math.sin(this.time * 5));
     ctx.drawImage(Assets.fx.violet, cx - S * 0.45, cy - S * 0.3, S * 0.9, S * 0.6);
     ctx.restore();
+    if (alpha < 1) return;
     // remaining time ring under the hole
     const k = 1 - t / h.dur;
     ctx.strokeStyle = 'rgba(220,170,255,0.8)'; ctx.lineWidth = 3;
     ctx.beginPath(); ctx.ellipse(c.x, c.y, 26, 13, 0, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * k); ctx.stroke();
+  }
+  // ---- special weapons: aim preview (area of effect, ghost of the effect, marked targets) ----
+  aimSpec(kind) {
+    if (kind === 'nuke') return { r: NUKE.radius, outer: NUKE.outer, col: '255,214,40' };
+    if (kind === 'hole') return { r: HOLE.radius, col: '200,140,255' };
+    return { r: 1.7, col: '255,80,60' };
+  }
+  drawAimGround(ctx, ui) {
+    const a = ui.aim, k = ui.targeting, c = toWorld(a.x, a.y), S = this.aimSpec(k);
+    const pul = 0.5 + 0.5 * Math.sin(this.time * 6);
+    if (k === 'hole') { this.drawHoleGround(ctx, { gx: a.x, gy: a.y, str: 0.55 + 0.2 * pul }); return; }
+    const R = (S.outer || S.r) * HW * Math.SQRT2;
+    ctx.save();
+    ctx.translate(c.x, c.y); ctx.scale(1, HH / HW);
+    const g = ctx.createRadialGradient(0, 0, 0, 0, 0, R);
+    g.addColorStop(0, `rgba(${S.col},0.34)`);
+    g.addColorStop(S.outer ? S.r / S.outer : 0.75, `rgba(${S.col},0.16)`);
+    g.addColorStop(1, `rgba(${S.col},0.03)`);
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.arc(0, 0, R, 0, Math.PI * 2); ctx.fill();
+    if (k === 'nuke') {
+      // ground zero: own towers here get hurt
+      ctx.fillStyle = `rgba(255,40,30,${0.22 + 0.14 * pul})`;
+      ctx.beginPath(); ctx.arc(0, 0, NUKE.towerRadius * HW * Math.SQRT2, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.restore();
+  }
+  drawAimTop(ctx, game, ui) {
+    const a = ui.aim, k = ui.targeting, c = toWorld(a.x, a.y), S = this.aimSpec(k), z = this.cam.zoom;
+    const pul = 0.5 + 0.5 * Math.sin(this.time * 6);
+    const ell = (r, x = c.x, y = c.y) => { ctx.beginPath(); ctx.ellipse(x, y, r * HW * Math.SQRT2, r * HH * Math.SQRT2, 0, 0, Math.PI * 2); };
+    ctx.save();
+    // ghost of the effect itself
+    if (k === 'hole') {
+      this.drawHole(ctx, { gx: a.x, gy: a.y, t: 2.4 + (this.time % 8), dur: 1e9 }, 0.4 + 0.1 * pul);
+    } else if (k === 'nuke') {
+      const ex = Assets.vfx.nuke;
+      if (ex && ex.img) {
+        const f = Math.floor((ex.n - 1) * 0.5), s = 820;
+        ctx.globalAlpha = 0.3 + 0.08 * pul;
+        ctx.drawImage(ex.img, (f % ex.cols) * ex.size, Math.floor(f / ex.cols) * ex.size, ex.size, ex.size, c.x - s / 2, c.y + 20 - s * ex.ay, s, s);
+        ctx.globalAlpha = 1;
+      }
+      // hazard symbol
+      ctx.fillStyle = `rgba(255,220,40,${0.45 + 0.35 * pul})`;
+      for (let i = 0; i < 3; i++) {
+        const a0 = -Math.PI / 2 + i * Math.PI * 2 / 3 - 0.5;
+        ctx.beginPath(); ctx.moveTo(c.x, c.y); ctx.ellipse(c.x, c.y, 54, 27, 0, a0, a0 + 1); ctx.closePath(); ctx.fill();
+      }
+    } else {
+      // targeting laser from orbit
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.globalAlpha = 0.22 + 0.25 * pul;
+      ctx.strokeStyle = 'rgba(255,80,60,1)'; ctx.lineWidth = 5;
+      ctx.beginPath(); ctx.moveTo(c.x, c.y - 1400); ctx.lineTo(c.x, c.y); ctx.stroke();
+      ctx.strokeStyle = 'rgba(255,230,210,1)'; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.moveTo(c.x, c.y - 1400); ctx.lineTo(c.x, c.y); ctx.stroke();
+      ctx.drawImage(Assets.fx.red, c.x - 50, c.y - 50, 100, 100);
+      ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1;
+    }
+    // area outline
+    const lw = Math.max(2, 3 / z);
+    ctx.lineWidth = lw;
+    ctx.setLineDash([16, 10]); ctx.lineDashOffset = -this.time * 50;
+    ctx.strokeStyle = `rgba(${S.col},${0.7 + 0.3 * pul})`;
+    ell(S.r); ctx.stroke();
+    if (S.outer) { ctx.globalAlpha = 0.5; ell(S.outer); ctx.stroke(); ctx.globalAlpha = 1; }
+    ctx.setLineDash([]);
+    // crosshair = also the "tap again to fire" spot
+    ctx.strokeStyle = `rgba(255,255,255,${0.75 + 0.25 * pul})`; ctx.lineWidth = lw;
+    ctx.beginPath();
+    ctx.moveTo(c.x - 34, c.y); ctx.lineTo(c.x - 12, c.y); ctx.moveTo(c.x + 12, c.y); ctx.lineTo(c.x + 34, c.y);
+    ctx.moveTo(c.x, c.y - 17); ctx.lineTo(c.x, c.y - 6); ctx.moveTo(c.x, c.y + 6); ctx.lineTo(c.x, c.y + 17);
+    ctx.stroke();
+    ctx.beginPath(); ctx.ellipse(c.x, c.y, 24, 12, 0, 0, Math.PI * 2); ctx.stroke();
+    // affected enemies: pulsing target rings (the outer blast ring of the nuke only does partial damage)
+    let n = 0;
+    const R = S.outer || S.r;
+    for (const e of game.enemies) {
+      if (!e.alive) continue;
+      const d = Math.hypot(e.gx - a.x, e.gy - a.y);
+      if (d > R) continue;
+      const inner = d <= S.r;
+      if (inner) n++;
+      const m = Models.meta(e.def.model);
+      const rx = Math.max(20, (m ? m.w * m.scale * 0.6 : 60) * e.def.scale * 0.55) * (1 + 0.12 * pul);
+      ctx.strokeStyle = inner ? `rgba(${S.col},0.95)` : `rgba(${S.col},0.45)`;
+      ctx.lineWidth = inner ? lw : lw * 0.7;
+      ctx.beginPath(); ctx.ellipse(e.wx, e.wy, rx, rx * 0.5, 0, 0, Math.PI * 2); ctx.stroke();
+      if (inner) {
+        ctx.fillStyle = `rgba(${S.col},0.9)`;
+        const ty = e.wy - rx * 0.5 - 8;
+        ctx.beginPath(); ctx.moveTo(e.wx, ty); ctx.lineTo(e.wx - 7, ty - 10); ctx.lineTo(e.wx + 7, ty - 10); ctx.closePath(); ctx.fill();
+      }
+    }
+    // own towers in the nuke's ground zero
+    let own = 0;
+    if (k === 'nuke') {
+      for (const t of game.towers) {
+        if (Math.hypot(t.gx - a.x, t.gy - a.y) > NUKE.towerRadius) continue;
+        own++;
+        ctx.strokeStyle = `rgba(255,60,40,${0.6 + 0.4 * pul})`; ctx.lineWidth = lw * 1.3;
+        ctx.beginPath(); ctx.ellipse(t.wx, t.wy, 58, 29, 0, 0, Math.PI * 2); ctx.stroke();
+        ctx.font = `900 ${Math.round(30 / Math.max(0.6, z))}px "Rajdhani", system-ui, sans-serif`; ctx.textAlign = 'center';
+        ctx.fillStyle = `rgba(255,70,50,${0.7 + 0.3 * pul})`;
+        ctx.fillText('⚠', t.wx, t.wy - 120);
+      }
+    }
+    // label under the ring (kept at a readable size on screen)
+    const fs = 17 / z;
+    ctx.font = `800 ${fs}px "Rajdhani", system-ui, sans-serif`; ctx.textAlign = 'center';
+    const txt = (n ? `${n} ${n === 1 ? 'ZIEL' : 'ZIELE'}` : 'KEINE ZIELE') + (own ? `  ·  ${own} ${own === 1 ? 'EIGENER TURM' : 'EIGENE TÜRME'} IN GEFAHR` : '');
+    const ly = c.y + S.r * HH * Math.SQRT2 + fs * 1.4;
+    ctx.lineJoin = 'round'; ctx.lineWidth = 4 / z; ctx.strokeStyle = 'rgba(0,0,0,0.85)';
+    ctx.strokeText(txt, c.x, ly);
+    ctx.fillStyle = own ? '#ff8a70' : `rgb(${S.col})`;
+    ctx.fillText(txt, c.x, ly);
+    ctx.restore();
   }
   drawRadiation(ctx, z) {
     const c = toWorld(z.gx, z.gy);

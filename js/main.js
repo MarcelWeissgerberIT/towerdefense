@@ -30,7 +30,7 @@ function showScreen(id) { for (const s of document.querySelectorAll('.screen')) 
 function hideScreens() { for (const s of document.querySelectorAll('.screen')) s.classList.add('hidden'); }
 function setInGameUI(on) {
   for (const id of ['hud', 'btn-wave']) $(id).classList.toggle('hidden', !on);
-  if (!on) { closeBuildMenu(); closeTowerMenu(); }
+  if (!on) { closeBuildMenu(); closeTowerMenu(); endAim(); }
 }
 function starsHTML(n) { let s = ''; for (let i = 0; i < 3; i++) s += i < n ? '★' : '<span class="off">★</span>'; return s; }
 
@@ -393,31 +393,20 @@ function openCatalog() {
 function onTap(p) {
   unlockAudio();
   if (!game || paused || game.state === 'won' || game.state === 'lost') return;
-  if (ui.targeting === 'hole') {
-    const w = renderer.screenToWorld(p.x, p.y), g = toGrid(w.x, w.y);
-    if (game.holeStrike(g.x, g.y)) toast('SCHWARZES LOCH GEÖFFNET', 'warn', 1600);
-    ui.targeting = null;
-    $('btn-hole').classList.remove('arming');
-    return;
-  }
-  if (ui.targeting === 'nuke') {
-    const w = renderer.screenToWorld(p.x, p.y), g = toGrid(w.x, w.y);
-    if (game.nukeStrike(g.x, g.y)) toast('ATOMSCHLAG – EINSCHLAG IN 3 SEKUNDEN', 'bad', 2400);
-    ui.targeting = null;
-    $('btn-nuke').classList.remove('arming');
+  if (ui.targeting) {
+    const g = aimAt(p);
+    // mouse: the reticle already follows the cursor, a click fires. Touch: a tap moves the reticle,
+    // a second tap on it (or the AUSLÖSEN button) fires.
+    if (p.type === 'mouse') { ui.aim = g; fireAim(); return; }
+    const sp = aimScreen();
+    if (sp && Math.hypot(sp.x - p.x, sp.y - p.y) < 30) { fireAim(); return; }
+    ui.aim = g; sfx('click');
     return;
   }
   // power-up crates take priority: tap to activate
   for (const d of game.drops) {
     const sp = renderer.worldToScreen(d.wx, d.wy - 46);
     if (Math.hypot(sp.x - p.x, sp.y - p.y) < Math.max(34, 52 * renderer.cam.zoom)) { game.collect(d); return; }
-  }
-  if (ui.targeting === 'orbital') {
-    const w = renderer.screenToWorld(p.x, p.y), g = toGrid(w.x, w.y);
-    if (game.orbitalStrike(g.x, g.y)) toast('ORBITALSCHLAG EINGELEITET', 'warn', 1400);
-    ui.targeting = null;
-    $('btn-orbital').classList.remove('arming');
-    return;
   }
   const c = renderer.screenToCell(p.x, p.y);
   const inMap = c.x >= 0 && c.y >= 0 && c.x < game.N && c.y < game.N;
@@ -436,43 +425,112 @@ function onTap(p) {
   if (ui.buildCell || ui.selected) { closeBuildMenu(); closeTowerMenu(); return; }
   if (inMap && game.canBuild(c.x, c.y)) openBuildMenu(c.x, c.y);
 }
-new Input(canvas, renderer, { tap: onTap, hover: () => {} });
+// ---------------- special weapons: aim preview ----------------
+// tapping a weapon icon shows its real area of effect (ghost effect, hit markers, count) before anything happens
+const AIM = {
+  orbital: { name: 'ORBITALSCHLAG', icon: 'orbital', btn: 'btn-orbital', r: 1.7,
+    fire: (a) => game.orbitalStrike(a.x, a.y) && toast('ORBITALSCHLAG EINGELEITET', 'warn', 1400) },
+  nuke: { name: 'ATOMSCHLAG', icon: 'nuke', btn: 'btn-nuke', r: NUKE.outer,
+    fire: (a) => game.nukeStrike(a.x, a.y) && toast('ATOMSCHLAG – EINSCHLAG IN 3 SEKUNDEN', 'bad', 2400) },
+  hole: { name: 'SCHWARZES LOCH', icon: 'hole', btn: 'btn-hole', r: HOLE.radius,
+    fire: (a) => game.holeStrike(a.x, a.y) && toast('SCHWARZES LOCH GEÖFFNET', 'warn', 1600) },
+};
+const finePointer = matchMedia('(hover: hover) and (pointer: fine)').matches;
+function aimAt(p) {
+  const w = renderer.screenToWorld(p.x, p.y), g = toGrid(w.x, w.y);
+  const N = game.N;
+  return { x: Math.max(0, Math.min(N, g.x)), y: Math.max(0, Math.min(N, g.y)) };
+}
+function aimScreen() {
+  if (!ui.aim) return null;
+  const w = toWorld(ui.aim.x, ui.aim.y);
+  return renderer.worldToScreen(w.x, w.y);
+}
+function startAim(kind) {
+  closeBuildMenu(); closeTowerMenu();
+  for (const k in AIM) $(AIM[k].btn).classList.toggle('arming', k === kind);
+  ui.targeting = kind;
+  // start in the middle of the view (a bit above centre: the bottom is covered by the bar)
+  ui.aim = aimAt({ x: window.innerWidth / 2, y: window.innerHeight * 0.45 });
+  const A = AIM[kind];
+  $('aim-title').innerHTML = `${IC(A.icon)}<span>${A.name}</span>`;
+  $('aim-hint').textContent = finePointer ? 'Maus bewegen, Klick setzt das Ziel' : 'Karte antippen oder Ziel ziehen';
+  const bar = $('aim-bar');
+  bar.dataset.kind = kind;
+  bar.classList.remove('hidden');
+  document.body.classList.add('aiming');
+  hudCache['aim-count'] = null;
+  updateAim();
+}
+function endAim() {
+  ui.targeting = null; ui.aim = null; ui.aimDrag = null;
+  for (const k in AIM) $(AIM[k].btn).classList.remove('arming');
+  $('aim-bar').classList.add('hidden');
+  document.body.classList.remove('aiming');
+}
+function fireAim() {
+  const k = ui.targeting, a = ui.aim;
+  if (!game || paused || !k || !a) return;
+  AIM[k].fire(a);
+  endAim();
+}
+function updateAim() {
+  if (!ui.targeting) return;
+  if (!game || game.state === 'won' || game.state === 'lost') { endAim(); return; }
+  const k = ui.targeting, a = ui.aim;
+  const r = k === 'nuke' ? NUKE.radius : AIM[k].r;
+  const n = game.enemiesInRange(a.x, a.y, r, true, true).length;
+  let html = n ? `<b>${n}</b> Gegner im Wirkungsbereich` : 'Keine Gegner im Wirkungsbereich';
+  if (k === 'nuke') {
+    const own = game.towers.filter(t => Math.hypot(t.gx - a.x, t.gy - a.y) <= NUKE.towerRadius).length;
+    if (own) html += ` · <em>${own} eigene${own === 1 ? 'r Turm' : ' Türme'} beschädigt</em>`;
+  }
+  if (k === 'hole') html += ' · zieht 10 s lang alles ein';
+  if (hudCache['aim-count'] !== html) { hudCache['aim-count'] = html; $('aim-count').innerHTML = html; }
+}
+$('aim-fire').onclick = () => { unlockAudio(); fireAim(); };
+$('aim-cancel').onclick = () => { endAim(); sfx('click'); };
+
+new Input(canvas, renderer, {
+  tap: onTap,
+  // desktop: the reticle follows the mouse
+  hover: (p) => { if (game && ui.targeting && p) ui.aim = aimAt(p); },
+  // touch: dragging that starts on the reticle moves it (anywhere else still pans the camera)
+  dragStart: (p) => {
+    if (!game || !ui.targeting || paused) return false;
+    const sp = aimScreen(), z = renderer.cam.zoom, r = AIM[ui.targeting].r;
+    const rx = Math.max(56, r * 64 * Math.SQRT2 * z), ry = Math.max(40, r * 32 * Math.SQRT2 * z);
+    if (((p.x - sp.x) / rx) ** 2 + ((p.y - sp.y) / ry) ** 2 > 1) return false;
+    ui.aimDrag = { dx: sp.x - p.x, dy: sp.y - p.y };
+    return true;
+  },
+  drag: (p) => { if (game && ui.targeting && ui.aimDrag) ui.aim = aimAt({ x: p.x + ui.aimDrag.dx, y: p.y + ui.aimDrag.dy }); },
+  dragEnd: () => { ui.aimDrag = null; },
+});
 
 $('btn-orbital').onclick = () => {
   if (!game || paused || !game.orbital.on) return;
   unlockAudio();
-  if (ui.targeting === 'orbital') { ui.targeting = null; $('btn-orbital').classList.remove('arming'); sfx('click'); return; }
+  if (ui.targeting === 'orbital') { endAim(); sfx('click'); return; }
   if (game.orbital.cd > 0) { sfx('error'); toast(`Orbitalschlag lädt noch ${Math.ceil(game.orbital.cd)} s`, 'bad', 1400); return; }
-  closeBuildMenu(); closeTowerMenu();
-  for (const id of ['btn-nuke', 'btn-hole']) $(id).classList.remove('arming');
-  ui.targeting = 'orbital';
-  $('btn-orbital').classList.add('arming');
+  startAim('orbital');
   sfx('click');
-  toast('Ziel für den Orbitalschlag antippen', 'warn', 2200);
 };
 $('btn-nuke').onclick = () => {
   if (!game || paused || !game.nuke.on) return;
   unlockAudio();
-  if (ui.targeting === 'nuke') { ui.targeting = null; $('btn-nuke').classList.remove('arming'); sfx('click'); return; }
+  if (ui.targeting === 'nuke') { endAim(); sfx('click'); return; }
   if (!game.nukeReady()) { sfx('error'); toast(`Atombombe lädt: ${Math.floor(game.nuke.charge / game.nuke.need * 100)} % – Abschüsse laden sie auf`, 'bad', 1800); return; }
-  closeBuildMenu(); closeTowerMenu();
-  for (const id of ['btn-orbital', 'btn-hole']) $(id).classList.remove('arming');
-  ui.targeting = 'nuke';
-  $('btn-nuke').classList.add('arming');
+  startAim('nuke');
   sfx('alarm');
-  toast('Ziel antippen – Vorsicht: beschädigt eigene Türme im Zentrum', 'warn', 2600);
 };
 $('btn-hole').onclick = () => {
   if (!game || paused || !game.hole.on) return;
   unlockAudio();
-  if (ui.targeting === 'hole') { ui.targeting = null; $('btn-hole').classList.remove('arming'); sfx('click'); return; }
+  if (ui.targeting === 'hole') { endAim(); sfx('click'); return; }
   if (game.hole.cd > 0) { sfx('error'); toast(`Schwarzes Loch lädt noch ${Math.ceil(game.hole.cd)} s`, 'bad', 1400); return; }
-  closeBuildMenu(); closeTowerMenu();
-  for (const id of ['btn-orbital', 'btn-nuke']) $(id).classList.remove('arming');
-  ui.targeting = 'hole';
-  $('btn-hole').classList.add('arming');
+  startAim('hole');
   sfx('click');
-  toast('Ziel für das Schwarze Loch antippen', 'warn', 2200);
 };
 function updateHole() {
   const b = $('btn-hole'), o = game.hole;
@@ -523,6 +581,7 @@ function updateHUD() {
   updateOrbital();
   updateNuke();
   updateHole();
+  updateAim();
   updateBuffs();
   setText('hud-lives', String(game.lives));
   if (setText('hud-credits', String(game.credits))) pulse('stat-credits');
@@ -690,8 +749,9 @@ async function startLevel(i, ch = null) {
   }
   const models = [...types].map(t => ENEMIES[t].model);
   const slow = setTimeout(() => toast('Lade Einsatzdaten …', '', 1500), 400);
-  await Promise.all([Assets.loadBiome(spec.biome), Assets.loadModels(models), i + 1 >= NUKE.unlock ? Assets.loadVfx('nuke') : null, i + 1 >= HOLE.unlock ? Assets.loadVfx('hole') : null]);
+  await Promise.all([Assets.loadBiome(spec.biome), Assets.loadModels(models), g.nuke.on ? Assets.loadVfx('nuke') : null, g.hole.on ? Assets.loadVfx('hole') : null]);
   clearTimeout(slow);
+  endAim();
   game = g;
   window.__game = game;
   window.__renderer = renderer;
@@ -807,6 +867,7 @@ window.addEventListener('orientationchange', () => setTimeout(() => { renderer.r
 document.addEventListener('visibilitychange', () => { if (document.hidden && game && game.state !== 'won' && game.state !== 'lost' && $('modal').classList.contains('hidden')) openPause(); });
 window.addEventListener('keydown', (e) => {
   if (!game) return;
+  if (ui.targeting && (e.key === 'Escape' || e.key === 'Enter')) { e.preventDefault(); if (e.key === 'Enter') fireAim(); else endAim(); return; }
   if (e.key === 'Escape') { if (ui.buildCell) closeBuildMenu(); else if (ui.selected) closeTowerMenu(); else openPause(); }
   if (e.key === ' ') { e.preventDefault(); if (game.canCallWave()) game.startWave(); }
 });
