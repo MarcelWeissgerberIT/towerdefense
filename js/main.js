@@ -1,5 +1,5 @@
 // Iron Sentinel – app controller: screens, HUD, build drawer, tower menu, game loop.
-import { TOWERS, ENEMIES, TOWER_ORDER, MAX_LEVEL, BIOMES, BIOME_ORDER, UPGRADE_TIME, ELEV_RANGE, CLASS_NAME, EFFECT, POWERUPS, NUKE, HOLE, effectOf, upgradeCost, towerStats } from './config.js';
+import { TOWERS, ENEMIES, TOWER_ORDER, MAX_LEVEL, BIOMES, BIOME_ORDER, UPGRADE_TIME, ELEV_RANGE, CLASS_NAME, EFFECT, POWERUPS, NUKE, HOLE, DIFFICULTY, effectOf, upgradeCost, towerStats } from './config.js';
 import { LEVEL_SPECS, LEVEL_COUNT, getLevel, makeWaves, hpMultiplier } from './levels.js';
 import { Assets, Models, drawIcon } from './assets.js';
 import { Renderer } from './render.js';
@@ -36,6 +36,17 @@ function starsHTML(n) { let s = ''; for (let i = 0; i < 3; i++) s += i < n ? '�
 
 // free play (default): everything is available without unlocking it first
 const freePlay = () => save.data.free !== false;
+// campaign difficulty (0 easy, 1 medium, 2 hard) and the hardest one each mission was won on
+const diffIdx = () => Math.max(0, Math.min(2, save.data.diff | 0));
+function updateDiffBar() {
+  const d = diffIdx();
+  for (const b of document.querySelectorAll('#diff-bar button')) b.classList.toggle('on', +b.dataset.d === d);
+  $('diff-bar').dataset.d = d;
+  $('diff-desc').textContent = DIFFICULTY[d].desc;
+}
+for (const b of document.querySelectorAll('#diff-bar button')) b.onclick = () => {
+  save.data.diff = +b.dataset.d; save.write(); sfx('click'); updateDiffBar(); renderLevels();
+};
 function levelUnlocked(i) { return freePlay() || i === 0 || (save.data.stars[i - 1] || 0) > 0; }
 function renderLevels() {
   const list = $('level-list');
@@ -51,13 +62,15 @@ function renderLevels() {
     LEVEL_SPECS.forEach((L, i) => {
       if (L.biome !== bid) return;
       const stars = save.data.stars[i] || 0;
+      const dw = (save.data.diffWon || {})[i];
       total += stars;
       const locked = !levelUnlocked(i);
       const btn = document.createElement('button');
       btn.className = 'ltile' + (locked ? ' locked' : '') + (stars ? ' done' : '');
       const n = 2 * L.M + 1;
       btn.innerHTML = `<div class="lnum">${locked ? '🔒' : i + 1}</div><div class="lname">${L.name}</div>`
-        + `<div class="lmeta">${n}×${n} · ${L.paths} ${L.paths === 1 ? 'Pfad' : 'Pfade'}</div><div class="stars small">${starsHTML(stars)}</div>`;
+        + `<div class="lmeta">${n}×${n} · ${L.paths} ${L.paths === 1 ? 'Pfad' : 'Pfade'}</div><div class="stars small">${starsHTML(stars)}</div>`
+        + (dw > 0 ? `<div class="ldiff d${dw}">${DIFFICULTY[dw].name}</div>` : '');
       btn.onclick = () => {
         if (locked) { sfx('error'); toast('Schließe zuerst den vorherigen Einsatz ab', 'bad'); return; }
         sfx('click'); startLevel(i);
@@ -68,6 +81,7 @@ function renderLevels() {
     list.appendChild(sec);
   }
   $('total-stars').innerHTML = `★ ${total} / ${LEVEL_COUNT * 3}`;
+  updateDiffBar();
   // scroll to the first unfinished level
   const next = [...list.querySelectorAll('.ltile')].find(t => !t.classList.contains('done') && !t.classList.contains('locked'));
   if (next) setTimeout(() => next.scrollIntoView({ block: 'center' }), 30);
@@ -644,7 +658,7 @@ function openPause() {
   if (!game || game.state === 'won' || game.state === 'lost') return;
   paused = true;
   sfx('click');
-  modal('PAUSE', '', `Einsatz ${game.level.number}: <b>${game.level.name}</b> · Welle ${game.wave}/${game.waves.length}`, 0, [
+  modal('PAUSE', '', `Einsatz ${game.level.number}: <b>${game.level.name}</b>${challenge ? '' : ' · ' + DIFFICULTY[game.mods.diff || 0].name} · Welle ${game.wave}/${game.waves.length}`, 0, [
     ['WEITER', 'primary', () => { paused = false; closeModal(); }],
     ['FEINDKATALOG', '', () => openCatalog()],
     [`TON: ${soundOn() ? 'AN' : 'AUS'}`, '', () => { toggleSound(); openPause(); }],
@@ -674,6 +688,8 @@ function onWin() {
   const stars = game.stars();
   const i = game.levelIdx;
   save.data.stars[i] = Math.max(save.data.stars[i] || 0, stars);
+  save.data.diffWon = save.data.diffWon || {};
+  save.data.diffWon[i] = Math.max(save.data.diffWon[i] || 0, game.mods.diff || 0);
   save.write();
   sfx('victory');
   const hasNext = i < LEVEL_COUNT - 1;
@@ -684,7 +700,7 @@ function onWin() {
   const nextLevel = hasNext ? LEVEL_SPECS[i + 1] : null;
   const newTower = hasNext && !freePlay() ? TOWER_ORDER.find(k => TOWERS[k].unlock === i + 2) : null;
   setTimeout(() => modal('SIEG', 'win',
-    `Einsatz ${i + 1} „${game.level.name}" gehalten.<br>Basis: <b>${game.lives}/${game.maxLives}</b> · Zerstörte Maschinen: <b>${game.kills}</b>` +
+    `Einsatz ${i + 1} „${game.level.name}" gehalten · <b>${DIFFICULTY[game.mods.diff || 0].name}</b><br>Basis: <b>${game.lives}/${game.maxLives}</b> · Zerstörte Maschinen: <b>${game.kills}</b>` +
     (newTower ? `<br><br>🔓 Neuer Turm freigeschaltet: <b>${TOWERS[newTower].name}</b>` : '') +
     (nextLevel && nextLevel.biome !== game.level.biome ? `<br>🌍 Neues Einsatzgebiet: <b>${BIOMES[nextLevel.biome].name}</b>` : '') +
     (hasNext ? '' : `<br><br><b>Alle ${LEVEL_COUNT} Einsätze abgeschlossen – die Menschheit hat eine Zukunft.</b>`),
@@ -738,7 +754,7 @@ async function startLevel(i, ch = null) {
   unlockAudio();
   const spec = LEVEL_SPECS[i];
   challenge = ch;
-  const g = new Game(i, { ...(ch ? ch.mods : {}), unlockAll: freePlay() });
+  const g = new Game(i, { ...(ch ? ch.mods : DIFFICULTY[diffIdx()].mods), unlockAll: freePlay(), diff: ch ? 0 : diffIdx() });
   // only the enemy types of this mission (incl. units launched by carriers / bursting out)
   const types = new Set();
   for (const w of g.waves.slice(0, 60)) for (const gr of w.groups) {
@@ -767,7 +783,7 @@ async function startLevel(i, ch = null) {
   for (const k in hudCache) delete hudCache[k];
   updateHUD();
   if (ch) toast(`CHALLENGE: ${ch.name.toUpperCase()} – ${ch.desc}`, 'warn', 4500);
-  else toast(`EINSATZ ${i + 1}: ${spec.name.toUpperCase()} – ${BIOMES[spec.biome].name}`, '', 2600);
+  else toast(`EINSATZ ${i + 1}: ${spec.name.toUpperCase()} – ${BIOMES[spec.biome].name} · ${DIFFICULTY[game.mods.diff].name}`, game.mods.diff ? 'warn' : '', 2600);
   const newTower = freePlay() ? null : TOWER_ORDER.find(k => TOWERS[k].unlock === i + 1 && i > 0);
   if (newTower) setTimeout(() => toast(`Neuer Turm verfügbar: ${TOWERS[newTower].name}`, 'warn', 3500), 900);
   if (i === 0) setTimeout(() => toast('Tippe ein freies Feld an, um einen Turm zu bauen', '', 4000), 1200);
@@ -807,6 +823,7 @@ function setLevelTab(tab) {
   $('tab-challenges').classList.toggle('on', tab === 'challenges');
   $('level-list').classList.toggle('hidden', tab !== 'campaign');
   $('challenge-list').classList.toggle('hidden', tab !== 'challenges');
+  $('diff-bar').classList.toggle('hidden', tab !== 'campaign');
 }
 $('tab-campaign').onclick = () => { sfx('click'); setLevelTab('campaign'); };
 $('tab-challenges').onclick = () => { sfx('click'); setLevelTab('challenges'); };

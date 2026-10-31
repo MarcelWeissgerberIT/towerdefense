@@ -343,7 +343,7 @@ button {
 .levels-top {
   display: flex; align-items: center; gap: 12px; width: min(760px, 100%); margin-bottom: 8px;
   position: sticky; top: calc(-16px - var(--sat)); z-index: 2;
-  background: rgba(8,9,11,0.96); padding: 8px 6px; border-bottom: 1px solid var(--line);
+  background: #08090b; padding: 8px 6px; border-bottom: 1px solid var(--line);
 }
 .levels-top .panel-title { flex: 1; margin: 0; text-align: left; }
 .levels-top .lv-tabs { flex: 1; }
@@ -598,3 +598,19 @@ body.aiming #btn-wave { display: none; }
   #aim-bar .aim-info { flex-basis: 100%; }
   #aim-fire { flex: 1; }
 }
+
+/* ---------- difficulty ---------- */
+.levels-top { flex-wrap: wrap; row-gap: 6px; }
+#diff-bar { flex-basis: 100%; display: flex; align-items: center; gap: 6px 10px; padding-top: 6px; border-top: 1px solid var(--line); min-width: 0; }
+#diff-bar .diff-label { font-family: var(--font-title); font-weight: 800; font-size: 12px; letter-spacing: 0.12em; color: var(--muted); }
+#diff-bar .diff-btns { display: flex; gap: 4px; }
+#diff-bar button { font: inherit; font-family: var(--font-title); font-weight: 800; font-size: 13px; letter-spacing: 0.08em; padding: 7px 12px; min-height: 36px; color: #b9b3a6; background: rgba(255,255,255,0.06); border: 1px solid var(--line); }
+#diff-bar button.on[data-d="0"] { background: linear-gradient(180deg, #5fd06f, #2b8a3a); color: #06140a; border-color: #9ff0a8; }
+#diff-bar button.on[data-d="1"] { background: linear-gradient(180deg, #ffbf3a, #c97f00); color: #1a1206; border-color: #ffd27a; }
+#diff-bar button.on[data-d="2"] { background: linear-gradient(180deg, #ff5a3c, #a8170a); color: #fff; border-color: #ff9a80; }
+#diff-desc { flex: 1; min-width: 0; font-size: 13px; color: var(--text); opacity: 0.85; line-height: 1.15; }
+@media (max-width: 560px) { #diff-bar .diff-label { display: none; } #diff-desc { font-size: 11.5px; } #diff-bar button { padding: 6px 8px; font-size: 12px; } }
+.ltile { position: relative; }
+.ltile .ldiff { position: absolute; top: 3px; right: 6px; font-family: var(--font-title); font-weight: 800; font-size: 7.5px; letter-spacing: 0.06em; padding: 1px 4px; }
+.ltile .ldiff.d1 { background: #c97f00; color: #1a1206; }
+.ltile .ldiff.d2 { background: #b3200f; color: #fff; }

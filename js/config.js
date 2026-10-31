@@ -241,6 +241,20 @@ export const POWERUPS = {
   repair: { name: 'NANO-REPARATUR', icon: 'repair', color: '#7dff9f', dur: 10, w: 2.5, desc: 'Alle Türme repariert und unverwundbar' },
   atom: { name: 'ATOMCODE', icon: 'atom', color: '#e8ff3a', dur: 0, w: 1, desc: 'Atombombe zur Hälfte geladen' },
 };
+// difficulty for the campaign: modifiers applied on top of every mission
+export const DIFFICULTY = [
+  { id: 'easy', name: 'LEICHT', desc: 'Die bisherige Balance – zum Kennenlernen.', mods: {} },
+  { id: 'medium', name: 'MITTEL', desc: 'Zähere und mehr Gegner, weniger Credits pro Abschuss.', mods: { hp: 1.3, count: 1.15, reward: 0.85 } },
+  { id: 'hard', name: 'SCHWER', desc: 'Starke, schnelle Wellen, knappes Budget, nur 10 Leben, Fähigkeiten laden langsamer.', mods: { hp: 1.5, count: 1.2, speed: 1.06, armor: 1.1, reward: 0.8, lives: 10, cd: 1.25 } },
+];
+// combine two modifier sets: factors multiply, lives take the stricter value, flags/lists of b win
+const MUL = ['hp', 'count', 'speed', 'credits', 'armor', 'reward', 'cd'];
+export function mergeMods(a = {}, b = {}) {
+  const o = { ...a, ...b };
+  for (const k of MUL) if (a[k] != null && b[k] != null) o[k] = a[k] * b[k];
+  if (a.lives && b.lives) o.lives = Math.min(a.lives, b.lives);
+  return o;
+}
 export const DROP = { chance: 0.022, gap: 18, life: 9 };
 // black hole (from mission 8): captures machines in its radius, spirals them in and crushes them; lasts 10 s
 export const HOLE = { unlock: 8, cd: 110, first: 45, dur: 10, radius: 2.6, pull: 1.4, dps: 0.07, flat: 30, bossSlow: 0.75, bossDps: 0.012, collapse: 0.3 };

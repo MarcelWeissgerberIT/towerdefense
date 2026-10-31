@@ -58,7 +58,7 @@ export function routePos(route, d) {
 const angDiff = (a, b) => { let d = (b - a) % TAU; if (d > Math.PI) d -= TAU; if (d < -Math.PI) d += TAU; return d; };
 
 export class Game {
-  // mods (challenges): speed, hp, count, armor, credits, lives, towers[], noRewards, noAbilities, bossRush, endless
+  // mods (difficulty, challenges): speed, hp, count, armor, credits, reward, cd, lives, towers[], noRewards, noAbilities, bossRush, endless
   constructor(levelIdx, mods = null) {
     this.levelIdx = levelIdx;
     this.mods = mods || {};
@@ -96,12 +96,12 @@ export class Game {
     this.puddles = [];
     // orbital strike: special ability with cooldown (from mission 2)
     // free play (unlockAll): every tower and ability from the first mission on
-    this.orbital = { cd: 25, max: 85, on: (L.number >= 2 || M.unlockAll) && !M.noAbilities };
+    this.orbital = { cd: 25, max: Math.round(85 * (M.cd || 1)), on: (L.number >= 2 || M.unlockAll) && !M.noAbilities };
     this.strikes = [];
     // nuclear strike, charged by kills; power-up crates and active buffs
-    this.nuke = { charge: 0, need: NUKE.need(L.number), on: (L.number >= NUKE.unlock || M.unlockAll) && !M.noAbilities };
+    this.nuke = { charge: 0, need: Math.round(NUKE.need(L.number) * (M.cd || 1)), on: (L.number >= NUKE.unlock || M.unlockAll) && !M.noAbilities };
     this.nukes = [];
-    this.hole = { cd: HOLE.first, max: HOLE.cd, on: (L.number >= HOLE.unlock || M.unlockAll) && !M.noAbilities };
+    this.hole = { cd: Math.round(HOLE.first * (M.cd || 1)), max: Math.round(HOLE.cd * (M.cd || 1)), on: (L.number >= HOLE.unlock || M.unlockAll) && !M.noAbilities };
     this.holes = [];
     this.radZones = [];
     this.drops = [];
@@ -289,7 +289,7 @@ export class Game {
     // calling early pays a bonus for every second skipped
     let bonus = 0;
     if (this.wave > 0) {
-      bonus = Math.round(Math.max(0, this.nextWaveIn) * 2.5);
+      bonus = Math.round(Math.max(0, this.nextWaveIn) * 2.5 * (this.mods.reward || 1));
     }
     if (bonus > 0) { this.credits += bonus; this.emit('toast', { text: `Früher Angriff: +${bonus} Credits` }); }
     const wv = this.waves[this.wave];
@@ -326,7 +326,7 @@ export class Game {
     if (!(n in this.waveLeft)) return;
     if (--this.waveLeft[n] > 0) return;
     delete this.waveLeft[n];
-    const bonus = 25 + n * 6;
+    const bonus = Math.round((25 + n * 6) * (this.mods.reward || 1));
     this.credits += bonus;
     for (const t of this.towers) t.hp = Math.min(t.stats.hp, t.hp + t.stats.hp * 0.3);
     if (n < this.waves.length) this.emit('toast', { text: `Welle ${n} abgewehrt! +${bonus} Credits` });
@@ -432,7 +432,7 @@ export class Game {
         }
       }
     }
-    const gain = this.mods.noRewards ? 0 : e.reward * (this.buffs.gold > 0 ? 3 : 1);
+    const gain = this.mods.noRewards ? 0 : Math.max(1, Math.round(e.reward * (this.mods.reward || 1))) * (this.buffs.gold > 0 ? 3 : 1);
     this.credits += gain;
     if (this.buffs.gold > 0) this.fx.text(e.wx, this.bodyY(e) - 50, `+${gain} ×3`, '#ffd34d');
     if (this.nuke.on && !this._nuking) this.nuke.charge = Math.min(this.nuke.need, this.nuke.charge + e.reward);

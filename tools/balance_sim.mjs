@@ -33,8 +33,27 @@ function counterPick(g, types) {
   return best;
 }
 
+// DIFF=medium|hard applies a campaign difficulty, MODS='{"hp":1.2}' arbitrary modifiers on top
+// ABIL=0 disables the special weapons (orbital strike, black hole, nuke); FREE=1 plays like free play (everything unlocked)
+const ABIL = process.env.ABIL !== '0';
+function densest(g, r, min) {
+  let best = null, bn = 0;
+  for (const e of g.enemies) {
+    if (!e.alive) continue;
+    const n = g.enemiesInRange(e.gx, e.gy, r, true, true).length + (e.def.boss ? 4 : 0);
+    if (n > bn) { bn = n; best = e; }
+  }
+  return bn >= min ? best : null;
+}
+function useAbilities(g) {
+  if (g.orbital.on && g.orbital.cd <= 0) { const e = densest(g, 1.7, 4); if (e) g.orbitalStrike(e.gx, e.gy); }
+  if (g.hole.on && g.hole.cd <= 0) { const e = densest(g, C.HOLE.radius, 7); if (e) g.holeStrike(e.gx, e.gy); }
+  if (g.nukeReady()) { const e = densest(g, C.NUKE.radius, 9); if (e) g.nukeStrike(e.gx, e.gy); }
+}
+const MODS = C.mergeMods(process.env.DIFF ? C.DIFFICULTY.find(d => d.id === process.env.DIFF).mods : {}, process.env.MODS ? JSON.parse(process.env.MODS) : {});
+if (process.env.FREE === '1') MODS.unlockAll = true;
 function play(levelIdx, skill = 1) {
-  const g = new Game(levelIdx);
+  const g = new Game(levelIdx, MODS);
   const types = C.TOWER_ORDER.filter(k => g.unlocked(k));
   // build order: mix of the unlocked towers, anti-air if drones show up
   const weighted = ['gatling', 'missile', 'plasma', 'gatling', 'emp', 'flak', 'flame', 'missile', 'rail', 'acid', 'plasma', 'laser', 'cryo', 'mortar', 'flame']
@@ -69,6 +88,7 @@ function play(levelIdx, skill = 1) {
     }
     for (const tw of g.towers) if (tw.hp < tw.stats.hp * 0.35 && g.credits > g.repairCost(tw) + 50) g.repair(tw);
     if (g.state === 'build') g.startWave();
+    if (ABIL && Math.round(t / dt) % 15 === 0) { useAbilities(g); for (const d of [...g.drops]) g.collect(d); }
     const before = g.towers.length;
     g.update(dt);
     lost += Math.max(0, before - g.towers.length);
