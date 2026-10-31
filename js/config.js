@@ -144,6 +144,10 @@ export const ENEMIES = {
     atk: { dmg: 42, range: 3.0, rate: 0.25, kind: 'shell', splash: 0.7 } },
   boss:     { cls: 'heavy', info: 'Gigantischer Kampfläufer mit enormer Panzerung und Lebensenergie. Nur konzentriertes, panzerbrechendes Feuer hält ihn auf.', motion: 'walker', stride: 0.95, name: 'Koloss',          model: 'enemy_boss',     hp: 3600, speed: 0.36, armor: 12, reward: 260, leak: 8, cost: 80, scale: 0.78, boss: true,
     atk: { dmg: 40, range: 3.0, rate: 0.9, kind: 'cannon' } },
+  infiltrator: { cls: 'light', info: 'Getarnter Saboteur. Seine Tarnung macht ihn für Türme unsichtbar – nur EMP-Türme decken ihn auf, und alle paar Sekunden flackert sie. Flächenschaden trifft ihn trotzdem.', motion: 'biped', name: 'Infiltrator', model: 'enemy_infiltrator', hp: 150, speed: 1.15, armor: 1, reward: 14, leak: 1, cost: 4, scale: 0.9, cloak: { on: 4.5, off: 1.6 } },
+  brood:    { cls: 'armored', info: 'Wandelnde Spinnenbrut. Setzt unterwegs Späher-Spinnen aus und zerplatzt beim Tod in einen ganzen Schwarm.', motion: 'walker', stride: 0.8, name: 'Brutmutter', model: 'enemy_brood', hp: 780, speed: 0.48, armor: 4, reward: 45, leak: 3, cost: 14, scale: 0.85, spawns: { type: 'spider', every: 4.5, count: 2 }, burst: { type: 'spider', count: 6 } },
+  bomber:   { cls: 'air', info: 'Schwerer Bomber. Fliegt über deine Stellungen und wirft Bombenteppiche auf die Türme darunter.', motion: 'hover', name: 'Bomber', model: 'enemy_bomber', hp: 520, speed: 0.6, armor: 4, reward: 38, leak: 3, cost: 12, scale: 0.85, air: true, lift: 70, bomb: { every: 2.4, dmg: 55, splash: 0.85, range: 1.15 } },
+  aegis:    { cls: 'armored', info: 'Mobiler Schildprojektor. Lädt die Energieschilde aller Maschinen in seiner Nähe auf – zuerst ausschalten!', motion: 'tracks', name: 'Schildprojektor', model: 'enemy_aegis', hp: 460, speed: 0.62, armor: 4, reward: 34, leak: 2, cost: 11, scale: 0.85, project: { every: 3.5, range: 1.9, shield: 110 } },
   mothership: { cls: 'air', info: 'Fliegende Festung. Setzt unterwegs laufend Kamikaze-Drohnen aus.', motion: 'hover', name: 'Mutterschiff',  model: 'enemy_mothership', hp: 3000, speed: 0.42, armor: 6, reward: 280, leak: 8, cost: 80, scale: 0.78, boss: true, air: true, lift: 84,
     atk: { dmg: 30, range: 3.2, rate: 1.1, kind: 'missile' }, spawns: { type: 'kamikaze', every: 6.5, count: 2 } },
 };
@@ -151,6 +155,7 @@ export const ENEMIES = {
 // level number at which each regular enemy type starts appearing
 export const ENEMY_UNLOCK = {
   android: 1, spider: 1, drone: 2, mech: 3, tank: 4, repair: 6, shield: 8, kamikaze: 11, siege: 13,
+  infiltrator: 14, brood: 17, bomber: 21, aegis: 23,
 };
 
 export const BIOMES = {
@@ -208,7 +213,17 @@ export const BIOMES = {
 // terrain: world px per height level, tower range bonus per level of high ground
 export const ELEV_PX = 46;
 export const ELEV_RANGE = 0.2;
-export const BIOME_ORDER = ['wasteland', 'jungle', 'desert', 'ice', 'volcano'];
+BIOMES.city = {
+  name: 'Metropole', ground: 'city_ground', road: 'city_road',
+  props: ['prop_c_tower', 'prop_c_bus', 'prop_c_car', 'prop_c_rubble', 'prop_c_uplink', 'prop_barrier'],
+  decor: [['prop_c_rubble', 0.45, 0.7, 4], ['prop_c_car', 0.55, 0.75, 2], ['prop_scrap', 0.5, 0.7, 3], ['prop_barrier', 0.5, 0.7, 1]], decorDensity: 0.15,
+  lip: ['#9a9893', '#4c4b48'], cliff: ['#6d6b66', '#2b2a28', '#4a4845', '#191817'],
+  theme: { camp: ['prop_crates', 'prop_barrier'], spawn: ['prop_c_uplink', 'prop_c_bus'], landmark: ['prop_c_tower', ['prop_c_rubble', 'prop_c_car']], nature: ['prop_c_tower', 'prop_c_rubble', 'prop_c_car', 'prop_c_bus'], plateau: 1.0 },
+  grade: { screen: 'rgba(18,22,34,0.35)', multiply: 'rgb(200,206,222)' },
+  slab: ['#55565c', '#212227', '#3c3d42', '#111215'],
+  bg: ['#151a26', '#0b0e15', '#040508'], ambient: 'embers', roadEdge: 'rgba(8,8,10,0.4)',
+};
+export const BIOME_ORDER = ['wasteland', 'jungle', 'desert', 'ice', 'volcano', 'city'];
 
 // ---- special abilities ----
 // nuclear strike: charged by the credits earned from kills (from mission 5)
@@ -220,10 +235,10 @@ export const NUKE = {
 };
 // power-up crates dropped by destroyed machines (tap to activate)
 export const POWERUPS = {
-  overdrive: { name: 'OVERDRIVE', icon: '⚡', color: '#ff5a3c', dur: 15, w: 3, desc: 'Alle Türme feuern doppelt so schnell' },
-  timestop: { name: 'ZEITSTOPP', icon: '⏸', color: '#7fdcff', dur: 6, w: 2.5, desc: 'Alle Gegner erstarren' },
-  gold: { name: 'GOLDRAUSCH', icon: '💰', color: '#ffd34d', dur: 20, w: 3, desc: 'Dreifache Credits pro Abschuss' },
-  repair: { name: 'NANO-REPARATUR', icon: '🛡', color: '#7dff9f', dur: 10, w: 2.5, desc: 'Alle Türme repariert und unverwundbar' },
-  atom: { name: 'ATOMCODE', icon: '☢', color: '#e8ff3a', dur: 0, w: 1, desc: 'Atombombe zur Hälfte geladen' },
+  overdrive: { name: 'OVERDRIVE', icon: 'overdrive', color: '#ff5a3c', dur: 15, w: 3, desc: 'Alle Türme feuern doppelt so schnell' },
+  timestop: { name: 'ZEITSTOPP', icon: 'timestop', color: '#7fdcff', dur: 6, w: 2.5, desc: 'Alle Gegner erstarren' },
+  gold: { name: 'GOLDRAUSCH', icon: 'gold', color: '#ffd34d', dur: 20, w: 3, desc: 'Dreifache Credits pro Abschuss' },
+  repair: { name: 'NANO-REPARATUR', icon: 'repair', color: '#7dff9f', dur: 10, w: 2.5, desc: 'Alle Türme repariert und unverwundbar' },
+  atom: { name: 'ATOMCODE', icon: 'atom', color: '#e8ff3a', dur: 0, w: 1, desc: 'Atombombe zur Hälfte geladen' },
 };
 export const DROP = { chance: 0.022, gap: 18, life: 9 };

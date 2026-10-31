@@ -8,7 +8,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Iron Sentinel">
   <meta name="theme-color" content="#0b0c0e">
-  <meta name="description" content="Iron Sentinel – isometrisches Tower Defense: 25 Einsätze in Ödland, Dschungel, Wüste, Arktis und Vulkan gegen die Maschinenarmee.">
+  <meta name="description" content="Iron Sentinel – isometrisches Tower Defense: 30 Einsätze in Ödland, Dschungel, Wüste, Arktis, Vulkan und Metropole gegen die Maschinenarmee.">
   <title>Iron Sentinel – Tower Defense</title>
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="apple-touch-icon" href="assets/icon-180.png">
@@ -26,11 +26,11 @@
   <div id="hud" class="hidden">
     <div class="hud-left">
       <div class="stat" id="stat-lives" title="Basis-Integrität">
-        <svg viewBox="0 0 24 24"><path d="M12 2 3 6v6c0 5 3.8 9.4 9 10 5.2-.6 9-5 9-10V6l-9-4z" fill="currentColor"/></svg>
+        <i class="ic ic-lives"></i>
         <span id="hud-lives">20</span>
       </div>
       <div class="stat" id="stat-credits" title="Credits">
-        <svg viewBox="0 0 24 24"><path d="M13 2 4 14h6l-1 8 9-12h-6l1-8z" fill="currentColor"/></svg>
+        <i class="ic ic-credits"></i>
         <span id="hud-credits">0</span>
       </div>
       <div class="stat" id="stat-wave"><small>WELLE</small><span id="hud-wave">0/20</span></div>
@@ -44,8 +44,8 @@
   </div>
 
   <button id="btn-wave" class="hidden"><span id="wave-label">ANGRIFF STARTEN</span><small id="wave-sub"></small></button>
-  <button id="btn-orbital" class="hidden" aria-label="Orbitalschlag"><span class="ob-icon">🛰</span><span class="ob-cd" id="orbital-cd"></span></button>
-  <button id="btn-nuke" class="hidden" aria-label="Atombombe"><span class="ob-icon">☢</span><span class="ob-cd" id="nuke-cd"></span></button>
+  <button id="btn-orbital" class="hidden" aria-label="Orbitalschlag"><i class="ic ic-orbital ob-icon"></i><span class="ob-cd" id="orbital-cd"></span></button>
+  <button id="btn-nuke" class="hidden" aria-label="Atombombe"><i class="ic ic-nuke ob-icon"></i><span class="ob-cd" id="nuke-cd"></span></button>
   <div id="buffs"></div>
   <div id="pu-banner" class="hidden"><div class="pu-icon" id="pu-icon"></div><div class="pu-name" id="pu-name"></div><div class="pu-desc" id="pu-desc"></div></div>
 
@@ -67,7 +67,7 @@
     <div class="tm-stats" id="tm-stats"></div>
     <div class="tm-actions">
       <button id="tm-upgrade" class="btn primary">▲ UPGRADE</button>
-      <button id="tm-repair" class="btn">🔧</button>
+      <button id="tm-repair" class="btn"></button>
       <button id="tm-mode" class="btn">🎯</button>
       <button id="tm-sell" class="btn danger">VERKAUFEN</button>
     </div>
@@ -85,7 +85,7 @@
     <div class="menu-inner">
       <div class="kicker">WIDERSTAND · JAHR 2049</div>
       <div class="logo big"><span>IRON</span> SENTINEL</div>
-      <div class="tagline">25 Einsätze. 5 Kriegsschauplätze. Halte die Maschinenarmee auf.</div>
+      <div class="tagline">30 Einsätze. 6 Kriegsschauplätze. Challenges. Halte die Maschinenarmee auf.</div>
       <div class="menu-buttons">
         <button class="btn primary large" id="btn-play">SPIELEN</button>
         <button class="btn large" id="btn-help">ANLEITUNG</button>
@@ -97,10 +97,11 @@
   <div id="screen-levels" class="screen hidden title-bg dim">
     <div class="levels-top">
       <button class="btn icon" id="btn-levels-back">◀</button>
-      <div class="panel-title">EINSATZGEBIETE</div>
+      <div class="lv-tabs"><button id="tab-campaign" class="lv-tab on">KAMPAGNE</button><button id="tab-challenges" class="lv-tab">CHALLENGES</button></div>
       <div class="total-stars" id="total-stars"></div>
     </div>
     <div id="level-list"></div>
+    <div id="challenge-list" class="hidden"></div>
   </div>
 
   <div id="screen-help" class="screen hidden title-bg dim">

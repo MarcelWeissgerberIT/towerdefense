@@ -24,11 +24,17 @@ export const LEVEL_SPECS = [
   { name: 'Forschungsstation', biome: 'ice', M: 9, paths: 3, waves: 18, len: [32, 40], orient: 'LR', seed: 3303, credits: 600 },
   { name: 'Gletscherspalte',  biome: 'ice', M: 9, paths: 3, waves: 18, len: [32, 40], orient: 'RL', seed: 3505, credits: 580 },
   { name: 'Weißer Tod',       biome: 'ice', M: 10, paths: 3, waves: 19, len: [38, 46], orient: 'TB', seed: 1959, credits: 640 },
-  { name: 'Polarnacht',       biome: 'ice', M: 10, paths: 3, waves: 20, len: [38, 46], orient: 'LR', seed: 3505, credits: 680 },
+  { name: 'Polarnacht',       biome: 'ice', M: 10, paths: 3, waves: 20, len: [38, 46], orient: 'LR', seed: 4606, credits: 680 },
   // Vulkan
   { name: 'Aschewüste',       biome: 'volcano', M: 10, paths: 3, waves: 19, len: [38, 46], orient: 'TB', seed: 2171, credits: 620 },
   { name: 'Lavastrom',        biome: 'volcano', M: 10, paths: 3, waves: 20, len: [38, 46], orient: 'RL', seed: 2282, credits: 680 },
   { name: 'Schmiede der Maschinen', biome: 'volcano', M: 10, paths: 4, waves: 21, len: [38, 46], orient: 'TB', seed: 2393, credits: 720 },
   { name: 'Feuerkrone',       biome: 'volcano', M: 10, paths: 3, waves: 22, len: [38, 46], orient: 'TB', seed: 2404, credits: 800 },
   { name: 'Letzte Bastion',   biome: 'volcano', M: 10, paths: 4, waves: 25, len: [38, 46], orient: 'LR', seed: 2515, credits: 860 },
+  // Metropole
+  { name: 'Schuttfeld',       biome: 'city', M: 10, paths: 3, waves: 22, len: [38, 46], orient: 'TB', seed: 2626, credits: 700 },
+  { name: 'Highway 9',        biome: 'city', M: 10, paths: 3, waves: 23, len: [38, 46], orient: 'LR', seed: 2727, credits: 720 },
+  { name: 'Leitzentrale',     biome: 'city', M: 11, paths: 4, waves: 24, len: [44, 54], orient: 'RL', seed: 2828, credits: 740 },
+  { name: 'Brennende Stadt',  biome: 'city', M: 11, paths: 4, waves: 25, len: [44, 54], orient: 'TB', seed: 2929, credits: 760 },
+  { name: 'Endzeit',          biome: 'city', M: 11, paths: 4, waves: 28, len: [44, 54], orient: 'LR', seed: 3030, credits: 800 },
 ];

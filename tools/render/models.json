@@ -226,5 +226,51 @@
   "P": 136,
   "capR": 0.26,
   "shadow": true
+ },
+ "enemy_brood": {
+  "mode": "unit",
+  "frames": 32,
+  "size": 1.15,
+  "yaw0": 90,
+  "P": 120,
+  "pad": 0.1,
+  "anim": {
+   "frames": 8
+  },
+  "legs": {
+   "n": 8,
+   "r0": 0.4,
+   "stride": 0.1,
+   "lift": 0.08,
+   "bob": 0.012
+  }
+ },
+ "enemy_bomber": {
+  "mode": "unit",
+  "frames": 32,
+  "size": 1.15,
+  "yaw0": 90,
+  "P": 128
+ },
+ "enemy_aegis": {
+  "mode": "unit",
+  "frames": 32,
+  "size": 0.9,
+  "yaw0": 90,
+  "P": 128
+ },
+ "enemy_infiltrator": {
+  "url": "glb/enemy_infiltrator_walk.glb",
+  "mode": "unit",
+  "frames": 32,
+  "size": 0.95,
+  "byHeight": true,
+  "yaw0": 90,
+  "P": 120,
+  "pad": 0.08,
+  "anim": {
+   "frames": 12,
+   "rootFacing": true
+  }
  }
 }

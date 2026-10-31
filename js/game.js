@@ -2,7 +2,7 @@
 import {
   TOWERS, ENEMIES, BIOMES, EFFECT, FROST, SHATTER, THERMAL, ACID_ARMOR, NUKE, POWERUPS, DROP, ELEV_PX, ELEV_RANGE, MAX_LEVEL, TOWER_SCALE, UPGRADE_TIME, WAVE_GAP, SELL_RATE, FULL_REFUND_TIME, towerStats, upgradeCost, totalInvested,
 } from './config.js';
-import { getLevel, makeWaves, hpMultiplier } from './levels.js';
+import { getLevel, makeWaves, makeBossRush, hpMultiplier } from './levels.js';
 import { toWorld, rand, mulberry32 } from './iso.js';
 import { FX } from './fx.js';
 import { sfx } from './audio.js';
@@ -58,16 +58,21 @@ export function routePos(route, d) {
 const angDiff = (a, b) => { let d = (b - a) % TAU; if (d > Math.PI) d -= TAU; if (d < -Math.PI) d += TAU; return d; };
 
 export class Game {
-  constructor(levelIdx) {
+  // mods (challenges): speed, hp, count, armor, credits, lives, towers[], noRewards, noAbilities, bossRush, endless
+  constructor(levelIdx, mods = null) {
     this.levelIdx = levelIdx;
+    this.mods = mods || {};
+    const M = this.mods;
     this.level = getLevel(levelIdx);
+    if (M.endless) this.level = { ...this.level, waves: 150 };
     const L = this.level;
     this.N = L.N;
     this.grid = new Uint8Array(this.N * this.N);
-    this.credits = L.credits + (L.paths.length - 1) * 150;
-    this.lives = 20;
-    this.maxLives = 20;
-    this.waves = makeWaves(L);
+    this.credits = Math.round((L.credits + (L.paths.length - 1) * 150) * (M.credits || 1));
+    this.lives = M.lives || 20;
+    this.maxLives = this.lives;
+    this.waves = M.bossRush ? makeBossRush(L, M.bossRush) : makeWaves(L);
+    if (M.count) for (const w of this.waves) for (const g of w.groups) if (!ENEMIES[g.type].boss) { g.count = Math.ceil(g.count * M.count); g.gap /= Math.sqrt(M.count); }
     this.wave = 0;
     this.time = 0;
     this.queue = [];
@@ -90,10 +95,10 @@ export class Game {
     this.props = [];
     this.puddles = [];
     // orbital strike: special ability with cooldown (from mission 2)
-    this.orbital = { cd: 25, max: 85, on: L.number >= 2 };
+    this.orbital = { cd: 25, max: 85, on: L.number >= 2 && !M.noAbilities };
     this.strikes = [];
     // nuclear strike, charged by kills; power-up crates and active buffs
-    this.nuke = { charge: 0, need: NUKE.need(L.number), on: L.number >= NUKE.unlock };
+    this.nuke = { charge: 0, need: NUKE.need(L.number), on: L.number >= NUKE.unlock && !M.noAbilities };
     this.nukes = [];
     this.radZones = [];
     this.drops = [];
@@ -161,7 +166,7 @@ export class Game {
   emit(type, data) { this.events.push({ type, ...data }); }
 
   // ---------------- building ----------------
-  unlocked(type) { return TOWERS[type].unlock <= this.level.number; }
+  unlocked(type) { return TOWERS[type].unlock <= this.level.number && (!this.mods.towers || this.mods.towers.includes(type)); }
   canBuild(cx, cy) { return this.cell(cx, cy) === CELL.FREE; }
   towerAt(cx, cy) { return this.towers.find(t => t.cx === cx && t.cy === cy); }
 
@@ -286,7 +291,7 @@ export class Game {
     if (bonus > 0) { this.credits += bonus; this.emit('toast', { text: `Früher Angriff: +${bonus} Credits` }); }
     const wv = this.waves[this.wave];
     this.wave++;
-    const hpMul = hpMultiplier(this.level.number, this.wave);
+    const hpMul = hpMultiplier(this.level.number, this.wave) * (this.mods.hp || 1);
     const rewardMul = (1 + 0.05 * (this.wave - 1)) * (1 + 0.025 * (this.level.number - 1));
     const nR = this.routes.length;
     let k = 0;
@@ -338,7 +343,10 @@ export class Game {
       frost: 0, frozenT: 0, freezeImm: 0, acidN: 0, acidT: 0, acidDps: 0, acidSrc: null, puddleCd: 0,
       alive: true, air: !!def.air, atkCool: rand(0.5, 1.5), atkTarget: null, reward: Math.round(def.reward * rewardMul),
       spawnT: def.spawns ? def.spawns.every : 0, diving: null, healT: 0, hpMul, walk: Math.random() * 3, turnRate: 0,
+      cloakT: Math.random() * 2, cloaked: !!def.cloak, revealT: 0, bombT: def.bomb ? def.bomb.every * 0.6 : 0, projT: 1,
+      speedMul: this.mods.speed || 1,
     };
+    if (this.mods.armor) e.armor = Math.round(def.armor * this.mods.armor + (def.armor ? 1 : 0));
     this.enemies.push(e);
     return e;
   }
@@ -346,6 +354,7 @@ export class Game {
   // ---------------- damage to enemies ----------------
   damage(e, raw, opts = {}) {
     if (!e.alive) return 0;
+    if (e.cloaked && !opts.dot) e.revealT = Math.max(e.revealT, 0.8);
     // tower effectiveness against the enemy class (light / armoured / heavy / air)
     const src = opts.src;
     let mult = src && src.type && EFFECT[src.type] ? (EFFECT[src.type][e.def.cls] ?? 1) : 1;
@@ -401,6 +410,11 @@ export class Game {
   kill(e, src) {
     e.alive = false;
     this.kills++;
+    if (e.def.burst && !e.air) {
+      const b = e.def.burst, ri = this.routes.indexOf(e.route);
+      for (let i = 0; i < b.count; i++) { const c = this.spawn(b.type, ri, e.hpMul * 0.7, 0.4, Math.max(0, e.d - 0.15 - i * 0.12)); c.off = rand(-0.35, 0.35); }
+      this.fx.add({ k: 'glow', x: e.wx, y: e.wy - 30, s: 140, life: 0.4, spr: 'orange' });
+    }
     if (src) {
       src.kills++;
       // veterans: rank up at 10 / 30 / 70 / 140 kills (+8 % damage per rank)
@@ -415,13 +429,13 @@ export class Game {
         }
       }
     }
-    const gain = e.reward * (this.buffs.gold > 0 ? 3 : 1);
+    const gain = this.mods.noRewards ? 0 : e.reward * (this.buffs.gold > 0 ? 3 : 1);
     this.credits += gain;
-    if (this.buffs.gold > 0) this.fx.text(e.wx, this.bodyY(e) - 50, `💰 ×3`, '#ffd34d');
+    if (this.buffs.gold > 0) this.fx.text(e.wx, this.bodyY(e) - 50, `+${gain} ×3`, '#ffd34d');
     if (this.nuke.on && !this._nuking) this.nuke.charge = Math.min(this.nuke.need, this.nuke.charge + e.reward);
     // power-up crate: bosses always, others rarely (spaced out)
     if (!e.air || e.def.boss) {
-      if (e.def.boss || (Math.random() < DROP.chance && this.time - this.lastDrop > DROP.gap && this.drops.length < 2)) this.spawnDrop(e.gx, e.gy);
+      if (!this.mods.noAbilities && (e.def.boss || (Math.random() < DROP.chance && this.time - this.lastDrop > DROP.gap && this.drops.length < 2))) this.spawnDrop(e.gx, e.gy);
     }
     const y = this.bodyY(e);
     const big = e.def.boss ? 3.0 : e.def.cost >= 10 ? 1.7 : e.def.cost >= 5 ? 1.3 : e.type === 'spider' ? 0.8 : 1;
@@ -439,6 +453,9 @@ export class Game {
   bodyY(e) { return e.wy - (e.air ? e.def.lift : 0) - (Models.meta(e.def.model)?.centerPx ?? 30) * e.def.scale; }
   aimPoint(e) { return { x: e.wx, y: this.bodyY(e) }; }
 
+  // cloak cycle: on for `on` seconds, flickers off for `off` seconds
+  cloakOff(e) { const c = e.def.cloak; return !c || (e.cloakT % (c.on + c.off)) > c.on; }
+  visible(e) { return !e.cloaked || e.revealT > 0 || this.cloakOff(e); }
   enemiesInRange(gx, gy, r, air, ground, minR = 0) {
     const r2 = r * r, m2 = minR * minR, out = [];
     for (const e of this.enemies) {
@@ -503,8 +520,11 @@ export class Game {
     if (!t.target || !t.target.alive || ((t.target.gx - t.gx) ** 2 + (t.target.gy - t.gy) ** 2) > s.range * s.range || (def.minRange && ((t.target.gx - t.gx) ** 2 + (t.target.gy - t.gy) ** 2) < def.minRange ** 2)) {
       t.target = null;
     }
+    // EMP towers expose cloaked infiltrators in their range
+    if (def.kind === 'emp') for (const e of this.enemiesInRange(t.gx, t.gy, s.range, true, true)) if (e.cloaked) e.revealT = Math.max(e.revealT, 0.4);
+    if (t.target && t.target.cloaked && t.target.revealT <= 0 && !this.cloakOff(t.target)) t.target = null;
     if (!t.target || t.retarget <= 0) {
-      const list = this.enemiesInRange(t.gx, t.gy, s.range, def.air, def.ground, def.minRange || 0);
+      const list = this.enemiesInRange(t.gx, t.gy, s.range, def.air, def.ground, def.minRange || 0).filter(e => !e.cloaked || e.revealT > 0 || this.cloakOff(e));
       const nt = this.pickTarget(t, list);
       if (nt !== t.target) { t.target = nt; t.beamT = 0; }
       t.retarget = 0.25;
@@ -787,7 +807,7 @@ export class Game {
       }
     }
 
-    let sp = def.speed;
+    let sp = def.speed * e.speedMul;
     let slow = 0;
     if (e.slowT > 0) { e.slowT -= dt; slow = e.slowF; if (e.slowT <= 0) e.slowF = 0; }
     slow = Math.max(slow, (e.frost / FROST.max) * (def.boss ? FROST.bossSlow : FROST.slow));
@@ -846,8 +866,39 @@ export class Game {
         }
       }
     }
+    // cloak
+    if (def.cloak) { e.cloakT += dt; if (e.revealT > 0) e.revealT -= dt; }
+    const stopped = e.frozenT > 0 || (this.buffs.timestop > 0 && !def.boss);
+    // bomber: carpet of bombs on towers below
+    if (def.bomb && !stopped) {
+      e.bombT -= dt;
+      if (e.bombT <= 0) {
+        let best = null, bd = def.bomb.range * def.bomb.range;
+        for (const t of this.towers) { const d2 = (t.gx - e.gx) ** 2 + (t.gy - e.gy) ** 2; if (d2 < bd) { bd = d2; best = t; } }
+        if (best) {
+          e.bombT = def.bomb.every;
+          const dmg = def.bomb.dmg * Math.pow(e.hpMul, 0.3);
+          for (let i = 0; i < 3; i++) this.shots.push({ k: 'bomb', x: e.wx + rand(-14, 14), y: e.wy - def.lift + i * 4, tx: best.wx + rand(-24, 24), ty: best.wy + rand(-10, 10), t0: -i * 0.12, dur: 0.55, sx: e.wx, sy: e.wy - def.lift, tgx: best.gx, tgy: best.gy, dmg: dmg / 3, splash: def.bomb.splash, enemy: true });
+          sfx('dive');
+        } else e.bombT = 0.3;
+      }
+    }
+    // shield projector: recharges the shields of nearby machines
+    if (def.project && !stopped) {
+      e.projT -= dt;
+      if (e.projT <= 0) {
+        e.projT = def.project.every;
+        const amt = Math.round(def.project.shield * Math.pow(e.hpMul, 0.6));
+        for (const o of this.enemiesInRange(e.gx, e.gy, def.project.range, true, true)) {
+          o.shield = Math.min(Math.max(o.maxShield, amt * 1.5), o.shield + amt);
+          o.projShield = Math.max(o.projShield || 0, amt * 1.5);
+          if (o !== e) this.fx.add({ k: 'line', x1: e.wx, y1: this.bodyY(e) - 20, x2: o.wx, y2: this.bodyY(o), w: 2.5, life: 0.35, c: 'rgba(110,220,255,' });
+        }
+        this.fx.add({ k: 'ring', x: e.wx, y: e.wy, r0: 10, r1: def.project.range * 90, life: 0.5, c: '110,220,255' });
+      }
+    }
     // carrier spawns
-    if (def.spawns) {
+    if (def.spawns && !stopped) {
       e.spawnT -= dt;
       if (e.spawnT <= 0) {
         e.spawnT = def.spawns.every;
@@ -1092,6 +1143,19 @@ export class Game {
             s.dead = true;
             this.fx.flakBurst(s.tx, s.ty);
             this.explode(s.tgx, s.tgy, s.dmg, s.splash, { ground: false, src: s.src });
+          }
+          break;
+        }
+        case 'bomb': {
+          s.t0 += dt;
+          const k = Math.max(0, Math.min(1, s.t0 / s.dur));
+          s.x = s.sx + (s.tx - s.sx) * k; s.y = s.sy + (s.ty - s.sy) * k * k;
+          if (k >= 1) {
+            s.dead = true;
+            this.fx.explosion(s.tx, s.ty - 10, 0.7, 'ground');
+            this.decals.push({ x: s.tx, y: s.ty, s: 60 });
+            this.damageTowersArea(s.tgx, s.tgy, s.dmg, s.splash);
+            sfx('explosion');
           }
           break;
         }

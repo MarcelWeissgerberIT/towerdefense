@@ -10,7 +10,8 @@ export function getLevel(i) {
   const spec = LEVEL_SPECS[i];
   // every extra attack route needs its own defence line: more starting credits
   // (and bigger maps need more towers)
-  const credits = Math.max(spec.credits, 360 + 30 * i) + 70 * (spec.paths - 1) + 80 * Math.max(0, spec.M - 7);
+  const base = spec.biome === 'city' ? spec.credits : Math.max(spec.credits, 360 + 30 * i);
+  const credits = base + 70 * (spec.paths - 1) + 80 * Math.max(0, spec.M - 7);
   return { ...spec, ...LEVEL_MAPS[i], credits, index: i, number: i + 1 };
 }
 
@@ -26,7 +27,7 @@ function rng(seed) {
   };
 }
 
-const GAP = { spider: 0.38, android: 0.8, drone: 0.85, mech: 1.7, tank: 2.1, shield: 1.2, repair: 1.6, kamikaze: 0.55, siege: 2.6, boss: 7, mothership: 7 };
+const GAP = { spider: 0.38, android: 0.8, drone: 0.85, mech: 1.7, tank: 2.1, shield: 1.2, repair: 1.6, kamikaze: 0.55, siege: 2.6, boss: 7, mothership: 7, infiltrator: 0.9, brood: 3.2, bomber: 2.6, aegis: 2.4 };
 
 export function hpMultiplier(levelNum, wave) {
   const n = wave - 1;
@@ -40,7 +41,7 @@ export function makeWaves(level) {
   const pool = Object.keys(ENEMY_UNLOCK).filter(k => ENEMY_UNLOCK[k] <= lv);
   const ground = pool.filter(k => !ENEMIES[k].air);
   const air = pool.filter(k => ENEMIES[k].air);
-  const heavy = pool.filter(k => ['mech', 'tank', 'siege', 'shield'].includes(k));
+  const heavy = pool.filter(k => ['mech', 'tank', 'siege', 'shield', 'brood', 'aegis'].includes(k));
   const waves = [];
   const W = level.waves;
   for (let w = 1; w <= W; w++) {
@@ -56,12 +57,14 @@ export function makeWaves(level) {
       const cost = ENEMIES[type].cost;
       let count = Math.max(1, Math.round(budget * share / cost));
       // support / siege units are capped so a wave never consists of a healing or artillery blob
-      const cap = { repair: 2 + Math.floor(lv / 8), siege: 2 + Math.floor(w / 8), shield: 4 + Math.floor(lv / 5), kamikaze: 8 + Math.floor(lv / 2) }[type];
+      const cap = { repair: 2 + Math.floor(lv / 8), siege: 2 + Math.floor(w / 8), shield: 4 + Math.floor(lv / 5), kamikaze: 8 + Math.floor(lv / 2),
+        spider: 24 + 2 * Math.floor(lv / 5), brood: 1 + Math.floor(w / 9), aegis: 2 + Math.floor(lv / 12), bomber: 2 + Math.floor(w / 7), infiltrator: 2 + Math.floor(lv / 6) + Math.floor(w / 6) }[type];
       if (cap && count > cap) {
         const rest = (count - cap) * cost;
         count = cap;
         // spend the remaining budget on basic infantry
-        groups.push({ type: lv >= 3 ? 'android' : 'spider', count: Math.max(1, Math.round(rest / ENEMIES[lv >= 3 ? 'android' : 'spider'].cost)), gap: GAP.android, delay: delay + 2 });
+        const fill = lv >= 3 || type === 'spider' ? 'android' : 'spider';
+        groups.push({ type: fill, count: Math.max(1, Math.round(rest / ENEMIES[fill].cost)), gap: GAP[fill], delay: delay + 2 });
       }
       groups.push({ type, count, gap: GAP[type], delay });
     };
@@ -69,6 +72,7 @@ export function makeWaves(level) {
       // boss finale
       const bosses = lv >= 20 ? ['boss', 'mothership'] : lv >= 18 ? ['mothership'] : ['boss'];
       if (lv === 25) bosses.push('boss', 'mothership');
+      if (lv === 30) bosses.push('boss', 'mothership', 'boss');
       bosses.forEach((b, i) => groups.push({ type: b, count: 1, gap: 1, delay: i * 9 }));
       add(pick(heavy.length ? heavy : ground, 0.5), 0.5, 3);
       add(pick(ground, 0.4), 0.4, 6);
@@ -100,6 +104,20 @@ export function makeWaves(level) {
       tip = 'Ein Boss führt diese Welle an!';
     }
     waves.push({ groups, tip, boss: groups.some(g => ENEMIES[g.type].boss) });
+  }
+  return waves;
+}
+
+// challenge: waves of bosses with escorts
+export function makeBossRush(level, n) {
+  const waves = [];
+  for (let w = 1; w <= n; w++) {
+    const groups = [];
+    const nb = 1 + Math.floor(w / 3);
+    for (let i = 0; i < nb; i++) groups.push({ type: (w + i) % 3 === 2 ? 'mothership' : 'boss', count: 1, gap: 1, delay: i * 8, hpScale: 0.5 + 0.05 * w });
+    groups.push({ type: w > 4 ? 'siege' : 'mech', count: 2 + Math.floor(w / 2), gap: 2, delay: 3 });
+    groups.push({ type: 'android', count: 6 + w, gap: 0.8, delay: 5 });
+    waves.push({ groups, tip: w === 1 ? 'KOLOSSE: Nur Bosse mit Eskorte!' : null, boss: true });
   }
   return waves;
 }

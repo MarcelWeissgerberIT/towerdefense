@@ -1,7 +1,7 @@
 // Isometric canvas renderer
 import { HW, HH, TOWERS, BIOMES, TOWER_SCALE, ELEV_PX, NUKE, POWERUPS } from './config.js';
 import { toWorld, toGrid, mulberry32, clamp } from './iso.js';
-import { Assets, Models } from './assets.js';
+import { Assets, Models, drawIcon } from './assets.js';
 import { CELL } from './game.js';
 
 // convex hull (monotone chain) of {x, y} points, counter-clockwise
@@ -653,8 +653,7 @@ export class Renderer {
     face(top, '#3d4247');
     g.strokeStyle = p.color; g.lineWidth = 3;
     g.beginPath(); g.moveTo(14, 40); g.lineTo(42, 54); g.lineTo(70, 40); g.stroke();
-    g.font = '24px system-ui, "Apple Color Emoji", sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
-    g.fillText(p.icon, 42, 24);
+    drawIcon(g, p.icon, 42, 22, 30);
     return (this._crates[type] = c);
   }
   drawDrops(ctx, game) {
@@ -1015,6 +1014,20 @@ export class Renderer {
       else Models.draw(ctx, name, f, x, y, def.scale);
       return;
     }
+    if (def.cloak && !this.game.visible(e)) {
+      // optical camouflage: a faint refracting shimmer
+      const ga = ctx.globalAlpha;
+      ctx.globalAlpha = ga * (0.14 + 0.06 * Math.sin(this.time * 9 + e.id));
+      Models.draw(ctx, name, f, x + Math.sin(this.time * 23 + e.id) * 1.5, y, def.scale);
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.globalAlpha = ga * 0.12;
+      Models.drawTinted(ctx, name, f, x, y, def.scale, 'ice', 0.12);
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.globalAlpha = ga;
+      e._top = y - m.topPx * def.scale;
+      return;
+    }
+    if (def.cloak && e.revealT > 0 && Math.random() < 0.25) ctx.globalAlpha = 0.6;
     if (pose.roll) {
       ctx.save();
       ctx.translate(x, y);
@@ -1051,13 +1064,23 @@ export class Renderer {
     }
     if (e.shield > 0) {
       const r = m.w * m.scale * def.scale * 0.48;
-      const a = 0.25 + 0.35 * (e.shield / e.maxShield) + (this.game.time - e.shieldHit < 0.15 ? 0.3 : 0);
+      const a = 0.25 + 0.35 * Math.min(1, e.shield / Math.max(1, e.maxShield, e.projShield || 0)) + (this.game.time - e.shieldHit < 0.15 ? 0.3 : 0);
       ctx.globalCompositeOperation = 'lighter';
       ctx.fillStyle = `rgba(80,170,255,${a * 0.25})`;
       ctx.strokeStyle = `rgba(150,215,255,${a})`;
       ctx.lineWidth = 2;
       ctx.beginPath(); ctx.ellipse(e.wx, cy, r, r * 1.05, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
       ctx.globalCompositeOperation = 'source-over';
+    }
+    ctx.globalAlpha = 1;
+    if (def.project) {
+      const r = def.project.range, pul = 0.5 + 0.5 * Math.sin(this.time * 3 + e.id);
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.strokeStyle = `rgba(110,220,255,${0.18 + 0.15 * pul})`; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.ellipse(e.wx, e.wy, r * HW * Math.SQRT2, r * HH * Math.SQRT2, 0, 0, Math.PI * 2); ctx.stroke();
+      ctx.globalAlpha = 0.5 + 0.3 * pul;
+      ctx.drawImage(Assets.fx.cyan, e.wx - 22, cy - m.centerPx * def.scale * 0.9 - 22, 44, 44);
+      ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
     }
     if (def.heal) {
       ctx.globalCompositeOperation = 'lighter';
@@ -1069,6 +1092,7 @@ export class Renderer {
   }
 
   drawHp(ctx, e) {
+    if (e.def.cloak && !this.game.visible(e)) return;
     if (e.hp >= e.maxHp && e.shield >= e.maxShield && !e.def.boss) return;
     const w = e.def.boss ? 110 : 40;
     const x = e.wx - w / 2, y = (e._top ?? e.wy - 80) - 8;
@@ -1150,6 +1174,12 @@ export class Renderer {
       } else if (s.k === 'ebullet' || s.k === 'flak') {
         ctx.globalCompositeOperation = 'lighter';
         ctx.drawImage(fx.yellow, s.x - 9, s.y - 9, 18, 18);
+        ctx.globalCompositeOperation = 'source-over';
+      } else if (s.k === 'bomb') {
+        ctx.fillStyle = '#1a1a1c';
+        ctx.beginPath(); ctx.ellipse(s.x, s.y, 3.5, 5.5, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.drawImage(fx.red, s.x - 9, s.y - 9, 18, 18);
         ctx.globalCompositeOperation = 'source-over';
       } else if (s.k === 'acid') {
         ctx.fillStyle = '#2d6e10';

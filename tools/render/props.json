@@ -218,5 +218,55 @@
   "P": 128,
   "pad": 0.04,
   "shadow": true
+ },
+ "p3d_prop_c_tower": {
+  "url": "glb/p3d_prop_c_tower.glb",
+  "mode": "prop",
+  "frames": 4,
+  "size": 1.0,
+  "yaw0": 0,
+  "P": 128,
+  "pad": 0.04,
+  "shadow": true
+ },
+ "p3d_prop_c_bus": {
+  "url": "glb/p3d_prop_c_bus.glb",
+  "mode": "prop",
+  "frames": 4,
+  "size": 1.45,
+  "yaw0": 0,
+  "P": 128,
+  "pad": 0.04,
+  "shadow": true
+ },
+ "p3d_prop_c_car": {
+  "url": "glb/p3d_prop_c_car.glb",
+  "mode": "prop",
+  "frames": 4,
+  "size": 1.05,
+  "yaw0": 0,
+  "P": 128,
+  "pad": 0.04,
+  "shadow": true
+ },
+ "p3d_prop_c_rubble": {
+  "url": "glb/p3d_prop_c_rubble.glb",
+  "mode": "prop",
+  "frames": 4,
+  "size": 1.0,
+  "yaw0": 0,
+  "P": 128,
+  "pad": 0.04,
+  "shadow": true
+ },
+ "p3d_prop_c_uplink": {
+  "url": "glb/p3d_prop_c_uplink.glb",
+  "mode": "prop",
+  "frames": 4,
+  "size": 0.85,
+  "yaw0": 0,
+  "P": 128,
+  "pad": 0.04,
+  "shadow": true
  }
 }

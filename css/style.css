@@ -346,6 +346,7 @@ button {
   background: rgba(8,9,11,0.96); padding: 8px 6px; border-bottom: 1px solid var(--line);
 }
 .levels-top .panel-title { flex: 1; margin: 0; text-align: left; }
+.levels-top .lv-tabs { flex: 1; }
 .total-stars { color: var(--amber); font-weight: 700; font-size: 18px; }
 #level-list { width: min(760px, 100%); display: flex; flex-direction: column; gap: 12px; padding-bottom: 20px; }
 .biome-sec { background: rgba(10,12,14,0.7); border: 1px solid var(--line); }
@@ -498,3 +499,48 @@ button {
 #pu-banner .pu-desc { font-size: 18px; color: #fff; text-shadow: 0 2px 4px #000; margin-top: 2px; }
 @keyframes pubanner { 0% { opacity: 0; transform: translate(-50%, -50%) scale(2.2); } 12% { opacity: 1; transform: translate(-50%, -50%) scale(1); } 75% { opacity: 1; } 100% { opacity: 0; transform: translate(-50%, -60%) scale(0.95); } }
 @media (max-height: 430px) { #pu-banner .pu-name { font-size: 34px; } #pu-banner .pu-icon { font-size: 48px; } #buffs { top: calc(52px + var(--sat)); } }
+
+/* ---------- OpenArt icon set ---------- */
+.ic { display: inline-block; width: 1.3em; height: 1.3em; flex: none; vertical-align: -0.32em; background-repeat: no-repeat; background-image: url(../assets/ui/icons.webp); }
+.stat .ic { width: 28px; height: 28px; vertical-align: middle; margin-right: 2px; }
+#btn-orbital .ob-icon, #btn-nuke .ob-icon { width: 36px; height: 36px; font-size: 0; filter: grayscale(0.7) brightness(0.8); text-shadow: none; }
+#btn-orbital.ready .ob-icon, #btn-nuke.ready .ob-icon, #btn-orbital.arming .ob-icon, #btn-nuke.arming .ob-icon { filter: none; }
+#pu-banner .pu-icon .ic { width: 96px; height: 96px; filter: drop-shadow(0 0 18px var(--pc, #fff)); }
+.buff .ic { width: 18px; height: 18px; }
+.bd-chips .ic, .tm-stats .ic { width: 17px; height: 17px; }
+.bd-cost .ic { width: 15px; height: 15px; vertical-align: -0.2em; }
+.intel-stats .ic { width: 22px; height: 22px; }
+.intel-abil .ic { width: 20px; height: 20px; margin-right: 4px; }
+.vs-fx .ic, .vs-good .ic, .vs-bad .ic { width: 16px; height: 16px; }
+.tm-actions .ic { width: 20px; height: 20px; }
+
+/* ---------- level tabs / challenges ---------- */
+.lv-tabs { display: flex; gap: 4px; }
+.lv-tab { font-family: var(--font-title); font-weight: 800; letter-spacing: 0.08em; font-size: 15px; padding: 8px 14px; background: rgba(255,255,255,0.06); color: #b9b3a6; border: 1px solid var(--line); }
+.lv-tab.on { background: linear-gradient(180deg, #ffbf3a, #c97f00); color: #1a1206; border-color: #ffd27a; }
+#challenge-list { width: min(760px, 100%); display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 8px; padding-bottom: 20px; }
+#challenge-list.hidden, #level-list.hidden { display: none; }
+.ch-card { display: flex; align-items: center; gap: 12px; text-align: left; padding: 10px 12px; background: rgba(14,16,18,0.88); border: 1px solid var(--line); color: #fff; font: inherit; cursor: pointer; }
+.ch-card.daily { border-color: rgba(80,200,255,0.6); background: linear-gradient(90deg, rgba(20,60,80,0.6), rgba(14,16,18,0.88)); }
+.ch-card.locked { filter: grayscale(1) brightness(0.55); }
+.ch-ic { width: 58px; height: 58px; }
+.ch-body { flex: 1; min-width: 0; }
+.ch-name { font-family: var(--font-title); font-weight: 800; font-size: 17px; letter-spacing: 0.04em; }
+.ch-desc { font-size: 13px; color: #d4cfc4; line-height: 1.25; margin-top: 2px; }
+.ch-meta { font-size: 11.5px; color: #9a958a; margin-top: 3px; }
+.ch-medal { flex: none; }
+.medal-s { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; font-weight: 800; letter-spacing: 0.06em; }
+.medal-s .ic { width: 26px; height: 26px; }
+.medal-s.m0 { color: #7d786f; }
+.medal-s.m1, .medal.m1 { color: #d08a4a; }
+.medal-s.m2, .medal.m2 { color: #d9e0e6; }
+.medal-s.m3, .medal.m3 { color: #ffd34d; }
+.medal-s.m1 .ic, .medal.m1 .ic { filter: sepia(1) hue-rotate(-20deg) saturate(1.4) brightness(0.8); }
+.medal-s.m2 .ic, .medal.m2 .ic { filter: grayscale(1) brightness(1.3); }
+.medal { margin-top: 12px; font-family: var(--font-title); font-weight: 900; font-size: 26px; letter-spacing: 0.08em; }
+.medal .ic { width: 48px; height: 48px; vertical-align: middle; }
+.medal.m0 { color: #8a857c; font-size: 18px; }
+@media (max-aspect-ratio: 1/1) {
+  #challenge-list { grid-template-columns: 1fr; }
+  .lv-tab { font-size: 12px; padding: 7px 9px; }
+}

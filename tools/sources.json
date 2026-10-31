@@ -196,6 +196,18 @@
    "file": "volcano_road.png",
    "size": 1024,
    "q": 78
+  },
+  "city_ground": {
+   "file": "city_ground.png",
+   "size": 1024,
+   "q": 80,
+   "url": "https://cdn.openart.ai/openart-ai/production/2026-10/create-image/wRD6PTxSzjxZwjWN69MC/gpt-image-2-1_1793461634657_369932bc.png"
+  },
+  "city_road": {
+   "file": "city_road.png",
+   "size": 1024,
+   "q": 80,
+   "url": "https://cdn.openart.ai/openart-ai/production/2026-10/create-image/wRD6PTxSzjxZwjWN69MC/gpt-image-2-1_1793461618821_21a7190c.png"
   }
  },
  "images": {

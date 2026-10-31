@@ -179,6 +179,16 @@ export const Models = {
   },
 };
 
+// draw a UI icon (by name) onto a canvas
+export function drawIcon(ctx, name, x, y, size) {
+  const ui = Assets.ui;
+  if (!ui || !ui.img) return;
+  const i = ui.meta.names.indexOf(name);
+  if (i < 0) return;
+  const S = ui.meta.size, c = ui.meta.cols;
+  ctx.drawImage(ui.img, (i % c) * S, Math.floor(i / c) * S, S, S, x - size / 2, y - size / 2, size, size);
+}
+
 export const Assets = {
   img: {},
   tex: {},
@@ -230,6 +240,8 @@ export const Assets = {
       jobs.push(loadImage(`assets/vfx/${file}.webp`).then((im) => { this.vfx[k] = { img: im, cols, n, size, ay }; }));
     }
     this._vfxLazy = { nuke: ['explosion_nuke', 7, 28, 300, 0.84] };
+    // UI icon set (OpenArt, one consistent badge style)
+    jobs.push(Promise.all([fetch('assets/ui/icons.json').then(r => r.json()), loadImage('assets/ui/icons.webp')]).then(([meta, img]) => { this.ui = { meta, img }; }));
     await Promise.all(jobs);
     this.fx = {
       orange: glow(255, 150, 40), yellow: glow(255, 220, 120), cyan: glow(70, 220, 255), violet: glow(190, 120, 255),

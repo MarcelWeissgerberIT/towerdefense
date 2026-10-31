@@ -1,10 +1,11 @@
 // Iron Sentinel – app controller: screens, HUD, build drawer, tower menu, game loop.
 import { TOWERS, ENEMIES, TOWER_ORDER, MAX_LEVEL, BIOMES, BIOME_ORDER, UPGRADE_TIME, ELEV_RANGE, CLASS_NAME, EFFECT, POWERUPS, NUKE, effectOf, upgradeCost, towerStats } from './config.js';
 import { LEVEL_SPECS, LEVEL_COUNT, getLevel, makeWaves, hpMultiplier } from './levels.js';
-import { Assets, Models } from './assets.js';
+import { Assets, Models, drawIcon } from './assets.js';
 import { Renderer } from './render.js';
 import { Input } from './input.js';
 import { Game } from './game.js';
+import { CHALLENGES, dailyChallenge, medalFor, MEDAL_NAME, todayKey } from './challenges.js';
 import { toWorld, toGrid } from './iso.js';
 import { sfx, unlockAudio, setSound, soundOn } from './audio.js';
 
@@ -116,7 +117,7 @@ function openBuildMenu(cx, cy) {
     const def = TOWERS[k];
     const b = document.createElement('button');
     b.className = 'bd-card';
-    b.innerHTML = `<img src="${icons[k] || ''}" alt=""><span class="bd-name">${def.name}</span><span class="bd-cost">⚡${def.cost}</span>`;
+    b.innerHTML = `<img src="${icons[k] || ''}" alt=""><span class="bd-name">${def.name}</span><span class="bd-cost">${IC('credits')}${def.cost}</span>`;
     b.onclick = (e) => { e.stopPropagation(); chooseTower(k); };
     box.appendChild(b);
     bmButtons.push({ el: b, k });
@@ -141,10 +142,10 @@ function vsLine(k) {
   if (!def.air) bad.push('trifft keine Luftziele');
   if (!def.ground) bad.push('nur Luftziele');
   const special = {
-    cryo: '❄ friert ein · Kombo: Railgun, Mörser, Raketen ×1,6 · Feuer = Thermoschock',
-    acid: '☣ zerfrisst Panzerung · Säurepfützen',
-    emp: '⚡ Schilde ×4 · verlangsamt',
-    plasma: '🔷 ignoriert Panzerung · Schilde ×2',
+    cryo: `${IC('frost')} friert ein · Kombo: Railgun, Mörser, Raketen ×1,6 · Feuer = Thermoschock`,
+    acid: `${IC('acid')} zerfrisst Panzerung · Säurepfützen`,
+    emp: `${IC('lives')} Schilde ×4 · verlangsamt`,
+    plasma: `${IC('armor')} ignoriert Panzerung · Schilde ×2`,
   }[k];
   return (good.length ? `<span class="vs-good">▲ ${good.join(', ')}</span>` : '') + (special ? `<span class="vs-fx">${special}</span>` : '') + (bad.length ? `<span class="vs-bad">▼ ${bad.join(', ')}</span>` : '');
 }
@@ -158,10 +159,10 @@ function chooseTower(k) {
   const hgt = game.heightAt(ui.buildCell.x, ui.buildCell.y);
   const dmg = def.dps ? `${Math.round(s.dps)}/s` : def.kind === 'hitscan' || def.kind === 'flak' ? `${Math.round(s.dmg * s.rate)}/s` : Math.round(s.dmg);
   $('bd-info').innerHTML = `<b>${def.name}</b> <span class="bd-role">${ROLE[k]}</span><br><small>${def.desc}</small>` +
-    `<div class="bd-chips"><span>💥 ${dmg}</span><span>📡 ${s.range.toFixed(1)}${hgt ? ` <em class="hg">▲+${Math.round(hgt * ELEV_RANGE * 100)}%</em>` : ''}</span><span>🛡 ${s.hp}</span></div>` +
+    `<div class="bd-chips"><span>${IC('damage')} ${dmg}</span><span>${IC('range')} ${s.range.toFixed(1)}${hgt ? ` <em class="hg">▲+${Math.round(hgt * ELEV_RANGE * 100)}%</em>` : ''}</span><span>${IC('armor')} ${s.hp}</span></div>` +
     `<div class="bd-vs">${vsLine(k)}</div>`;
   const bb = $('bd-build');
-  bb.textContent = `BAUEN · ⚡${def.cost}`;
+  bb.innerHTML = `BAUEN · ${IC('credits')}${def.cost}`;
   bb.disabled = game.credits < def.cost;
   bb.classList.remove('hidden');
   requestAnimationFrame(() => ui.buildCell && ensureCellVisible(ui.buildCell.x, ui.buildCell.y));
@@ -224,17 +225,17 @@ function updateTowerMenu(force) {
   const next = maxed ? null : game.statsFor(t.type, t.level + 1, t.cx, t.cy);
   const dmg = def.dps ? `${Math.round(s.dps)}/s` : def.kind === 'hitscan' || def.kind === 'flak' ? `${Math.round(s.dmg)}×${s.rate.toFixed(1)}` : Math.round(s.dmg);
   const ndmg = next ? (def.dps ? Math.round(next.dps) : Math.round(next.dmg)) : null;
-  $('tm-stats').innerHTML = `<span>💥 ${dmg}${ndmg ? `<em>→${ndmg}</em>` : ''}</span><span>📡 ${s.range.toFixed(1)}</span><span>☠ ${t.kills}${t.rank ? ` <em class="rank">${'★'.repeat(t.rank)}</em>` : ''}</span>`;
+  $('tm-stats').innerHTML = `<span>${IC('damage')} ${dmg}${ndmg ? `<em>→${ndmg}</em>` : ''}</span><span>${IC('range')} ${s.range.toFixed(1)}</span><span>${IC('kills')} ${t.kills}${t.rank ? ` <em class="rank">${IC('star').repeat(t.rank)}</em>` : ''}</span>`;
   const up = $('tm-upgrade');
   up.disabled = maxed || game.credits < cost || !!t.upgrading;
   up.textContent = t.upgrading ? `⏳ ${prog} %` : maxed ? 'MAX' : `▲ ${cost} · ${UPGRADE_TIME[t.level]} s`;
   const rp = $('tm-repair');
   rp.classList.toggle('hidden', rc <= 0);
-  rp.textContent = `🔧 ${rc}`;
+  rp.innerHTML = `${IC('wrench')} ${rc}`;
   rp.disabled = game.credits < rc;
-  $('tm-mode').textContent = `🎯 ${MODES[t.mode]}`;
+  $('tm-mode').innerHTML = `${IC('target')} ${MODES[t.mode]}`;
   $('tm-mode').classList.toggle('hidden', !!def.static && def.kind !== 'emp');
-  $('tm-sell').textContent = `💰 +${game.sellValue(t)}`;
+  $('tm-sell').innerHTML = `${IC('sell')} +${game.sellValue(t)}`;
 }
 $('tm-upgrade').onclick = (e) => { e.stopPropagation(); if (ui.selected && game.upgrade(ui.selected)) updateTowerMenu(true); };
 $('tm-repair').onclick = (e) => { e.stopPropagation(); if (ui.selected && game.repair(ui.selected)) updateTowerMenu(true); };
@@ -267,6 +268,19 @@ function positionMenus() {
   }
 }
 
+// ---------------- icons (OpenArt set) ----------------
+const IC = (n) => `<i class="ic ic-${n}"></i>`;
+function installIconCss() {
+  const m = Assets.ui && Assets.ui.meta;
+  if (!m) return;
+  const rows = Math.ceil(m.names.length / m.cols);
+  let css = `.ic{background-size:${m.cols * 100}% ${rows * 100}%}`;
+  m.names.forEach((n, i) => { css += `.ic-${n}{background-position:${(i % m.cols) / (m.cols - 1) * 100}% ${Math.floor(i / m.cols) / (rows - 1) * 100}%}`; });
+  const st = document.createElement('style');
+  st.textContent = css;
+  document.head.appendChild(st);
+}
+
 // ---------------- enemy intel ----------------
 const enemyIcons = {};
 function enemyIcon(type) {
@@ -289,13 +303,17 @@ function intelHTML(type) {
   const lv = game ? game.level.number : 1, wv = game ? Math.max(1, game.wave) : 1;
   const hp = Math.round(def.hp * hpMultiplier(lv, wv) / 10) * 10;
   const ab = [];
-  if (def.air) ab.push('✈ Fliegt – nur Türme mit Luftabwehr können sie treffen');
-  if (def.shield) ab.push(`🔷 Energieschild (${def.shield}) – EMP ×4, Plasma ×2 gegen den Schild`);
-  if (def.heal) ab.push('➕ Repariert Maschinen im Umkreis');
-  if (def.dive) ab.push('💥 Stürzt sich auf Türme und explodiert');
-  if (def.spawns) ab.push(`🛸 Setzt laufend ${ENEMIES[def.spawns.type].name}n aus`);
-  if (def.atk) ab.push(`🎯 Beschießt Türme (Reichweite ${String(def.atk.range).replace('.', ',')})`);
-  if (def.boss) ab.push('☠ Boss – durchbricht er die Linie, kostet das viele Leben');
+  if (def.air) ab.push(`${IC('wave')}Fliegt – nur Türme mit Luftabwehr können sie treffen`);
+  if (def.cloak) ab.push(`${IC('lock')}Getarnt – nur EMP-Türme decken ihn auf, Flächenschaden trifft trotzdem`);
+  if (def.shield) ab.push(`${IC('lives')}Energieschild (${def.shield}) – EMP ×4, Plasma ×2 gegen den Schild`);
+  if (def.project) ab.push(`${IC('lives')}Lädt die Schilde aller Maschinen im Umkreis auf`);
+  if (def.heal) ab.push(`${IC('repair')}Repariert Maschinen im Umkreis`);
+  if (def.dive) ab.push(`${IC('damage')}Stürzt sich auf Türme und explodiert`);
+  if (def.bomb) ab.push(`${IC('damage')}Wirft Bombenteppiche auf Türme unter sich`);
+  if (def.spawns) ab.push(`${IC('swarm')}Setzt laufend ${ENEMIES[def.spawns.type].name}n aus`);
+  if (def.burst) ab.push(`${IC('swarm')}Zerplatzt beim Tod in ${def.burst.count} ${ENEMIES[def.burst.type].name}n`);
+  if (def.atk) ab.push(`${IC('target')}Beschießt Türme (Reichweite ${String(def.atk.range).replace('.', ',')})`);
+  if (def.boss) ab.push(`${IC('skull')}Boss – durchbricht er die Linie, kostet das viele Leben`);
   const unlocked = TOWER_ORDER.filter(k => !game || game.unlocked(k));
   const num = (v) => String(v).replace('.', ',');
   const vs = unlocked.map(k => {
@@ -312,7 +330,7 @@ function intelHTML(type) {
     <div class="intel-body">
       <div class="intel-name">${def.name} <span class="cls cls-${def.cls}">${CLASS_NAME[def.cls]}</span></div>
       <div class="intel-desc">${def.info}</div>
-      <div class="intel-stats"><span>❤ ${hp}</span><span>🛡 ${def.armor}</span><span>➤ ${SPEED_WORD(def.speed)}</span><span>⚡ +${def.reward}</span></div>
+      <div class="intel-stats"><span>${IC('heart')} ${hp}</span><span>${IC('armor')} ${def.armor}</span><span>${IC('fast')} ${SPEED_WORD(def.speed)}</span><span>${IC('reward')} +${def.reward}</span></div>
     </div>
   </div>
   ${ab.length ? `<ul class="intel-abil">${ab.map(a => `<li>${a}</li>`).join('')}</ul>` : ''}
@@ -373,7 +391,7 @@ function onTap(p) {
   if (!game || paused || game.state === 'won' || game.state === 'lost') return;
   if (ui.targeting === 'nuke') {
     const w = renderer.screenToWorld(p.x, p.y), g = toGrid(w.x, w.y);
-    if (game.nukeStrike(g.x, g.y)) toast('☢ ATOMSCHLAG – EINSCHLAG IN 3 SEKUNDEN', 'bad', 2400);
+    if (game.nukeStrike(g.x, g.y)) toast('ATOMSCHLAG – EINSCHLAG IN 3 SEKUNDEN', 'bad', 2400);
     ui.targeting = null;
     $('btn-nuke').classList.remove('arming');
     return;
@@ -412,18 +430,6 @@ new Input(canvas, renderer, { tap: onTap, hover: () => {} });
 $('btn-orbital').onclick = () => {
   if (!game || paused || !game.orbital.on) return;
   unlockAudio();
-  if (ui.targeting === 'nuke') {
-    const w = renderer.screenToWorld(p.x, p.y), g = toGrid(w.x, w.y);
-    if (game.nukeStrike(g.x, g.y)) toast('☢ ATOMSCHLAG – EINSCHLAG IN 3 SEKUNDEN', 'bad', 2400);
-    ui.targeting = null;
-    $('btn-nuke').classList.remove('arming');
-    return;
-  }
-  // power-up crates take priority: tap to activate
-  for (const d of game.drops) {
-    const sp = renderer.worldToScreen(d.wx, d.wy - 46);
-    if (Math.hypot(sp.x - p.x, sp.y - p.y) < Math.max(34, 52 * renderer.cam.zoom)) { game.collect(d); return; }
-  }
   if (ui.targeting === 'orbital') { ui.targeting = null; $('btn-orbital').classList.remove('arming'); sfx('click'); return; }
   if (game.orbital.cd > 0) { sfx('error'); toast(`Orbitalschlag lädt noch ${Math.ceil(game.orbital.cd)} s`, 'bad', 1400); return; }
   closeBuildMenu(); closeTowerMenu();
@@ -443,7 +449,7 @@ $('btn-nuke').onclick = () => {
   ui.targeting = 'nuke';
   $('btn-nuke').classList.add('arming');
   sfx('alarm');
-  toast('☢ Ziel antippen – Vorsicht: beschädigt eigene Türme im Zentrum', 'warn', 2600);
+  toast('Ziel antippen – Vorsicht: beschädigt eigene Türme im Zentrum', 'warn', 2600);
 };
 function updateNuke() {
   const b = $('btn-nuke'), n = game.nuke;
@@ -456,12 +462,12 @@ function updateNuke() {
 }
 function updateBuffs() {
   const html = Object.entries(game.buffs).filter(([, v]) => v > 0)
-    .map(([k, v]) => `<span class="buff" style="--bc:${POWERUPS[k].color}">${POWERUPS[k].icon} ${POWERUPS[k].name} ${Math.ceil(v)}s</span>`).join('');
+    .map(([k, v]) => `<span class="buff" style="--bc:${POWERUPS[k].color}">${IC(POWERUPS[k].icon)} ${POWERUPS[k].name} ${Math.ceil(v)}s</span>`).join('');
   if (hudCache.buffs !== html) { hudCache.buffs = html; $('buffs').innerHTML = html; }
 }
 function showPowerBanner(type) {
   const p = POWERUPS[type], b = $('pu-banner');
-  $('pu-icon').textContent = p.icon; $('pu-name').textContent = p.name + '!'; $('pu-desc').textContent = p.desc;
+  $('pu-icon').innerHTML = IC(p.icon); $('pu-name').textContent = p.name + '!'; $('pu-desc').textContent = p.desc;
   b.style.setProperty('--pc', p.color);
   b.classList.remove('hidden', 'show'); void b.offsetWidth; b.classList.add('show');
 }
@@ -487,7 +493,7 @@ function updateHUD() {
   updateBuffs();
   setText('hud-lives', String(game.lives));
   if (setText('hud-credits', String(game.credits))) pulse('stat-credits');
-  setText('hud-wave', `${game.wave}/${game.waves.length}`);
+  setText('hud-wave', game.mods.endless ? `${game.wave}/∞` : `${game.wave}/${game.waves.length}`);
   const b = $('btn-wave');
   let label, sub = '', enabled;
   if (game.state === 'build') { label = '▶ ANGRIFF STARTEN'; sub = 'Welle 1 rufen'; enabled = true; }
@@ -550,11 +556,29 @@ function openPause() {
     ['WEITER', 'primary', () => { paused = false; closeModal(); }],
     ['FEINDKATALOG', '', () => openCatalog()],
     [`TON: ${soundOn() ? 'AN' : 'AUS'}`, '', () => { toggleSound(); openPause(); }],
-    ['NEU STARTEN', '', () => { closeModal(); startLevel(game.levelIdx); }],
+    ['NEU STARTEN', '', () => { closeModal(); startLevel(game.levelIdx, challenge); }],
     ['EINSATZ VERLASSEN', 'danger', () => { closeModal(); toLevels(); }],
   ]);
 }
+function onChallengeEnd(won) {
+  const ch = challenge;
+  const medal = medalFor(ch, game, won);
+  save.data.challenges = save.data.challenges || {};
+  const key = ch.daily ? 'daily:' + ch.daily : ch.id;
+  const prev = save.data.challenges[key] || { medal: 0, best: 0 };
+  save.data.challenges[key] = { medal: Math.max(prev.medal, medal), best: Math.max(prev.best, game.wave) };
+  save.write();
+  sfx(medal ? 'victory' : 'defeat');
+  const title = ch.mods.endless ? 'ENDLOS – ERGEBNIS' : won ? 'CHALLENGE GESCHAFFT' : 'CHALLENGE GESCHEITERT';
+  const text = (ch.mods.endless ? `Du hast <b>${game.wave - 1}</b> Wellen überstanden (Rekord: ${save.data.challenges[key].best - 1}).` : `${ch.name}: Basis <b>${game.lives}/${game.maxLives}</b> · Zerstörte Maschinen: <b>${game.kills}</b>`) +
+    `<div class="medal m${medal}">${medal ? IC('trophy') + ' ' + MEDAL_NAME[medal] : 'Keine Medaille'}</div>`;
+  setTimeout(() => modal(title, medal ? 'win' : 'lose', text, 0, [
+    ['NOCHMAL', 'primary', () => { closeModal(); startLevel(ch.level, ch); }],
+    ['CHALLENGES', '', () => { closeModal(); toLevels('challenges'); }],
+  ]), 1100);
+}
 function onWin() {
+  if (challenge) { onChallengeEnd(true); return; }
   const stars = game.stars();
   const i = game.levelIdx;
   save.data.stars[i] = Math.max(save.data.stars[i] || 0, stars);
@@ -571,14 +595,15 @@ function onWin() {
     `Einsatz ${i + 1} „${game.level.name}" gehalten.<br>Basis: <b>${game.lives}/${game.maxLives}</b> · Zerstörte Maschinen: <b>${game.kills}</b>` +
     (newTower ? `<br><br>🔓 Neuer Turm freigeschaltet: <b>${TOWERS[newTower].name}</b>` : '') +
     (nextLevel && nextLevel.biome !== game.level.biome ? `<br>🌍 Neues Einsatzgebiet: <b>${BIOMES[nextLevel.biome].name}</b>` : '') +
-    (hasNext ? '' : '<br><br><b>Alle 25 Einsätze abgeschlossen – die Menschheit hat eine Zukunft.</b>'),
+    (hasNext ? '' : `<br><br><b>Alle ${LEVEL_COUNT} Einsätze abgeschlossen – die Menschheit hat eine Zukunft.</b>`),
     stars, btns), 1100);
 }
 function onLose() {
+  if (challenge) { onChallengeEnd(false); return; }
   sfx('defeat');
   setTimeout(() => modal('BASIS ZERSTÖRT', 'lose',
     `Die Maschinen haben das Hauptquartier überrannt – in Welle ${game.wave}.<br>Zerstörte Maschinen: <b>${game.kills}</b>`, 0, [
-      ['NOCHMAL VERSUCHEN', 'primary', () => { closeModal(); startLevel(game.levelIdx); }],
+      ['NOCHMAL VERSUCHEN', 'primary', () => { closeModal(); startLevel(game.levelIdx, challenge); }],
       ['EINSATZÜBERSICHT', '', () => { closeModal(); toLevels(); }],
     ]), 1100);
 }
@@ -616,17 +641,25 @@ function updateInsets() {
   renderer.insets = portrait ? { top: 50, bottom: 70, left: 0, right: 0 } : { top: 46, bottom: 0, left: 0, right: 0 };
 }
 
-async function startLevel(i) {
+let challenge = null;
+async function startLevel(i, ch = null) {
   unlockAudio();
   const spec = LEVEL_SPECS[i];
-  // only the enemy types of this level (incl. units launched by carriers)
+  challenge = ch;
+  const g = new Game(i, ch ? ch.mods : null);
+  // only the enemy types of this mission (incl. units launched by carriers / bursting out)
   const types = new Set();
-  for (const w of makeWaves(getLevel(i))) for (const g of w.groups) { types.add(g.type); if (ENEMIES[g.type].spawns) types.add(ENEMIES[g.type].spawns.type); }
+  for (const w of g.waves.slice(0, 60)) for (const gr of w.groups) {
+    types.add(gr.type);
+    const d = ENEMIES[gr.type];
+    if (d.spawns) types.add(d.spawns.type);
+    if (d.burst) types.add(d.burst.type);
+  }
   const models = [...types].map(t => ENEMIES[t].model);
   const slow = setTimeout(() => toast('Lade Einsatzdaten …', '', 1500), 400);
   await Promise.all([Assets.loadBiome(spec.biome), Assets.loadModels(models), i + 1 >= NUKE.unlock ? Assets.loadVfx('nuke') : null]);
   clearTimeout(slow);
-  game = new Game(i);
+  game = g;
   window.__game = game;
   window.__renderer = renderer;
   paused = false;
@@ -640,7 +673,8 @@ async function startLevel(i) {
   setInGameUI(true);
   for (const k in hudCache) delete hudCache[k];
   updateHUD();
-  toast(`EINSATZ ${i + 1}: ${spec.name.toUpperCase()} – ${BIOMES[spec.biome].name}`, '', 2600);
+  if (ch) toast(`CHALLENGE: ${ch.name.toUpperCase()} – ${ch.desc}`, 'warn', 4500);
+  else toast(`EINSATZ ${i + 1}: ${spec.name.toUpperCase()} – ${BIOMES[spec.biome].name}`, '', 2600);
   const newTower = TOWER_ORDER.find(k => TOWERS[k].unlock === i + 1 && i > 0);
   if (newTower) setTimeout(() => toast(`Neuer Turm verfügbar: ${TOWERS[newTower].name}`, 'warn', 3500), 900);
   if (i === 0) setTimeout(() => toast('Tippe ein freies Feld an, um einen Turm zu bauen', '', 4000), 1200);
@@ -650,7 +684,7 @@ async function startLevel(i) {
   } else if (game.routes.length > 1) setTimeout(() => toast(`${game.routes.length} Angriffspfade – verteidige alle Zugänge!`, '', 3200), 1400);
   if (game.nuke.on && !save.data.nukeHint) {
     save.data.nukeHint = true; save.write();
-    setTimeout(() => toast('Neu: ☢ ATOMBOMBE – lädt sich durch Abschüsse auf (Knopf rechts)', 'warn', 5000), 3400);
+    setTimeout(() => toast('Neu: ATOMBOMBE – lädt sich durch Abschüsse auf (Knopf rechts)', 'warn', 5000), 3400);
   }
   if (game.orbital.on && !save.data.orbitalHint) {
     save.data.orbitalHint = true; save.write();
@@ -659,7 +693,50 @@ async function startLevel(i) {
   maybeRotateHint();
 }
 function toMenu() { game = null; setInGameUI(false); showScreen('screen-menu'); }
-function toLevels() { game = null; setInGameUI(false); renderLevels(); showScreen('screen-levels'); }
+let levelTab = 'campaign';
+function toLevels(tab) {
+  game = null; challenge = null; setInGameUI(false);
+  if (tab) levelTab = tab;
+  renderLevels(); renderChallenges(); setLevelTab(levelTab);
+  showScreen('screen-levels');
+}
+function setLevelTab(tab) {
+  levelTab = tab;
+  $('tab-campaign').classList.toggle('on', tab === 'campaign');
+  $('tab-challenges').classList.toggle('on', tab === 'challenges');
+  $('level-list').classList.toggle('hidden', tab !== 'campaign');
+  $('challenge-list').classList.toggle('hidden', tab !== 'challenges');
+}
+$('tab-campaign').onclick = () => { sfx('click'); setLevelTab('campaign'); };
+$('tab-challenges').onclick = () => { sfx('click'); setLevelTab('challenges'); };
+function medalHTML(m) { return m ? `<span class="medal-s m${m}">${IC('trophy')}${MEDAL_NAME[m]}</span>` : '<span class="medal-s m0">offen</span>'; }
+function renderChallenges() {
+  const list = $('challenge-list');
+  list.innerHTML = '';
+  const cleared = (n) => (save.data.stars[n - 1] || 0) > 0;
+  let maxLevel = 0;
+  while (maxLevel < LEVEL_COUNT && cleared(maxLevel + 1)) maxLevel++;
+  const res = save.data.challenges || {};
+  const cards = [];
+  if (maxLevel >= 5) cards.push({ ch: dailyChallenge(Math.max(6, maxLevel)), locked: false });
+  else cards.push({ ch: { id: 'daily', name: 'Tages-Challenge', icon: 'calendar', desc: 'Jeden Tag ein anderer Einsatz mit zwei zufälligen Regeln.', req: 5 }, locked: true });
+  for (const ch of CHALLENGES) cards.push({ ch, locked: !cleared(ch.req) });
+  for (const { ch, locked } of cards) {
+    const r = res[ch.daily ? 'daily:' + ch.daily : ch.id] || { medal: 0, best: 0 };
+    const b = document.createElement('button');
+    b.className = 'ch-card' + (locked ? ' locked' : '') + (ch.daily ? ' daily' : '');
+    const map = ch.level != null && !locked ? `Karte: Einsatz ${ch.level + 1} · ${LEVEL_SPECS[ch.level].name}` : '';
+    b.innerHTML = `<i class="ic ic-${locked ? 'lock' : ch.icon} ch-ic"></i>
+      <div class="ch-body"><div class="ch-name">${ch.name}</div><div class="ch-desc">${ch.desc}</div>
+      <div class="ch-meta">${locked ? `Freischalten: Einsatz ${ch.req} abschließen` : map}${!locked && ch.mods && ch.mods.endless && r.best ? ` · Rekord: Welle ${r.best - 1}` : ''}</div></div>
+      <div class="ch-medal">${locked ? '' : medalHTML(r.medal)}</div>`;
+    b.onclick = () => {
+      if (locked) { sfx('error'); toast(`Schließe zuerst Einsatz ${ch.req} ab`, 'bad'); return; }
+      sfx('click'); startLevel(ch.level, ch);
+    };
+    list.appendChild(b);
+  }
+}
 function toggleSound() {
   save.data.sound = !soundOn();
   setSound(save.data.sound);
@@ -712,6 +789,7 @@ async function boot() {
   renderer.resize();
   await Assets.load((p) => { $('loadfill').style.width = Math.round(p * 100) + '%'; });
   makeIcons();
+  installIconCss();
   await new Promise((res) => { const im = new Image(); im.onload = im.onerror = res; im.src = 'assets/title.jpg'; });
   showScreen('screen-menu');
   requestAnimationFrame((t) => { last = t; frame(t); });
