@@ -13,11 +13,16 @@ function init() {
   if (!AC) return;
   ctx = new AC();
   master = ctx.createGain();
-  master.gain.value = 0.55;
+  master.gain.value = 0.8;
+  // phones can't reproduce deep bass - filter it out before the compressor so inaudible rumble
+  // doesn't pump everything else down (desktop keeps the low end)
+  const phone = matchMedia('(pointer: coarse)').matches;
+  const hpf = ctx.createBiquadFilter();
+  hpf.type = 'highpass'; hpf.frequency.value = phone ? 110 : 32; hpf.Q.value = 0.7;
   const comp = ctx.createDynamicsCompressor();
-  comp.threshold.value = -14;
-  comp.ratio.value = 6;
-  master.connect(comp).connect(ctx.destination);
+  comp.threshold.value = -10; comp.knee.value = 6; comp.ratio.value = 5;
+  comp.attack.value = 0.003; comp.release.value = 0.25;
+  master.connect(hpf).connect(comp).connect(ctx.destination);
   noiseBuf = ctx.createBuffer(1, ctx.sampleRate * 1.5, ctx.sampleRate);
   const d = noiseBuf.getChannelData(0);
   for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
@@ -71,6 +76,8 @@ export function unlockAudio() {
   if (ctx && ctx.state !== 'running') ctx.resume();
 }
 
+if (typeof document !== 'undefined') for (const ev of ['touchend', 'click', 'keydown']) document.addEventListener(ev, () => { if (enabled) unlockAudio(); }, { capture: true, passive: true });
+
 export function setSound(on) { enabled = on; }
 export function soundOn() { return enabled; }
 
@@ -115,7 +122,7 @@ function tone(t0, dur, { type = 'sine', f0 = 440, f1 = null, gain = 0.3, attack 
 const SFX = {
   gatling() {
     if (!throttle('gat', 55)) return;
-    if (play('gatling', { offset: 0.1 + Math.random() * 2.6, dur: 0.16, gain: 0.55, rate: vary(0.05), fadeIn: 0.004, fadeOut: 0.06 })) return;
+    if (play('gatling', { offset: 0.1 + Math.random() * 2.6, dur: 0.16, gain: 0.9, rate: vary(0.05), fadeIn: 0.004, fadeOut: 0.06 })) return;
     const t = ctx.currentTime;
     noise(t, 0.06, { freq: 2200, q: 0.7, gain: 0.22 });
     noise(t, 0.05, { freq: 300, type: 'lowpass', q: 0.5, gain: 0.25 });
@@ -124,21 +131,21 @@ const SFX = {
     if (!throttle('mis', 90)) return;
     const v = voices('mis', 4, 900);
     if (!v) return;
-    if (play(pick('missile', 2), { gain: 0.55 * v, rate: vary(), dur: 1.3, fadeOut: 0.5 })) return;
+    if (play(pick('missile', 2), { gain: v, rate: vary(), dur: 1.3, fadeOut: 0.5 })) return;
     const t = ctx.currentTime;
     noise(t, 0.5, { freq: 600, sweepTo: 2400, q: 1.2, gain: 0.28, attack: 0.03 });
     tone(t, 0.25, { type: 'sawtooth', f0: 120, f1: 60, gain: 0.08 });
   },
   plasma() {
     if (!throttle('pla', 80)) return;
-    if (play(pick('plasma', 3), { gain: 0.5, rate: vary(), dur: 0.8, fadeOut: 0.3 })) return;
+    if (play(pick('plasma', 3), { gain: 1, rate: vary(), dur: 0.8, fadeOut: 0.3 })) return;
     const t = ctx.currentTime;
     tone(t, 0.35, { type: 'sawtooth', f0: 900, f1: 90, gain: 0.16 });
     tone(t, 0.3, { type: 'sine', f0: 300, f1: 60, gain: 0.25 });
   },
   rail() {
     if (!throttle('rail', 90)) return;
-    if (play(pick('rail', 2), { gain: 0.6, rate: vary(0.04), dur: 1.2, fadeOut: 0.5 })) return;
+    if (play(pick('rail', 2), { gain: 1, rate: vary(0.04), dur: 1.2, fadeOut: 0.5 })) return;
     const t = ctx.currentTime;
     tone(t, 0.12, { type: 'square', f0: 2400, f1: 300, gain: 0.12 });
     noise(t, 0.45, { freq: 5000, sweepTo: 400, q: 0.6, gain: 0.35 });
@@ -146,7 +153,7 @@ const SFX = {
   },
   emp() {
     if (!throttle('emp', 120)) return;
-    if (play(pick('emp', 4), { gain: 0.5, rate: vary() })) return;
+    if (play(pick('emp', 4), { gain: 1, rate: vary() })) return;
     const t = ctx.currentTime;
     for (let i = 0; i < 4; i++) noise(t + i * 0.03, 0.05, { freq: 3000 + Math.random() * 3000, q: 4, gain: 0.18 });
     tone(t, 0.25, { type: 'square', f0: 120, f1: 80, gain: 0.07 });
@@ -155,12 +162,10 @@ const SFX = {
     if (!throttle(big ? 'exB' : 'ex', big ? 120 : 70)) return;
     const v = voices(big ? 'exB' : 'ex', big ? 3 : 5, big ? 1500 : 700);
     if (!v) return;
-    if (big ? play(pick('boomBig', 3), { gain: 0.9 * v, rate: vary(0.08) }) : play(pick('boomSmall', 5), { gain: 0.6 * v, rate: vary(0.1), dur: 0.9, fadeOut: 0.35 })) {
-      if (big) tone(ctx.currentTime, 0.7, { type: 'sine', f0: 70, f1: 28, gain: 0.35 * v });
-      return;
-    }
+    if (big ? play(pick('boomBig', 3), { gain: v, rate: vary(0.08) }) : play(pick('boomSmall', 5), { gain: v, rate: vary(0.1), dur: 0.9, fadeOut: 0.35 })) return;
     const t = ctx.currentTime;
     noise(t, big ? 1.4 : 0.6, { freq: big ? 900 : 1400, sweepTo: 60, type: 'lowpass', q: 0.3, gain: big ? 0.9 : 0.45 });
+    noise(t, big ? 0.5 : 0.25, { freq: 1600, q: 0.7, gain: big ? 0.35 : 0.2 });
     tone(t, big ? 0.9 : 0.4, { type: 'sine', f0: big ? 90 : 120, f1: 30, gain: big ? 0.6 : 0.3 });
   },
   laser() {
@@ -170,14 +175,14 @@ const SFX = {
   },
   cryo() {
     if (!throttle('cry', 120)) return;
-    if (play('cryo', { offset: Math.random() * 0.6, dur: 0.45, gain: 0.35, rate: vary(), fadeIn: 0.05, fadeOut: 0.2 })) return;
+    if (play('cryo', { offset: Math.random() * 0.6, dur: 0.45, gain: 0.9, rate: vary(), fadeIn: 0.05, fadeOut: 0.2 })) return;
     const t = ctx.currentTime;
     noise(t, 0.22, { freq: 5200, q: 0.6, type: 'highpass', gain: 0.07, attack: 0.03 });
     tone(t, 0.2, { type: 'sine', f0: 2400 + Math.random() * 300, f1: 2100, gain: 0.012 });
   },
   freeze() {
     if (!throttle('frz', 90)) return;
-    if (play('freeze', { gain: 0.6, rate: vary(0.1) })) return;
+    if (play('freeze', { gain: 1, rate: vary(0.1) })) return;
     const t = ctx.currentTime;
     noise(t, 0.12, { freq: 3800, q: 2.5, gain: 0.25 });
     noise(t + 0.05, 0.25, { freq: 6000, type: 'highpass', gain: 0.12 });
@@ -185,21 +190,21 @@ const SFX = {
   },
   acid() {
     if (!throttle('acd', 120)) return;
-    if (play(pick('acid', 2), { gain: 0.35, rate: vary(0.1), dur: 0.35, fadeOut: 0.15 })) return;
+    if (play(pick('acid', 2), { gain: 0.7, rate: vary(0.1), dur: 0.35, fadeOut: 0.15 })) return;
     const t = ctx.currentTime;
     tone(t, 0.16, { type: 'sine', f0: 220, f1: 90, gain: 0.25 });
     noise(t, 0.12, { freq: 900, q: 1.2, gain: 0.12 });
   },
   acidHit() {
     if (!throttle('ach', 80)) return;
-    if (play(pick('acid', 2), { gain: 0.5, rate: vary(0.1), dur: 0.8, fadeOut: 0.3 })) return;
+    if (play(pick('acid', 2), { gain: 1, rate: vary(0.1), dur: 0.8, fadeOut: 0.3 })) return;
     const t = ctx.currentTime;
     noise(t, 0.35, { freq: 1400, q: 0.5, type: 'lowpass', gain: 0.18, sweepTo: 300 });
     noise(t + 0.08, 0.5, { freq: 4500, type: 'highpass', gain: 0.05, attack: 0.05 });
   },
   orbital() {
     // the clip's beam impact sits at 1.15 s = when the strike lands
-    if (play('orbital', { gain: 0.95 })) return;
+    if (play('orbital', { gain: 1 })) return;
     const t = ctx.currentTime;
     tone(t, 1.2, { type: 'sawtooth', f0: 1800, f1: 120, gain: 0.08, attack: 0.3 });
     noise(t, 1.2, { freq: 3000, q: 0.5, sweepTo: 200, gain: 0.08, attack: 0.4 });
@@ -222,8 +227,7 @@ const SFX = {
     if (play('nuke', { gain: 1 })) {
       // extra sub-bass weight under the recording
       const t = ctx.currentTime;
-      tone(t, 3.2, { type: 'sine', f0: 55, f1: 20, gain: 0.55, attack: 0.02 });
-      noise(t + 0.05, 2.5, { freq: 160, q: 0.5, type: 'lowpass', gain: 0.35, attack: 0.05, sweepTo: 60 });
+      tone(t, 3.2, { type: 'sine', f0: 55, f1: 24, gain: 0.3, attack: 0.02 });
       return;
     }
     const t = ctx.currentTime;
@@ -244,13 +248,13 @@ const SFX = {
     noise(t, 0.5, { freq: 2000, q: 0.5, sweepTo: 8000, gain: 0.08 });
   },
   holeOpen() {
-    const h = play('holeLoop', { gain: 0.75, loop: true, fadeIn: 0.8 });
+    const h = play('holeLoop', { gain: 1, loop: true, fadeIn: 0.8 });
     if (h) {
       // 10 s of vortex, fading out into the collapse
-      h.g.gain.setValueAtTime(0.75, h.t0 + 8.9);
+      h.g.gain.setValueAtTime(1, h.t0 + 8.9);
       h.g.gain.linearRampToValueAtTime(0, h.t0 + 9.8);
       h.src.stop(h.t0 + 9.9);
-      tone(h.t0, 9.6, { type: 'sine', f0: 48, f1: 34, gain: 0.25, attack: 0.8 });
+      tone(h.t0, 9.6, { type: 'sine', f0: 48, f1: 34, gain: 0.15, attack: 0.8 });
       return;
     }
     const t = ctx.currentTime;
@@ -260,7 +264,7 @@ const SFX = {
     noise(t, 1.2, { freq: 6000, q: 0.5, sweepTo: 300, gain: 0.12, attack: 0.05 });
   },
   holeCollapse() {
-    if (play('holeCollapse', { gain: 0.95 })) { play('boomBig1', { gain: 0.5, rate: 0.7, delay: 0.1 }); return; }
+    if (play('holeCollapse', { gain: 1 })) { play('boomBig1', { gain: 0.6, rate: 0.75, delay: 0.1 }); return; }
     const t = ctx.currentTime;
     noise(t, 0.6, { freq: 200, q: 0.5, sweepTo: 5000, gain: 0.2, attack: 0.4 });
     tone(t + 0.5, 1.4, { type: 'sine', f0: 90, f1: 25, gain: 0.7 });
@@ -274,21 +278,21 @@ const SFX = {
   },
   flame() {
     if (!throttle('flm', 110)) return;
-    if (play('flame', { offset: 0.1 + Math.random() * 1.8, dur: 0.32, gain: 0.32, rate: vary(), fadeIn: 0.04, fadeOut: 0.14 })) return;
+    if (play('flame', { offset: 0.1 + Math.random() * 1.8, dur: 0.32, gain: 0.8, rate: vary(), fadeIn: 0.04, fadeOut: 0.14 })) return;
     noise(ctx.currentTime, 0.2, { freq: 700, q: 0.4, type: 'lowpass', gain: 0.12, attack: 0.02 });
   },
   flak() {
     if (!throttle('flk', 90)) return;
     const v = voices('flk', 4, 600);
     if (!v) return;
-    if (play(pick('flak', 2), { gain: 0.45 * v, rate: vary(0.08), dur: 0.7, fadeOut: 0.3 })) return;
+    if (play(pick('flak', 2), { gain: v, rate: vary(0.08), dur: 0.7, fadeOut: 0.3 })) return;
     const t = ctx.currentTime;
     noise(t, 0.08, { freq: 1500, q: 0.9, gain: 0.2 });
     noise(t + 0.18, 0.12, { freq: 500, type: 'lowpass', gain: 0.15 });
   },
   mortar() {
     if (!throttle('mor', 150)) return;
-    if (play(pick('mortar', 2), { gain: 0.6, rate: vary(), dur: 1.2, fadeOut: 0.6 })) return;
+    if (play(pick('mortar', 2), { gain: 1, rate: vary(), dur: 1.2, fadeOut: 0.6 })) return;
     const t = ctx.currentTime;
     tone(t, 0.35, { type: 'sine', f0: 70, f1: 35, gain: 0.5 });
     noise(t, 0.3, { freq: 400, type: 'lowpass', gain: 0.35 });
@@ -299,12 +303,12 @@ const SFX = {
   },
   enemyShot() {
     if (!throttle('es', 70)) return;
-    if (play('gatling', { offset: 0.1 + Math.random() * 2.6, dur: 0.09, gain: 0.22, rate: 1.25 + Math.random() * 0.1, fadeOut: 0.04 })) return;
+    if (play('gatling', { offset: 0.1 + Math.random() * 2.6, dur: 0.09, gain: 0.45, rate: 1.25 + Math.random() * 0.1, fadeOut: 0.04 })) return;
     tone(ctx.currentTime, 0.08, { type: 'square', f0: 1800, f1: 600, gain: 0.03 });
   },
   enemyCannon() {
     if (!throttle('ec', 120)) return;
-    if (play(pick('flak', 2), { gain: 0.3, rate: 0.8 + Math.random() * 0.1, dur: 0.5, fadeOut: 0.25 })) return;
+    if (play(pick('flak', 2), { gain: 0.6, rate: 0.8 + Math.random() * 0.1, dur: 0.5, fadeOut: 0.25 })) return;
     const t = ctx.currentTime;
     noise(t, 0.12, { freq: 900, q: 0.7, gain: 0.16 });
     tone(t, 0.15, { type: 'sine', f0: 140, f1: 70, gain: 0.15 });
@@ -335,14 +339,14 @@ const SFX = {
   click() { tone(ctx.currentTime, 0.05, { type: 'square', f0: 800, f1: 600, gain: 0.05 }); },
   error() { tone(ctx.currentTime, 0.18, { type: 'square', f0: 180, f1: 120, gain: 0.1 }); },
   alarm() {
-    if (play('siren', { gain: 0.5, offset: 0.4, dur: 1.6, fadeOut: 0.4 })) return;
+    if (play('siren', { gain: 0.7, offset: 0.4, dur: 1.6, fadeOut: 0.4 })) return;
     const t = ctx.currentTime;
     for (let i = 0; i < 3; i++) {
       tone(t + i * 0.45, 0.35, { type: 'sawtooth', f0: 330, f1: 440, gain: 0.09 });
     }
   },
   wave() {
-    if (play('horn', { gain: 0.6, dur: 2.6, fadeOut: 1.0 })) return;
+    if (play('horn', { gain: 1, dur: 2.6, fadeOut: 1.0 })) return;
     const t = ctx.currentTime;
     tone(t, 1.2, { type: 'sawtooth', f0: 55, gain: 0.18, attack: 0.08 });
     tone(t, 1.2, { type: 'sawtooth', f0: 82.5, gain: 0.12, attack: 0.08 });
@@ -350,18 +354,18 @@ const SFX = {
   },
   baseHit() {
     if (!throttle('bh', 200)) return;
-    if (play(pick('boomSmall', 5), { gain: 0.6, rate: 0.75, dur: 0.8, fadeOut: 0.3 })) { tone(ctx.currentTime, 0.25, { type: 'square', f0: 140, f1: 70, gain: 0.08 }); return; }
+    if (play(pick('boomSmall', 5), { gain: 1, rate: 0.75, dur: 0.8, fadeOut: 0.3 })) { tone(ctx.currentTime, 0.25, { type: 'square', f0: 140, f1: 70, gain: 0.08 }); return; }
     const t = ctx.currentTime;
     tone(t, 0.3, { type: 'square', f0: 140, f1: 70, gain: 0.18 });
     noise(t, 0.5, { freq: 600, type: 'lowpass', gain: 0.4 });
   },
   victory() {
-    if (play('victory', { gain: 0.8 })) return;
+    if (play('victory', { gain: 1 })) return;
     const t = ctx.currentTime;
     [262, 330, 392, 523].forEach((f, i) => tone(t + i * 0.16, 0.5, { type: 'sawtooth', f0: f, gain: 0.08 }));
   },
   defeat() {
-    if (play('defeat', { gain: 0.8 })) return;
+    if (play('defeat', { gain: 1 })) return;
     const t = ctx.currentTime;
     [392, 330, 262, 196].forEach((f, i) => tone(t + i * 0.22, 0.6, { type: 'sawtooth', f0: f, gain: 0.08 }));
   },
