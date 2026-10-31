@@ -4,6 +4,15 @@ import { toWorld, toGrid, mulberry32, clamp } from './iso.js';
 import { Assets, Models } from './assets.js';
 import { CELL } from './game.js';
 
+// convex hull (monotone chain) of {x, y} points, counter-clockwise
+function convexHull(pts) {
+  const p = pts.slice().sort((a, b) => a.x - b.x || a.y - b.y);
+  const cr = (o, a, b) => (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
+  const lo = [], up = [];
+  for (const q of p) { while (lo.length >= 2 && cr(lo[lo.length - 2], lo[lo.length - 1], q) <= 0) lo.pop(); lo.push(q); }
+  for (let i = p.length - 1; i >= 0; i--) { const q = p[i]; while (up.length >= 2 && cr(up[up.length - 2], up[up.length - 1], q) <= 0) up.pop(); up.push(q); }
+  return lo.slice(0, -1).concat(up.slice(0, -1));
+}
 const T0 = 128;         // top-down px per tile for ground composition (small maps)
 const DEPTH = 70;       // slab thickness in world px
 
@@ -49,7 +58,7 @@ export class Renderer {
   // ---------- camera ----------
   mapBounds() {
     const N = this.game.N;
-    return { x0: -N * HW, x1: N * HW, y0: -60, y1: 2 * N * HH + DEPTH };
+    return { x0: -N * HW, x1: N * HW, y0: -60 - 2 * ELEV_PX, y1: 2 * N * HH + DEPTH };
   }
   fitZoom() {
     const b = this.mapBounds();
@@ -89,15 +98,27 @@ export class Renderer {
   }
   screenToWorld(sx, sy) { const z = this.cam.zoom; return { x: (sx - this.vw / 2) / z + this.cam.x, y: (sy - this.vh / 2) / z + this.cam.y }; }
   worldToScreen(wx, wy) { const z = this.cam.zoom; return { x: (wx - this.cam.x) * z + this.vw / 2, y: (wy - this.cam.y) * z + this.vh / 2 }; }
+  // tap -> cell, with raised terrain: the plateau surface or cliff that is drawn on top at that point wins
   screenToCell(sx, sy) {
     const w = this.screenToWorld(sx, sy);
-    // highest plateau first: a tap on a raised top face belongs to that cell
-    if (this.game) for (let h = 2; h >= 1; h--) {
-      const g = toGrid(w.x, w.y + h * ELEV_PX), x = Math.floor(g.x), y = Math.floor(g.y);
-      if (this.game.heightAt(x, y) === h) return { x, y };
+    const g0 = toGrid(w.x, w.y);
+    const gx = Math.floor(g0.x), gy = Math.floor(g0.y);
+    let best = null, bk = -Infinity;
+    if (this.game) for (let dy = -1; dy <= 4; dy++) for (let dx = -1; dx <= 4; dx++) {
+      const x = gx + dx, y = gy + dy, h = this.game.heightAt(x, y);
+      if (!h) continue;
+      const c = toWorld(x + 0.5, y + 0.5), z = h * ELEV_PX;
+      const px = w.x - c.x, py = w.y - c.y, ax = Math.abs(px) / HW;
+      if (ax >= 1) continue;
+      const edge = HH * (1 - ax);                     // lower diamond edge relative to the centre
+      // the wall below the front edge exists only where that neighbour is lower, down to its height
+      const zl = (px >= 0 ? this.game.heightAt(x + 1, y) : this.game.heightAt(x, y + 1)) * ELEV_PX;
+      let k = null;
+      if (Math.abs(py + z) <= edge) k = c.y - HH - 0.6;                     // raised top face
+      else if (zl < z && py >= edge - z && py <= edge - zl) k = c.y - 0.5;  // cliff wall
+      if (k !== null && k > bk) { bk = k; best = { x, y }; }
     }
-    const g = toGrid(w.x, w.y);
-    return { x: Math.floor(g.x), y: Math.floor(g.y) };
+    return best || { x: gx, y: gy };
   }
   zoomAt(sx, sy, f) {
     const before = this.screenToWorld(sx, sy);
@@ -140,7 +161,7 @@ export class Renderer {
       tg.beginPath(); tg.moveTo(HW, 0); tg.lineTo(2 * HW, HH); tg.lineTo(HW, 2 * HH); tg.lineTo(0, HH); tg.closePath();
       tg.save(); tg.clip();
       tg.drawImage(gr.canvas, (c.x - HW + gr.ox) * s, (c.y - HH + gr.oy) * s, 2 * HW * s, 2 * HH * s, 0, 0, 2 * HW, 2 * HH);
-      tg.fillStyle = `rgba(255,248,230,${0.045 * h})`; tg.fillRect(0, 0, 2 * HW, 2 * HH);
+      tg.fillStyle = `rgba(255,248,230,${0.07 * h})`; tg.fillRect(0, 0, 2 * HW, 2 * HH);
       tg.restore();
       // lit rim where the ground drops away
       const corners = [[HW, 0], [2 * HW, HH], [HW, 2 * HH], [0, HH]];
@@ -148,9 +169,11 @@ export class Renderer {
       for (let k = 0; k < 4; k++) {
         if (nb[k] >= h) continue;
         const [a, b] = [corners[k], corners[(k + 1) % 4]];
-        tg.strokeStyle = k === 1 || k === 2 ? 'rgba(255,240,215,0.42)' : 'rgba(255,240,215,0.22)';
-        tg.lineWidth = k === 1 || k === 2 ? 2 : 1.4;
+        tg.strokeStyle = B.lip[0];
+        tg.globalAlpha = k === 1 || k === 2 ? 0.95 : 0.6;
+        tg.lineWidth = k === 1 || k === 2 ? 4 : 2.5;
         tg.beginPath(); tg.moveTo(a[0], a[1]); tg.lineTo(b[0], b[1]); tg.stroke();
+        tg.globalAlpha = 1;
       }
       // cliffs on the two camera-facing sides (+x: right-down, +y: left-down)
       let side = null;
@@ -159,42 +182,70 @@ export class Renderer {
         const g = side.getContext('2d');
         g.scale(s, s);
         const oy = z;  // canvas y of the ground-level centre row
-        const face = (pts, light, zLow) => {
+        const lerp = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
+        const face = (pts, light) => {
+          const [A, Bt, C, D] = pts;            // top-left, top-right, bottom-right, bottom-left
           g.save();
-          g.beginPath(); g.moveTo(pts[0][0], pts[0][1]); for (const p of pts.slice(1)) g.lineTo(p[0], p[1]); g.closePath();
-          const y0 = Math.min(...pts.map(p => p[1])), y1 = Math.max(...pts.map(p => p[1]));
+          g.beginPath(); g.moveTo(A[0], A[1]); g.lineTo(Bt[0], Bt[1]); g.lineTo(C[0], C[1]); g.lineTo(D[0], D[1]); g.closePath();
+          const y0 = Math.min(A[1], Bt[1]), y1 = Math.max(C[1], D[1]);
           const grd = g.createLinearGradient(0, y0, 0, y1);
-          grd.addColorStop(0, light ? B.slab[0] : B.slab[2]); grd.addColorStop(1, light ? B.slab[1] : B.slab[3]);
+          const cl = B.cliff || B.slab;
+          grd.addColorStop(0, light ? cl[0] : cl[2]); grd.addColorStop(1, light ? cl[1] : cl[3]);
           g.fillStyle = grd; g.fill();
           g.clip();
-          // rock strata and grit
-          for (let i = 0; i < 5; i++) {
-            const t = 0.15 + rng() * 0.75;
-            g.strokeStyle = `rgba(${rng() < 0.5 ? '255,240,220' : '0,0,0'},${0.08 + rng() * 0.12})`;
-            g.lineWidth = 1 + rng() * 1.5;
-            g.beginPath();
-            g.moveTo(pts[0][0], pts[0][1] + (pts[3][1] - pts[0][1]) * t);
-            g.lineTo(pts[1][0], pts[1][1] + (pts[2][1] - pts[1][1]) * t + (rng() - 0.5) * 3);
+          // rock strata: bands of varying shade that follow the face
+          let t = 0;
+          while (t < 1) {
+            const th = (4 + rng() * 9) / Math.max(8, D[1] - A[1]);
+            const t1 = Math.min(1, t + th);
+            const pa = lerp(A, D, t), pb = lerp(Bt, C, t), pc = lerp(Bt, C, t1), pd = lerp(A, D, t1);
+            g.beginPath(); g.moveTo(pa[0], pa[1]);
+            for (let u = 1; u <= 6; u++) { const q = lerp(pa, pb, u / 6); g.lineTo(q[0], q[1] + (rng() - 0.5) * 2.5); }
+            g.lineTo(pc[0], pc[1]); g.lineTo(pd[0], pd[1]); g.closePath();
+            g.fillStyle = rng() < 0.45 ? `rgba(255,236,210,${0.04 + rng() * 0.09})` : `rgba(0,0,0,${0.05 + rng() * 0.14})`;
+            g.fill();
+            t = t1;
+          }
+          // vertical cracks
+          for (let c = 0; c < 3 + Math.floor(rng() * 3); c++) {
+            const u = 0.08 + rng() * 0.84;
+            let p = lerp(lerp(A, Bt, u), lerp(D, C, u), rng() * 0.25);
+            g.beginPath(); g.moveTo(p[0], p[1]);
+            const len = (0.35 + rng() * 0.6) * (D[1] - A[1]);
+            for (let d = 0; d < len; d += 4) { p = [p[0] + (rng() - 0.5) * 3, p[1] + 4]; g.lineTo(p[0], p[1]); }
+            g.strokeStyle = `rgba(0,0,0,${0.25 + rng() * 0.2})`; g.lineWidth = 1 + rng();
             g.stroke();
           }
-          for (let i = 0; i < 26; i++) {
-            g.fillStyle = `rgba(${rng() < 0.5 ? '230,220,200' : '0,0,0'},${0.1 + rng() * 0.2})`;
-            g.fillRect(Math.min(pts[0][0], pts[1][0]) + rng() * HW, y0 + rng() * (y1 - y0), 1 + rng() * 2, 1 + rng() * 1.5);
+          // grit
+          for (let n = 0; n < 40; n++) {
+            g.fillStyle = `rgba(${rng() < 0.5 ? '235,225,205' : '0,0,0'},${0.08 + rng() * 0.2})`;
+            g.fillRect(Math.min(A[0], Bt[0]) + rng() * HW, y0 + rng() * (y1 - y0), 1 + rng() * 2, 1 + rng() * 1.5);
           }
-          // contact shadow at the foot of the cliff
-          const ao = g.createLinearGradient(0, y1 - 10, 0, y1);
-          ao.addColorStop(0, 'rgba(0,0,0,0)'); ao.addColorStop(1, 'rgba(0,0,0,0.35)');
-          g.fillStyle = ao; g.fillRect(0, y1 - 10, 2 * HW, 10);
+          // lit top edge, contact shadow at the foot
+          const top = g.createLinearGradient(0, y0, 0, y0 + 8);
+          top.addColorStop(0, 'rgba(255,240,220,0.22)'); top.addColorStop(1, 'rgba(255,240,220,0)');
+          g.fillStyle = top; g.fillRect(0, y0, 2 * HW, 8 + Math.abs(Bt[1] - A[1]));
+          const ao = g.createLinearGradient(0, y1 - 16, 0, y1);
+          ao.addColorStop(0, 'rgba(0,0,0,0)'); ao.addColorStop(1, 'rgba(0,0,0,0.45)');
+          g.fillStyle = ao; g.fillRect(0, y1 - 16, 2 * HW, 16);
           g.restore();
+          // biome lip hanging over the edge (moss, snow, sand, ash)
+          g.beginPath(); g.moveTo(A[0], A[1]);
+          for (let u = 1; u <= 10; u++) { const q = lerp(A, Bt, u / 10); g.lineTo(q[0], q[1]); }
+          for (let u = 10; u >= 0; u--) { const q = lerp(A, Bt, u / 10); g.lineTo(q[0], q[1] + 2 + rng() * 5); }
+          g.closePath();
+          const lg = g.createLinearGradient(0, y0, 0, y0 + 9);
+          lg.addColorStop(0, B.lip[0]); lg.addColorStop(1, B.lip[1]);
+          g.fillStyle = lg; g.fill();
         };
         // canvas coords: left corner x=0, bottom corner x=HW, right corner x=2HW; ground centre row at y=oy
         if (nb[2] < h) {   // +y side: L -> B
           const zl = nb[2] * E;
-          face([[0, oy - z + HH * 0 + 0], [HW, oy - z + HH], [HW, oy - zl + HH], [0, oy - zl]], true, zl);
+          face([[0, oy - z], [HW, oy - z + HH], [HW, oy - zl + HH], [0, oy - zl]], true);
         }
         if (nb[1] < h) {   // +x side: B -> R
           const zl = nb[1] * E;
-          face([[HW, oy - z + HH], [2 * HW, oy - z], [2 * HW, oy - zl], [HW, oy - zl + HH]], false, zl);
+          face([[HW, oy - z + HH], [2 * HW, oy - z], [2 * HW, oy - zl], [HW, oy - zl + HH]], false);
         }
       }
       this.blocks.push({ x, y, h, z, top, side, cx: c.x, cy: c.y });
@@ -341,6 +392,44 @@ export class Renderer {
     const k = T0 / T;
     ig.setTransform(s * 0.5 * k, s * 0.25 * k, -s * 0.5 * k, s * 0.25 * k, s * ox, s * oy);
     ig.drawImage(td, 0, 0);
+    // plateaus cast soft shadows onto the lower ground (key light from the upper left, like all models)
+    if (game.height && game.height.some(Boolean)) {
+      const q = 0.25, sc = makeCanvas(iso.width * q, iso.height * q), sg = sc.getContext('2d');
+      sg.setTransform(s * q, 0, 0, s * q, s * ox * q, s * oy * q);
+      sg.beginPath(); sg.moveTo(0, 0); sg.lineTo(N * HW, N * HH); sg.lineTo(0, 2 * N * HH); sg.lineTo(-N * HW, N * HH); sg.closePath(); sg.clip();
+      sg.beginPath();
+      for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+        const h = game.heightAt(x, y);
+        if (!h) continue;
+        const hu = h * ELEV_PX / 78;                 // height in map units (78 screen px per vertical unit)
+        const dx = 0.714 * hu, dy = -0.171 * hu;     // shadow offset along the light direction
+        const pts = [];
+        for (const [a, b] of [[x, y], [x + 1, y], [x + 1, y + 1], [x, y + 1]]) { pts.push(toWorld(a, b)); pts.push(toWorld(a + dx, b + dy)); }
+        const hull = convexHull(pts);
+        sg.moveTo(hull[0].x, hull[0].y);
+        for (const p of hull.slice(1)) sg.lineTo(p.x, p.y);
+        sg.closePath();
+      }
+      sg.fillStyle = 'rgba(10,7,4,0.5)';
+      sg.fill('nonzero');
+      // the raised tops are cut from this ground: keep their own footprint free of shadow
+      sg.globalCompositeOperation = 'destination-out';
+      sg.beginPath();
+      for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+        if (!game.heightAt(x, y)) continue;
+        const a = toWorld(x, y), b = toWorld(x + 1, y), c = toWorld(x + 1, y + 1), d = toWorld(x, y + 1);
+        sg.moveTo(a.x, a.y); sg.lineTo(b.x, b.y); sg.lineTo(c.x, c.y); sg.lineTo(d.x, d.y); sg.closePath();
+      }
+      sg.fillStyle = '#000'; sg.fill();
+      sg.globalCompositeOperation = 'source-over';
+      ig.save();
+      ig.setTransform(1, 0, 0, 1, 0, 0);
+      ig.imageSmoothingEnabled = true;
+      ig.drawImage(sc, 0, 0, iso.width, iso.height);
+      ig.restore();
+      ig.setTransform(s * 0.5 * k, s * 0.25 * k, -s * 0.5 * k, s * 0.25 * k, s * ox, s * oy);
+      sc.width = 0;
+    }
     ig.setTransform(s, 0, 0, s, s * ox, s * oy);
     ig.strokeStyle = 'rgba(255,230,200,0.18)'; ig.lineWidth = 2;
     ig.beginPath(); ig.moveTo(Lp[0], Lp[1]); ig.lineTo(Bp[0], Bp[1]); ig.lineTo(Rp[0], Rp[1]); ig.stroke();
@@ -427,6 +516,16 @@ export class Renderer {
       else if (it.k === 3) Models.draw(ctx, 'p3d_base_hq', 0, it.o.x, it.o.y);
       else if (it.k === 4) this.drawGate(ctx, it.o);
     }
+    // units behind high ground: a faint silhouette on top (drawing a sprite over itself changes nothing where it is visible)
+    ctx.globalAlpha = 0.32;
+    for (const e of game.enemies) {
+      if (e.air) continue;
+      const cx = Math.floor(e.gx), cy = Math.floor(e.gy);
+      let behind = false;
+      for (let j = 0; j <= 3 && !behind; j++) for (let i = 0; i <= 3; i++) if ((i || j) && game.heightAt(cx + i, cy + j)) { behind = true; break; }
+      if (behind) this.drawEnemy(ctx, e, true);
+    }
+    ctx.globalAlpha = 1;
     if (ui.buildCell && bz) this.drawBuildPreview(ctx, ui, bz);
     if (ui.selected && ui.selected.z) this.drawRange(ctx, ui.selected.gx, ui.selected.gy, ui.selected.stats.range, TOWERS[ui.selected.type].color, true, TOWERS[ui.selected.type].minRange, ui.selected.z);
     const air = game.enemies.filter(e => e.air).sort((a, b) => a.wy - b.wy);
@@ -715,7 +814,7 @@ export class Renderer {
     return { bob, roll, dx };
   }
 
-  drawEnemy(ctx, e) {
+  drawEnemy(ctx, e, ghost = false) {
     const def = e.def, name = def.model;
     const m = Models.meta(name);
     if (!m) return;
@@ -724,6 +823,11 @@ export class Renderer {
     const lift = e.air ? def.lift * (e.liftMul ?? 1) + pose.bob : pose.bob;
     const y = e.wy - lift;
     const x = e.wx + pose.dx;
+    if (ghost) {
+      if (pose.roll) { ctx.save(); ctx.translate(x, y); ctx.rotate(pose.roll); Models.draw(ctx, name, f, 0, 0, def.scale); ctx.restore(); }
+      else Models.draw(ctx, name, f, x, y, def.scale);
+      return;
+    }
     if (pose.roll) {
       ctx.save();
       ctx.translate(x, y);

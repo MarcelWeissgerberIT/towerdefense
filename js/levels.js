@@ -30,7 +30,7 @@ const GAP = { spider: 0.38, android: 0.8, drone: 0.85, mech: 1.7, tank: 2.1, shi
 
 export function hpMultiplier(levelNum, wave) {
   const n = wave - 1;
-  return (1 + 0.05 * n + 0.0016 * n * n) * (1 + 0.052 * (levelNum - 1));
+  return (1 + 0.05 * n + 0.0016 * n * n) * (1 + 0.056 * (levelNum - 1));
 }
 
 // returns [{groups:[{type,count,gap,delay}], boss:bool, tip?}]

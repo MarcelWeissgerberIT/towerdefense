@@ -162,11 +162,11 @@ function genLevel(spec) {
     const cheb = (x, y, vals, R) => { let d = 99; for (let dy = -R; dy <= R; dy++) for (let dx = -R; dx <= R; dx++) if (vals.includes(grid[y + dy]?.[x + dx])) d = Math.min(d, Math.max(Math.abs(dx), Math.abs(dy))); return d; };
     const H = Array.from({ length: N }, () => new Array(N).fill(0));
     const elig = (x, y) => x >= 0 && y >= 0 && x < N && y < N && grid[y][x] === 0 && cheb(x, y, [3, 4], 1) > 1;
-    const nPlat = Math.round(N * N * 0.014 * TH.plateau);
-    for (let k = 0; k < nPlat * 6 && H.flat().filter(Boolean).length < N * N * 0.16 * TH.plateau; k++) {
+    const nPlat = Math.round(N * N * 0.017 * TH.plateau);
+    for (let k = 0; k < nPlat * 6 && H.flat().filter(Boolean).length < N * N * 0.2 * TH.plateau; k++) {
       const sx = Math.floor(r() * N), sy = Math.floor(r() * N);
       if (!elig(sx, sy) || H[sy][sx] || cheb(sx, sy, [1], 1) < 2) continue;
-      const size = 4 + Math.floor(r() * (4 + N / 3));
+      const size = 5 + Math.floor(r() * (5 + N / 2.5));
       const cells = [[sx, sy]]; H[sy][sx] = 1;
       for (let it = 0; it < 80 && cells.length < size; it++) {
         const [cx, cy] = cells[Math.floor(r() * cells.length)];
@@ -175,10 +175,11 @@ function genLevel(spec) {
         if (!elig(nx, ny) || H[ny][nx]) continue;
         H[ny][nx] = 1; cells.push([nx, ny]);
       }
-      if (cells.length >= 8) for (const [x, y] of cells) {
-        let all = true;
-        for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if (!H[y + dy]?.[x + dx]) all = false;
-        if (all && cheb(x, y, [1], 2) >= 2 && r() < 0.75) H[y][x] = 2;
+      // a higher core on bigger plateaus: cells whose 4 neighbours are raised and at least 6 of 8 around them
+      if (cells.length >= 7) for (const [x, y] of cells) {
+        let n8 = 0, n4 = 0;
+        for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if ((dx || dy) && H[y + dy]?.[x + dx]) { n8++; if (!dx || !dy) n4++; }
+        if (n4 === 4 && n8 >= 6 && cheb(x, y, [1], 2) >= 2 && r() < 0.85) H[y][x] = 2;
       }
     }
     // ---- props with meaning: HQ camp, wrecks at the enemy gates, one landmark, natural clusters ----

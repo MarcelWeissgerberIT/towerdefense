@@ -137,6 +137,7 @@ export const BIOMES = {
   wasteland: {
     name: 'Ödland', ground: 'ground', road: 'road',
     props: ['prop_ruin', 'prop_wreck', 'prop_barrier', 'prop_tree', 'prop_crates', 'prop_scrap'],
+    lip: ['#7a6a55', '#4a3e30'],
     theme: { camp: ['prop_crates', 'prop_barrier'], spawn: ['prop_wreck', 'prop_scrap'], landmark: ['prop_ruin', ['prop_scrap', 'prop_wreck']], nature: ['prop_tree', 'prop_tree', 'prop_scrap'], plateau: 0.7 },
     decor: [['prop_scrap', 0.5, 0.7, 3], ['prop_barrier', 0.5, 0.7, 2], ['prop_tree', 0.55, 0.8, 2], ['prop_crates', 0.5, 0.65, 1]], decorDensity: 0.1,
     grade: { screen: 'rgba(62,50,40,0.5)', multiply: 'rgb(255,226,200)' },
@@ -146,6 +147,7 @@ export const BIOMES = {
   jungle: {
     name: 'Dschungel', ground: 'jungle_ground', road: 'jungle_road',
     props: ['prop_j_tree', 'prop_j_tree', 'prop_j_bush', 'prop_j_bush', 'prop_j_temple', 'prop_j_heli', 'prop_crates'],
+    lip: ['#4f7a2c', '#2e4a19'],
     theme: { camp: ['prop_crates', 'prop_barrier'], spawn: ['prop_j_heli', 'prop_crates'], landmark: ['prop_j_temple', ['prop_j_bush', 'prop_j_bush']], nature: ['prop_j_tree', 'prop_j_tree', 'prop_j_bush'], plateau: 0.85 },
     decor: [['prop_j_bush', 0.55, 0.9, 6], ['prop_j_tree', 0.5, 0.75, 3]], decorDensity: 0.22,
     grade: { screen: 'rgba(40,52,30,0.35)', multiply: 'rgb(235,255,225)' },
@@ -155,6 +157,7 @@ export const BIOMES = {
   desert: {
     name: 'Wüste', ground: 'desert_ground', road: 'desert_road',
     props: ['prop_d_rock', 'prop_d_rock', 'prop_d_tank', 'prop_d_pump', 'prop_scrap', 'prop_barrier'],
+    lip: ['#d9ae6c', '#a87a3f'],
     theme: { camp: ['prop_barrier', 'prop_crates'], spawn: ['prop_d_tank', 'prop_scrap'], landmark: ['prop_d_pump', ['prop_d_pump', 'prop_crates']], nature: ['prop_d_rock'], plateau: 1.1 },
     decor: [['prop_d_rock', 0.4, 0.7, 5], ['prop_scrap', 0.5, 0.65, 1]], decorDensity: 0.14,
     grade: { screen: 'rgba(30,20,10,0.15)', multiply: 'rgb(235,215,190)' },
@@ -164,6 +167,7 @@ export const BIOMES = {
   ice: {
     name: 'Arktis', ground: 'ice_ground', road: 'ice_road',
     props: ['prop_i_pine', 'prop_i_pine', 'prop_i_ice', 'prop_i_ice', 'prop_i_station', 'prop_i_wreck'],
+    lip: ['#f4f9ff', '#c7d8ea'],
     theme: { camp: ['prop_crates', 'prop_barrier'], spawn: ['prop_i_wreck', 'prop_scrap'], landmark: ['prop_i_station', ['prop_crates', 'prop_i_wreck']], nature: ['prop_i_pine', 'prop_i_pine', 'prop_i_ice'], plateau: 0.85 },
     decor: [['prop_i_ice', 0.45, 0.7, 4], ['prop_i_pine', 0.5, 0.8, 4]], decorDensity: 0.14,
     grade: { screen: 'rgba(0,0,0,0)', multiply: 'rgb(225,235,250)' },
@@ -173,6 +177,7 @@ export const BIOMES = {
   volcano: {
     name: 'Vulkan', ground: 'volcano_ground', road: 'volcano_road',
     props: ['prop_v_spire', 'prop_v_rocks', 'prop_v_rocks', 'prop_v_factory', 'prop_scrap', 'prop_tree'],
+    lip: ['#c2562a', '#4a1e10'], cliff: ['#5a443c', '#1e1412', '#3e2c27', '#140c0b'],
     theme: { camp: ['prop_barrier', 'prop_crates'], spawn: ['prop_scrap', 'prop_scrap'], landmark: ['prop_v_factory', ['prop_scrap', 'prop_v_rocks']], nature: ['prop_v_rocks', 'prop_v_spire', 'prop_tree'], plateau: 1.1 },
     decor: [['prop_v_rocks', 0.45, 0.7, 5], ['prop_v_spire', 0.45, 0.6, 2], ['prop_scrap', 0.5, 0.6, 1]], decorDensity: 0.12,
     grade: { screen: 'rgba(40,12,4,0.25)', multiply: 'rgb(255,225,210)' },
@@ -181,7 +186,7 @@ export const BIOMES = {
   },
 };
 // terrain: world px per height level, tower range bonus per level of high ground
-export const ELEV_PX = 26;
-export const ELEV_RANGE = 0.15;
+export const ELEV_PX = 46;
+export const ELEV_RANGE = 0.2;
 export const BIOME_ORDER = ['wasteland', 'jungle', 'desert', 'ice', 'volcano'];
 
