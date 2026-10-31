@@ -420,22 +420,48 @@ export class Renderer {
     }
   }
 
+  // level-dependent energy ring under the tower (tower colour)
+  drawLevelRing(ctx, t) {
+    if (t.ghost || t.level < 2) return;
+    const col = TOWERS[t.type].color;
+    const pul = 0.5 + 0.5 * Math.sin(this.time * (t.level === 3 ? 4 : 2.5) + t.id);
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.strokeStyle = col;
+    ctx.globalAlpha = (t.level === 3 ? 0.55 : 0.32) + 0.25 * pul;
+    ctx.lineWidth = t.level === 3 ? 3.5 : 2.5;
+    ctx.beginPath(); ctx.ellipse(t.wx, t.wy + 6, 56, 28, 0, 0, Math.PI * 2); ctx.stroke();
+    if (t.level === 3) {
+      ctx.globalAlpha = 0.25 + 0.2 * pul;
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([8, 10]); ctx.lineDashOffset = -this.time * 40;
+      ctx.beginPath(); ctx.ellipse(t.wx, t.wy + 6, 66, 33, 0, 0, Math.PI * 2); ctx.stroke();
+      ctx.setLineDash([]);
+    }
+    ctx.restore();
+  }
+
   drawTower(ctx, t, ui) {
     const def = t.def, name = def.model;
     const m = Models.meta(name);
     if (!m) return;
     const pop = !t.ghost && t.built < 0.3 ? 1 - Math.pow(1 - t.built / 0.3, 3) : 1;
     const y = t.wy + (1 - pop) * 30;
-    const TS = TOWER_SCALE;
+    // towers visibly grow with every upgrade
+    const TS = TOWER_SCALE * (1 + 0.08 * ((t.level || 1) - 1));
+    this.drawLevelRing(ctx, t);
     if (m.baseImg) Models.drawBase(ctx, name, t.wx, y, TS);
     const f = Models.frameFor(name, t.ang);
     const rc = (t.recoil || 0) * 4;
     const dx = -(Math.cos(t.ang) - Math.sin(t.ang)) * rc * 0.7, dy = -(Math.cos(t.ang) + Math.sin(t.ang)) * rc * 0.35;
     const box = Models.draw(ctx, name, f, t.wx + dx, y + dy, TS);
     if (t.ghost) return;
-    if (ui.selected === t && box) {
+    const glowA = (ui.selected === t ? 0.16 + 0.08 * Math.sin(this.time * 5) : 0)
+      + (t.level === 3 ? 0.08 + 0.05 * Math.sin(this.time * 3 + t.id) : 0)
+      + (t.powerUp || 0) * 0.7;
+    if (glowA > 0 && box) {
       ctx.globalCompositeOperation = 'lighter';
-      ctx.globalAlpha = 0.16 + 0.08 * Math.sin(this.time * 5);
+      ctx.globalAlpha = Math.min(1, glowA);
       if (m.baseImg) Models.drawBase(ctx, name, t.wx, y, TS);
       Models.draw(ctx, name, f, t.wx + dx, y + dy, TS);
       ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
@@ -443,20 +469,62 @@ export class Renderer {
     if (def.kind === 'emp') {
       ctx.globalCompositeOperation = 'lighter';
       ctx.globalAlpha = 0.55 + 0.3 * Math.sin(this.time * 6 + t.id);
-      const s = 54 + t.level * 8;
+      const s = 50 + t.level * 16;
       ctx.drawImage(Assets.fx.violet, t.wx - s / 2, y - m.topPx * TS + 10 - s / 2, s, s);
       ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
     }
+    if (t.upgrading) this.drawUpgrade(ctx, t, m, f, y);
     if (t.level > 1) {
-      const bx = t.wx + 30, by = t.wy + 18;
+      const bx = t.wx + 34, by = t.wy + 18;
       for (let i = 0; i < t.level - 1; i++) {
         const yy = by - i * 7;
         ctx.beginPath();
         ctx.moveTo(bx - 8, yy - 4); ctx.lineTo(bx, yy + 1); ctx.lineTo(bx + 8, yy - 4); ctx.lineTo(bx + 8, yy); ctx.lineTo(bx, yy + 5); ctx.lineTo(bx - 8, yy); ctx.closePath();
-        ctx.fillStyle = '#ffcc33'; ctx.fill(); ctx.strokeStyle = 'rgba(0,0,0,0.7)'; ctx.lineWidth = 1; ctx.stroke();
+        ctx.fillStyle = t.level === 3 ? '#ffd34d' : '#d0d6dc'; ctx.fill(); ctx.strokeStyle = 'rgba(0,0,0,0.7)'; ctx.lineWidth = 1; ctx.stroke();
       }
     }
     if (t.hp < t.stats.hp * 0.4 && Math.random() < 0.08) this.game.fx.smoke(t.wx + (Math.random() - 0.5) * 30, t.wy - 40, 1, 18, 1.4, true);
+  }
+
+  // construction: scaffold poles, a hologram of the next stage and a progress bar
+  drawUpgrade(ctx, t, m, f, y) {
+    const u = t.upgrading;
+    const k = Math.min(1, u.t / u.dur);
+    const nextTS = TOWER_SCALE * (1 + 0.08 * t.level);
+    // hologram of the upgraded tower
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = 0.18 + 0.12 * Math.sin(this.time * 10);
+    Models.draw(ctx, t.def.model, f, t.wx, y, nextTS);
+    ctx.restore();
+    // scaffold
+    const H = 92;
+    const corners = [toWorld(t.cx + 0.1, t.cy + 0.1), toWorld(t.cx + 0.9, t.cy + 0.1), toWorld(t.cx + 0.9, t.cy + 0.9), toWorld(t.cx + 0.1, t.cy + 0.9)];
+    ctx.lineWidth = 2.2;
+    ctx.strokeStyle = 'rgba(230,180,40,0.9)';
+    ctx.beginPath();
+    for (const c of corners) { ctx.moveTo(c.x, c.y); ctx.lineTo(c.x, c.y - H); }
+    for (const h of [H * 0.35, H * 0.75]) {
+      ctx.moveTo(corners[0].x, corners[0].y - h);
+      for (let i = 1; i <= 4; i++) { const c = corners[i % 4]; ctx.lineTo(c.x, c.y - h); }
+    }
+    ctx.stroke();
+    ctx.strokeStyle = 'rgba(30,30,30,0.8)'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(corners[3].x, corners[3].y - H * 0.35); ctx.lineTo(corners[2].x, corners[2].y - H * 0.75); ctx.stroke();
+    // blinking warning light
+    if (Math.sin(this.time * 8) > 0) {
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.drawImage(Assets.fx.orange, corners[0].x - 10, corners[0].y - H - 10, 20, 20);
+      ctx.globalCompositeOperation = 'source-over';
+    }
+    // progress bar
+    const bw = 64, bx = t.wx - bw / 2, by = t.wy - H - 18;
+    ctx.fillStyle = 'rgba(0,0,0,0.75)'; ctx.fillRect(bx - 2, by - 2, bw + 4, 9);
+    ctx.fillStyle = t.level === 2 ? '#ffd34d' : '#6dff9d'; ctx.fillRect(bx, by, bw * k, 5);
+    ctx.font = '700 12px "Rajdhani", system-ui, sans-serif'; ctx.textAlign = 'center';
+    ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,0.8)';
+    const label = `UPGRADE ${t.level === 1 ? 'II' : 'III'} · ${Math.ceil(u.dur - u.t)}s`;
+    ctx.strokeText(label, t.wx, by - 5); ctx.fillStyle = '#fff'; ctx.fillText(label, t.wx, by - 5);
   }
 
   // per-type locomotion: walk-cycle frames (rigged models) or procedural gait / hover / track motion
@@ -571,9 +639,10 @@ export class Renderer {
       const flick = 0.85 + Math.random() * 0.15;
       ctx.globalAlpha = 0.5 * flick;
       ctx.strokeStyle = `rgba(255,${(60 + heat * 80) | 0},40,1)`;
-      ctx.lineWidth = 7 + heat * 6; ctx.lineCap = 'round';
+      const lw = 1 + 0.4 * (t.level - 1);
+      ctx.lineWidth = (7 + heat * 6) * lw; ctx.lineCap = 'round';
       ctx.beginPath(); ctx.moveTo(m.x, m.y); ctx.lineTo(a.x, a.y); ctx.stroke();
-      ctx.globalAlpha = flick; ctx.strokeStyle = 'rgba(255,235,220,1)'; ctx.lineWidth = 2 + heat * 1.5;
+      ctx.globalAlpha = flick; ctx.strokeStyle = 'rgba(255,235,220,1)'; ctx.lineWidth = (2 + heat * 1.5) * lw;
       ctx.beginPath(); ctx.moveTo(m.x, m.y); ctx.lineTo(a.x, a.y); ctx.stroke();
       const s = 34 + heat * 30;
       ctx.drawImage(Assets.fx.red, a.x - s / 2, a.y - s / 2, s, s);
@@ -598,8 +667,9 @@ export class Renderer {
         ctx.globalCompositeOperation = 'source-over';
       } else if (s.k === 'plasma' || s.k === 'eplasma') {
         ctx.globalCompositeOperation = 'lighter';
-        ctx.drawImage(s.k === 'plasma' ? fx.cyan : fx.red, s.x - 26, s.y - 26, 52, 52);
-        ctx.drawImage(fx.white, s.x - 10, s.y - 10, 20, 20);
+        const ps = s.size || 1;
+        ctx.drawImage(s.k === 'plasma' ? fx.cyan : fx.red, s.x - 26 * ps, s.y - 26 * ps, 52 * ps, 52 * ps);
+        ctx.drawImage(fx.white, s.x - 10 * ps, s.y - 10 * ps, 20 * ps, 20 * ps);
         ctx.globalCompositeOperation = 'source-over';
       } else if (s.k === 'ebullet' || s.k === 'flak') {
         ctx.globalCompositeOperation = 'lighter';

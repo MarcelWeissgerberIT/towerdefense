@@ -8,6 +8,8 @@ export const UNIT_PX = HW * Math.SQRT2; // world px per 3D model unit (1 tile = 
 
 export const TOWER_SCALE = 1.25;   // draw scale for tower models (readability)
 export const MAX_LEVEL = 3;
+export const UPGRADE_TIME = { 1: 4, 2: 6 };   // seconds to upgrade from level n to n+1
+export const WAVE_GAP = 14;                   // seconds between the end of one wave's spawning and the next wave
 export const SELL_RATE = 0.7;
 export const FULL_REFUND_TIME = 6;   // seconds after building: 100 % refund (undo)
 
@@ -90,7 +92,7 @@ export const ENEMIES = {
   spider:   { motion: 'spider', stride: 0.22, name: 'Späher-Spinne',   model: 'enemy_spider',   hp: 40,   speed: 1.6,  armor: 0,  reward: 5,   leak: 1, cost: 1,  scale: 0.9 },
   android:  { motion: 'biped', stride: 0.4, cycle: 0.8, name: 'Endoskelett',     model: 'enemy_android',  hp: 110,  speed: 0.95, armor: 1,  reward: 8,   leak: 1, cost: 2,  scale: 0.9,
     atk: { dmg: 5, range: 1.8, rate: 1.0, kind: 'laser' } },
-  drone:    { motion: 'hover', name: 'Jäger-Drohne',    model: 'enemy_drone',    hp: 90,   speed: 1.3,  armor: 0,  reward: 11,  leak: 1, cost: 2.5, scale: 0.9, air: true, lift: 52,
+  drone:    { motion: 'hover', name: 'Jäger-Drohne',    model: 'enemy_drone',    hp: 90,   speed: 1.3,  armor: 0,  reward: 12,  leak: 1, cost: 3, scale: 0.9, air: true, lift: 52,
     atk: { dmg: 9, range: 2.2, rate: 0.6, kind: 'missile' } },
   mech:     { motion: 'biped', stride: 0.5, cycle: 1.0, name: 'Sturm-Mech',      model: 'enemy_mech',     hp: 420,  speed: 0.68, armor: 4,  reward: 20,  leak: 2, cost: 7,  scale: 0.9,
     atk: { dmg: 15, range: 2.2, rate: 0.8, kind: 'cannon' } },

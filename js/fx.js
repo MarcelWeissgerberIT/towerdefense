@@ -17,7 +17,7 @@ export class FX {
 
   // ---- emitters ----
   muzzle(x, y, color = 'yellow', size = 26) { this.add({ k: 'glow', x, y, s: size, life: 0.07, spr: color }); }
-  tracer(x1, y1, x2, y2, color = 'rgba(255,210,120,') { this.add({ k: 'line', x1, y1, x2, y2, w: 2.2, life: 0.06, c: color }); }
+  tracer(x1, y1, x2, y2, color = 'rgba(255,210,120,', w = 2.2) { this.add({ k: 'line', x1, y1, x2, y2, w, life: 0.06, c: color }); }
   sparks(x, y, n = 4, color = '#ffd27a', speed = 160) {
     for (let i = 0; i < n; i++) {
       const a = Math.random() * Math.PI * 2, v = rand(0.3, 1) * speed;
@@ -77,10 +77,10 @@ export class FX {
       this.add({ k: 'debris', x, y, z: 4, vx: Math.cos(a) * v, vy: Math.sin(a) * v * 0.5, vz: rand(140, 340), life: rand(0.8, 1.4), s: rand(2, 6), c: Math.random() < 0.5 ? '#2a2a2a' : '#7c7c80' });
     }
   }
-  plasmaHit(x, y) {
-    this.add({ k: 'glow', x, y, s: 120, life: 0.3, spr: 'cyan' });
-    this.add({ k: 'ring', x, y, r0: 10, r1: 80, life: 0.35, c: '90,230,255' });
-    this.sparks(x, y, 10, '#9ff3ff', 260);
+  plasmaHit(x, y, k = 1) {
+    this.add({ k: 'glow', x, y, s: 120 * k, life: 0.3, spr: 'cyan' });
+    this.add({ k: 'ring', x, y, r0: 10, r1: 80 * k, life: 0.35, c: '90,230,255' });
+    this.sparks(x, y, Math.round(10 * k), '#9ff3ff', 260 * k);
   }
   flakBurst(x, y) {
     this.add({ k: 'glow', x, y, s: 60, life: 0.12, spr: 'yellow' });
@@ -94,19 +94,19 @@ export class FX {
   }
   healBeam(x1, y1, x2, y2) { this.add({ k: 'line', x1, y1, x2, y2, w: 2.5, life: 0.25, c: 'rgba(110,255,140,' }); this.add({ k: 'glow', x: x2, y: y2, s: 30, life: 0.3, spr: 'green' }); }
   burn(x, y) { this.add({ k: 'fire', x, y, vx: rand(-10, 10), vy: rand(-50, -25), s: rand(12, 20), life: rand(0.25, 0.45) }); }
-  flame(x, y, dx, dy, len) {
-    for (let i = 0; i < 3; i++) {
+  flame(x, y, dx, dy, len, lvl = 1) {
+    for (let i = 0; i < 2 + lvl; i++) {
       const sp = rand(0.75, 1.1) * len / 0.42, spread = rand(-0.22, 0.22);
       const vx = (dx * Math.cos(spread) - dy * Math.sin(spread)) * sp, vy = (dx * Math.sin(spread) + dy * Math.cos(spread)) * sp;
-      this.add({ k: 'fire', x, y, vx, vy: vy - 10, s: rand(10, 16), grow: 34, life: rand(0.32, 0.45) });
+      this.add({ k: 'fire', x, y, vx, vy: vy - 10, s: rand(10, 16) * (1 + 0.2 * (lvl - 1)), grow: 34 * (1 + 0.25 * (lvl - 1)), life: rand(0.32, 0.45) });
     }
     if (Math.random() < 0.3) this.add({ k: 'smoke', x: x + dx * len * 0.8, y: y + dy * len * 0.8 - 10, vx: dx * 30, vy: -30, s: 18, grow: 30, life: 0.9, a: 0.4, dark: true });
   }
-  beam(x1, y1, x2, y2) {
-    this.add({ k: 'beam', x1, y1, x2, y2, life: 0.35 });
+  beam(x1, y1, x2, y2, w = 1) {
+    this.add({ k: 'beam', x1, y1, x2, y2, life: 0.35, w });
     this.add({ k: 'glow', x: x1, y: y1, s: 80, life: 0.2, spr: 'white' });
   }
-  bolt(pts) {
+  bolt(pts, lvl = 1) {
     const out = [];
     for (let i = 0; i < pts.length - 1; i++) {
       const [ax, ay] = pts[i], [bx, by] = pts[i + 1];
@@ -116,7 +116,7 @@ export class FX {
       }
     }
     out.push(pts[pts.length - 1]);
-    this.add({ k: 'bolt', pts: out, life: 0.16 });
+    this.add({ k: 'bolt', pts: out, life: 0.16, w: 1 + 0.4 * (lvl - 1) });
     for (let i = 1; i < pts.length; i++) this.add({ k: 'glow', x: pts[i][0], y: pts[i][1], s: 46, life: 0.18, spr: 'violet' });
   }
   text(x, y, str, color = '#ffd34d') { this.add({ k: 'text', x, y, str, c: color, life: 0.9 }); }
@@ -243,11 +243,12 @@ export class FX {
         case 'beam': {
           const a = 1 - k;
           ctx.globalAlpha = a;
+          const bw = o.w || 1;
           ctx.strokeStyle = 'rgba(80,170,255,0.55)';
-          ctx.lineWidth = 14 * a + 2;
+          ctx.lineWidth = (14 * a + 2) * bw;
           ctx.beginPath(); ctx.moveTo(o.x1, o.y1); ctx.lineTo(o.x2, o.y2); ctx.stroke();
           ctx.strokeStyle = 'rgba(235,248,255,1)';
-          ctx.lineWidth = 3.5 * a + 1;
+          ctx.lineWidth = (3.5 * a + 1) * bw;
           ctx.beginPath(); ctx.moveTo(o.x1, o.y1); ctx.lineTo(o.x2, o.y2); ctx.stroke();
           break;
         }
@@ -255,13 +256,13 @@ export class FX {
           ctx.globalAlpha = 1 - k;
           ctx.lineJoin = 'round';
           ctx.strokeStyle = 'rgba(170,110,255,0.6)';
-          ctx.lineWidth = 7;
+          ctx.lineWidth = 7 * (o.w || 1);
           ctx.beginPath();
           ctx.moveTo(o.pts[0][0], o.pts[0][1]);
           for (let i = 1; i < o.pts.length; i++) ctx.lineTo(o.pts[i][0], o.pts[i][1]);
           ctx.stroke();
           ctx.strokeStyle = 'rgba(245,235,255,1)';
-          ctx.lineWidth = 2;
+          ctx.lineWidth = 2 * (o.w || 1);
           ctx.stroke();
           break;
         }

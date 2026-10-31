@@ -51,7 +51,15 @@ export function makeWaves(level) {
     let tip = null;
     const add = (type, share, delay = 0) => {
       const cost = ENEMIES[type].cost;
-      const count = Math.max(1, Math.round(budget * share / cost));
+      let count = Math.max(1, Math.round(budget * share / cost));
+      // support / siege units are capped so a wave never consists of a healing or artillery blob
+      const cap = { repair: 2 + Math.floor(lv / 8), siege: 2 + Math.floor(w / 8), shield: 4 + Math.floor(lv / 5), kamikaze: 8 + Math.floor(lv / 2) }[type];
+      if (cap && count > cap) {
+        const rest = (count - cap) * cost;
+        count = cap;
+        // spend the remaining budget on basic infantry
+        groups.push({ type: lv >= 3 ? 'android' : 'spider', count: Math.max(1, Math.round(rest / ENEMIES[lv >= 3 ? 'android' : 'spider'].cost)), gap: GAP.android, delay: delay + 2 });
+      }
       groups.push({ type, count, gap: GAP[type], delay });
     };
     if (last && lv % 5 === 0) {
@@ -78,7 +86,7 @@ export function makeWaves(level) {
       add(pick(ground, 0.25), 0.25, 4);
       tip = 'Schwarm von Späher-Spinnen!';
     } else {
-      const a = pick(ground, 0.6);
+      const a = pick(ground.filter(k => k !== 'repair'), 0.6);
       const b = pick(pool, 0.4);
       add(a, 0.6);
       add(b, 0.4, 2 + r() * 3);

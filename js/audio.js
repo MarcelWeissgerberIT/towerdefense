@@ -153,6 +153,11 @@ const SFX = {
     const t = ctx.currentTime;
     [330, 440, 660].forEach((f, i) => tone(t + i * 0.07, 0.15, { type: 'square', f0: f, gain: 0.07 }));
   },
+  upgradeStart() {
+    const t = ctx.currentTime;
+    for (let i = 0; i < 3; i++) noise(t + i * 0.12, 0.08, { freq: 2500 + i * 400, q: 3, gain: 0.12 });
+    tone(t, 0.3, { type: 'square', f0: 200, f1: 260, gain: 0.05 });
+  },
   sell() {
     const t = ctx.currentTime;
     [660, 440, 330].forEach((f, i) => tone(t + i * 0.06, 0.12, { type: 'triangle', f0: f, gain: 0.12 }));

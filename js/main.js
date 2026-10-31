@@ -1,5 +1,5 @@
 // Iron Sentinel – app controller: screens, HUD, radial build menu, tower menu, game loop.
-import { TOWERS, TOWER_ORDER, MAX_LEVEL, BIOMES, BIOME_ORDER, upgradeCost, towerStats } from './config.js';
+import { TOWERS, TOWER_ORDER, MAX_LEVEL, BIOMES, BIOME_ORDER, UPGRADE_TIME, upgradeCost, towerStats } from './config.js';
 import { LEVEL_SPECS, LEVEL_COUNT } from './levels.js';
 import { Assets, Models } from './assets.js';
 import { Renderer } from './render.js';
@@ -165,7 +165,8 @@ function updateTowerMenu(force) {
   const s = t.stats, maxed = t.level >= MAX_LEVEL;
   const cost = maxed ? 0 : upgradeCost(t.type, t.level);
   const rc = game.repairCost(t);
-  const key = [t.id, t.level, t.mode, game.credits >= cost, maxed, game.sellValue(t), rc, Math.round(t.hp)].join('|');
+  const prog = t.upgrading ? Math.floor(t.upgrading.t / t.upgrading.dur * 100) : -1;
+  const key = [t.id, t.level, t.mode, game.credits >= cost, maxed, game.sellValue(t), rc, Math.round(t.hp), prog].join('|');
   if (!force && key === tmCache) return;
   tmCache = key;
   $('tm-name').textContent = def.name;
@@ -176,8 +177,8 @@ function updateTowerMenu(force) {
   const ndmg = next ? (def.dps ? Math.round(next.dps) : Math.round(next.dmg)) : null;
   $('tm-stats').innerHTML = `<span>💥 ${dmg}${ndmg ? `<em>→${ndmg}</em>` : ''}</span><span>📡 ${s.range.toFixed(1)}</span><span>☠ ${t.kills}</span>`;
   const up = $('tm-upgrade');
-  up.disabled = maxed || game.credits < cost;
-  up.textContent = maxed ? 'MAX' : `▲ ${cost}`;
+  up.disabled = maxed || game.credits < cost || !!t.upgrading;
+  up.textContent = t.upgrading ? `⏳ ${prog} %` : maxed ? 'MAX' : `▲ ${cost} · ${UPGRADE_TIME[t.level]} s`;
   const rp = $('tm-repair');
   rp.classList.toggle('hidden', rc <= 0);
   rp.textContent = `🔧 ${rc}`;
@@ -253,7 +254,7 @@ function updateHUD() {
   let label, sub = '', enabled;
   if (game.state === 'build') { label = '▶ ANGRIFF STARTEN'; sub = 'Welle 1 rufen'; enabled = true; }
   else if (game.wave >= game.waves.length) { label = 'LETZTE WELLE'; sub = `${game.enemies.length + game.queue.length} Gegner übrig`; enabled = false; }
-  else if (game.canCallWave()) { label = `⏩ WELLE ${game.wave + 1}`; sub = game.breakTimer > 0 ? `startet in ${Math.ceil(game.breakTimer)} s · Bonus` : 'jetzt rufen · Bonus'; enabled = true; }
+  else if (game.canCallWave()) { label = `⏩ WELLE ${game.wave + 1} IN ${Math.max(0, Math.ceil(game.nextWaveIn))} s`; sub = `jetzt rufen · +${Math.round(Math.max(0, game.nextWaveIn) * 2.5)} Bonus`; enabled = true; }
   else { label = `WELLE ${game.wave} LÄUFT`; sub = `${game.enemies.length + game.queue.length} Gegner`; enabled = false; }
   setText('wave-label', label);
   setText('wave-sub', sub);
@@ -350,6 +351,9 @@ function processEvents() {
       const f = $('damage-flash');
       f.classList.add('on'); setTimeout(() => f.classList.remove('on'), 60);
       if (navigator.vibrate) try { navigator.vibrate(40); } catch (e) { /* ignore */ }
+    } else if (ev.type === 'upgraded') {
+      if (ui.selected === ev.t) updateTowerMenu(true);
+      toast(`${TOWERS[ev.t.type].name} auf Stufe ${['I', 'II', 'III'][ev.t.level - 1]} aufgerüstet`, '', 1600);
     } else if (ev.type === 'towerLost') {
       if (ui.selected === ev.t) closeTowerMenu();
     } else if (ev.type === 'wave') toast(`WELLE ${ev.n} / ${game.waves.length}`, '', 1600);
