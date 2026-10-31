@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Iron Sentinel">
+  <meta name="theme-color" content="#0b0c0e">
+  <meta name="description" content="Iron Sentinel – isometrisches Tower Defense: Verteidige das letzte Hauptquartier der Menschheit gegen die Maschinenarmee.">
+  <title>Iron Sentinel – Tower Defense</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="assets/icon-180.png">
+  <link rel="icon" type="image/png" href="assets/icon-192.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=Orbitron:wght@700;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <canvas id="game"></canvas>
+  <div id="vignette"></div>
+  <div id="damage-flash"></div>
+
+  <!-- HUD -->
+  <div id="hud" class="hidden">
+    <div class="hud-left">
+      <div class="stat" id="stat-lives" title="Basis-Integrität">
+        <svg viewBox="0 0 24 24"><path d="M12 2 3 6v6c0 5 3.8 9.4 9 10 5.2-.6 9-5 9-10V6l-9-4z" fill="currentColor"/></svg>
+        <span id="hud-lives">20</span>
+      </div>
+      <div class="stat" id="stat-credits" title="Credits">
+        <svg viewBox="0 0 24 24"><path d="M13 2 4 14h6l-1 8 9-12h-6l1-8z" fill="currentColor"/></svg>
+        <span id="hud-credits">0</span>
+      </div>
+      <div class="stat" id="stat-wave"><small>WELLE</small><span id="hud-wave">0/20</span></div>
+    </div>
+    <div class="hud-right">
+      <button id="btn-speed" class="hbtn" aria-label="Geschwindigkeit">1×</button>
+      <button id="btn-pause" class="hbtn" aria-label="Pause">
+        <svg viewBox="0 0 24 24"><rect x="6" y="5" width="4" height="14" fill="currentColor"/><rect x="14" y="5" width="4" height="14" fill="currentColor"/></svg>
+      </button>
+    </div>
+  </div>
+
+  <div id="buildbar" class="hidden"></div>
+  <button id="btn-wave" class="hidden"><span id="wave-label">ANGRIFF STARTEN</span><small id="wave-sub"></small></button>
+
+  <div id="confirm" class="hidden">
+    <button id="btn-confirm" class="btn primary">BAUEN</button>
+    <button id="btn-cancel" class="btn">✕</button>
+  </div>
+
+  <div id="towerpanel" class="hidden">
+    <div class="tp-head">
+      <img id="tp-img" alt="">
+      <div class="tp-title">
+        <div id="tp-name">Gatling-MG</div>
+        <div id="tp-level">STUFE I</div>
+      </div>
+      <button id="tp-close" class="btn icon" aria-label="Schließen">✕</button>
+    </div>
+    <div class="tp-stats" id="tp-stats"></div>
+    <div class="tp-modes" id="tp-modes">
+      <button data-mode="first">Erster</button>
+      <button data-mode="strong">Stärkster</button>
+      <button data-mode="near">Nächster</button>
+    </div>
+    <div class="tp-actions">
+      <button id="tp-upgrade" class="btn primary">UPGRADE</button>
+      <button id="tp-sell" class="btn danger">VERKAUFEN</button>
+    </div>
+  </div>
+
+  <div id="toasts"></div>
+
+  <!-- Screens -->
+  <div id="screen-loading" class="screen">
+    <div class="logo"><span>IRON</span> SENTINEL</div>
+    <div class="loadbar"><div id="loadfill"></div></div>
+    <div class="hint" id="load-text">Lade Gefechtsdaten …</div>
+  </div>
+
+  <div id="screen-menu" class="screen hidden title-bg">
+    <div class="menu-inner">
+      <div class="kicker">WIDERSTAND · JAHR 2049</div>
+      <div class="logo big"><span>IRON</span> SENTINEL</div>
+      <div class="tagline">Die Maschinen haben die Welt genommen. Halte das letzte Hauptquartier.</div>
+      <div class="menu-buttons">
+        <button class="btn primary large" id="btn-play">SPIELEN</button>
+        <button class="btn large" id="btn-help">ANLEITUNG</button>
+        <button class="btn large" id="btn-sound">TON: AN</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="screen-levels" class="screen hidden title-bg dim">
+    <div class="panel-title">EINSATZGEBIET WÄHLEN</div>
+    <div id="level-list"></div>
+    <button class="btn" id="btn-levels-back">ZURÜCK</button>
+  </div>
+
+  <div id="screen-help" class="screen hidden title-bg dim">
+    <div class="help-box">
+      <div class="panel-title">EINSATZBESPRECHUNG</div>
+      <ul>
+        <li><b>Ziel:</b> Maschinen laufen über die Straße zu deinem Hauptquartier. Lass keine durch – jede Einheit, die durchbricht, beschädigt die Basis.</li>
+        <li><b>Bauen:</b> Turm in der Leiste antippen, dann ein freies Feld antippen. Auf dem iPhone erscheint zuerst eine Vorschau mit Reichweite – nochmal tippen oder <i>BAUEN</i> bestätigen.</li>
+        <li><b>Turm antippen:</b> Upgrade (bis Stufe III), Zielmodus wählen oder verkaufen (70 % Rückerstattung).</li>
+        <li><b>Kamera:</b> Mit einem Finger verschieben, mit zwei Fingern zoomen.</li>
+        <li><b>Wellen:</b> Früh die nächste Welle rufen gibt Bonus-Credits.</li>
+        <li><b>Gatling-MG</b> – schnell, billig, schwach gegen Panzerung.<br><b>Raketenwerfer</b> – Flächenschaden, doppelt gegen Drohnen.<br><b>Plasmakanone</b> – ignoriert Panzerung, nur Bodenziele.<br><b>Railgun</b> – durchschlägt ganze Reihen, riesige Reichweite.<br><b>EMP-Turm</b> – Kettenblitz, verlangsamt Maschinen.</li>
+      </ul>
+      <button class="btn primary" id="btn-help-back">VERSTANDEN</button>
+    </div>
+  </div>
+
+  <div id="modal" class="screen hidden">
+    <div class="modal-box">
+      <div class="panel-title" id="modal-title">PAUSE</div>
+      <div id="modal-stars" class="stars"></div>
+      <div id="modal-text"></div>
+      <div class="modal-buttons" id="modal-buttons"></div>
+    </div>
+  </div>
+
+  <div id="rotate-hint" class="hidden">
+    <svg viewBox="0 0 24 24"><path d="M7 2h10a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2zm0 3v14h10V5H7z" fill="currentColor"/></svg>
+    <span>Tipp: iPhone quer halten für die beste Übersicht</span>
+    <button id="rotate-ok" class="btn">OK</button>
+  </div>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
