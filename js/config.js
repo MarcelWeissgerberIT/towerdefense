@@ -168,6 +168,8 @@ export const SPECS = {
   ],
 };
 export const specCost = (type) => Math.round(TOWERS[type].cost * 2.2);
+// damaged towers lose firepower (minEff at 0 HP), repairs cost credits and take time (s per full repair)
+export const TOWER_DMG = { minEff: 0.5, repairTime: [2.5, 9], regen: 0.016, waveHeal: 0.2 };
 
 // commander perks: bought with earned stars between missions (campaign only), 3 levels each
 export const PERKS = [
@@ -331,8 +333,8 @@ export const POWERUPS = {
 // difficulty for the campaign: modifiers applied on top of every mission
 export const DIFFICULTY = [
   { id: 'easy', name: 'LEICHT', desc: 'Die bisherige Balance – zum Kennenlernen.', mods: {} },
-  { id: 'medium', name: 'MITTEL', desc: 'Zähere und mehr Gegner, weniger Credits pro Abschuss.', mods: { hp: 1.3, count: 1.15, reward: 0.85 } },
-  { id: 'hard', name: 'SCHWER', desc: 'Starke, schnelle Wellen, knappes Budget, nur 10 Leben, Fähigkeiten laden langsamer.', mods: { hp: 1.5, count: 1.2, speed: 1.06, armor: 1.1, reward: 0.8, lives: 10, cd: 1.25 } },
+  { id: 'medium', name: 'MITTEL', desc: 'Zähere und mehr Gegner, weniger Credits pro Abschuss.', mods: { hp: 1.24, count: 1.12, reward: 0.85 } },
+  { id: 'hard', name: 'SCHWER', desc: 'Starke, schnelle Wellen, knappes Budget, nur 10 Leben, Fähigkeiten laden langsamer.', mods: { hp: 1.42, count: 1.18, speed: 1.06, armor: 1.1, reward: 0.8, lives: 10, cd: 1.25 } },
 ];
 // combine two modifier sets: factors multiply, lives take the stricter value, flags/lists of b win
 const MUL = ['hp', 'count', 'speed', 'credits', 'armor', 'reward', 'cd'];

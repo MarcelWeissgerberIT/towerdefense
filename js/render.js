@@ -1487,7 +1487,16 @@ export class Renderer {
     const w = 46, x = t.wx - w / 2, y = t.wy + 26;
     const r = Math.max(0, t.hp / t.stats.hp);
     ctx.fillStyle = 'rgba(0,0,0,0.7)'; ctx.fillRect(x - 1, y - 1, w + 2, 6);
-    ctx.fillStyle = r > 0.5 ? '#5fd0ff' : r > 0.25 ? '#ffb02e' : '#ff3b30'; ctx.fillRect(x, y, w * r, 4);
+    ctx.fillStyle = t.repairing ? '#7dff9a' : r > 0.5 ? '#5fd0ff' : r > 0.25 ? '#ffb02e' : '#ff3b30'; ctx.fillRect(x, y, w * r, 4);
+    // badly damaged: blinking wrench above the tower (tap it to repair); repairing: green ring
+    if (t.repairing) {
+      ctx.save(); ctx.strokeStyle = 'rgba(125,255,154,0.8)'; ctx.lineWidth = 2.5;
+      ctx.beginPath(); ctx.ellipse(t.wx, t.wy + 6, 50, 25, 0, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * (t.repairing.t / t.repairing.dur)); ctx.stroke(); ctx.restore();
+    } else if (r < 0.5 && !t.ghost) {
+      ctx.globalAlpha = 0.6 + 0.4 * Math.sin(this.time * 6 + t.id);
+      drawIcon(ctx, 'wrench', t.wx, t.wy - 150 - (t.level - 1) * 8 + Math.sin(this.time * 3 + t.id) * 4, 30);
+      ctx.globalAlpha = 1;
+    }
   }
 
   drawBeams(ctx, game) {

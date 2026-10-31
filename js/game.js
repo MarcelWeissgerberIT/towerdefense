@@ -1,6 +1,6 @@
 // Core simulation: grid, routes, towers (turret aiming), enemies (attack towers), projectiles, waves.
 import {
-  HW, TOWERS, ENEMIES, BIOMES, BOSS, SPECS, PERKS, WEATHER, BIOME_WEATHER, WEATHER_CFG, specCost, EFFECT, FROST, SHATTER, THERMAL, ACID_ARMOR, NUKE, POWERUPS, DROP, HOLE, ELEV_PX, ELEV_RANGE, MAX_LEVEL, TOWER_SCALE, UPGRADE_TIME, WAVE_GAP, SELL_RATE, FULL_REFUND_TIME, towerStats, upgradeCost, totalInvested,
+  HW, TOWERS, ENEMIES, BIOMES, BOSS, SPECS, PERKS, WEATHER, BIOME_WEATHER, WEATHER_CFG, TOWER_DMG, specCost, EFFECT, FROST, SHATTER, THERMAL, ACID_ARMOR, NUKE, POWERUPS, DROP, HOLE, ELEV_PX, ELEV_RANGE, MAX_LEVEL, TOWER_SCALE, UPGRADE_TIME, WAVE_GAP, SELL_RATE, FULL_REFUND_TIME, towerStats, upgradeCost, totalInvested,
 } from './config.js';
 import { getLevel, makeWaves, makeBossRush, hpMultiplier } from './levels.js';
 import { toWorld, rand, mulberry32 } from './iso.js';
@@ -344,16 +344,27 @@ export class Game {
     this.fx.text(t.wx, t.wy - 60, `+${v}`);
     sfx('sell');
   }
-  repairCost(t) { return Math.ceil((1 - t.hp / t.stats.hp) * totalInvested(t.type, t.level) * 0.35); }
-  repair(t) {
+  repairCost(t) { return t.repairing ? 0 : Math.ceil((1 - t.hp / t.stats.hp) * totalInvested(t.type, t.level) * 0.35); }
+  // firepower of a damaged tower: 100 % when intact, minEff when almost destroyed
+  towerEff(t) { return TOWER_DMG.minEff + (1 - TOWER_DMG.minEff) * Math.max(0, Math.min(1, t.hp / t.stats.hp)); }
+  // repairs cost credits up front and take a few seconds (the tower keeps firing)
+  repair(t, quiet = false) {
+    if (t.repairing || t.upgrading) return false;
     const c = this.repairCost(t);
     if (c <= 0) return false;
-    if (this.credits < c) { this.emit('toast', { text: 'Nicht genug Credits', bad: true }); sfx('error'); return false; }
+    if (this.credits < c) { if (!quiet) { this.emit('toast', { text: 'Nicht genug Credits', bad: true }); sfx('error'); } return false; }
     this.credits -= c;
-    t.hp = t.stats.hp;
-    this.fx.sparks(t.wx, t.wy - 40, 12, '#8dff9a', 180);
-    sfx('upgrade');
+    const missing = 1 - t.hp / t.stats.hp, [t0, t1] = TOWER_DMG.repairTime;
+    const dur = (t0 + (t1 - t0) * missing) * (1 - 0.12 * Math.round(this.perk.repair / 0.35));
+    t.repairing = { t: 0, dur, rate: (t.stats.hp - t.hp) / dur, spark: 0 };
+    if (!quiet) sfx('upgradeStart');
     return true;
+  }
+  repairAll() {
+    let n = 0;
+    for (const t of [...this.towers].sort((a, b) => a.hp / a.stats.hp - b.hp / b.stats.hp)) if (this.repairCost(t) > 0 && this.repair(t, true)) n++;
+    if (n) sfx('upgradeStart'); else { this.emit('toast', { text: 'Nicht genug Credits', bad: true }); sfx('error'); }
+    return n;
   }
   removeTower(t) {
     this.towers = this.towers.filter(o => o !== t);
@@ -366,6 +377,7 @@ export class Game {
     if (this.buffs.repair > 0) { if (Math.random() < 0.3) this.fx.add({ k: 'glow', x: t.wx, y: t.wy - 40, s: 90, life: 0.2, spr: 'cyan' }); return; }
     t.hp -= dmg;
     t.lastHit = this.time;
+    if (t.hp < t.stats.hp * 0.5 && !this._dmgHint) { this._dmgHint = true; this.emit('towerDamaged', { t }); }
     if (t.hp <= 0) {
       this.removeTower(t);
       this.fx.bigExplosion(t.wx, t.wy - 10, 1.6, 'heavy');
@@ -426,7 +438,7 @@ export class Game {
     delete this.waveLeft[n];
     const bonus = Math.round((25 + n * 6) * (this.mods.reward || 1));
     this.credits += bonus;
-    for (const t of this.towers) t.hp = Math.min(t.stats.hp, t.hp + t.stats.hp * 0.3);
+    for (const t of this.towers) t.hp = Math.min(t.stats.hp, t.hp + t.stats.hp * TOWER_DMG.waveHeal);
     if (n < this.waves.length) this.emit('toast', { text: `Welle ${n} abgewehrt! +${bonus} Credits` });
   }
 
@@ -545,6 +557,7 @@ export class Game {
     const src = opts.src;
     let mult = src && src.type && EFFECT[src.type] ? (EFFECT[src.type][e.def.cls] ?? 1) : 1;
     if (src && src.rank) mult *= 1 + 0.08 * src.rank;            // veteran towers
+    if (src && src.stats && src.hp != null) mult *= this.towerEff(src);   // damaged towers hit softer
     if (e.frozenT > 0 && src && SHATTER.towers.includes(src.type)) {
       mult *= SHATTER.mul;                                          // frozen machines shatter
       if (this.time > (e.shatterFx || 0)) { e.shatterFx = this.time + 0.6; this.fx.text(e.wx, this.bodyY(e) - 50, 'ZERSCHMETTERT', '#bff0ff'); this.fx.sparks(e.wx, this.bodyY(e), 10, '#e6fbff', 200); }
@@ -685,6 +698,19 @@ export class Game {
     const odm = this.buffs.overdrive > 0 ? 2 : 1;      // OVERDRIVE: double fire rate
     t.cool -= dt * odm;
     if (t.powerUp > 0) t.powerUp = Math.max(0, t.powerUp - dt * 0.8);
+    // repair in progress: hull plates welded back on
+    if (t.repairing) {
+      const r = t.repairing;
+      r.t += dt; r.spark -= dt;
+      t.hp = Math.min(t.stats.hp, t.hp + r.rate * dt);
+      if (r.spark <= 0) { r.spark = 0.12 + Math.random() * 0.12; this.fx.sparks(t.wx + rand(-30, 30), t.wy - rand(15, 70), 3, '#9dffb5', 140); }
+      if (r.t >= r.dur || t.hp >= t.stats.hp) { t.repairing = null; t.hp = t.stats.hp; this.fx.add({ k: 'ring', x: t.wx, y: t.wy + 8, r0: 16, r1: 80, life: 0.45, c: '140,255,170' }); this.emit('repaired', { t }); }
+    } else if (t.built > 1) {
+      // damaged towers smoke, badly damaged ones spark and burn
+      const hr = t.hp / t.stats.hp;
+      if (hr < 0.7 && Math.random() < dt * (hr < 0.4 ? 3 : 1.4)) this.fx.smoke(t.wx + rand(-18, 18), t.wy - rand(40, 70), 1, 22, 1.4, true);
+      if (hr < 0.4 && Math.random() < dt * 4) this.fx.sparks(t.wx + rand(-25, 25), t.wy - rand(20, 60), 2, '#ffb05a', 120);
+    }
     if (t.upgrading) {
       const u = t.upgrading;
       u.t += dt;
@@ -710,7 +736,7 @@ export class Game {
       return;
     }
     // passive regeneration when not under fire
-    if (this.time - t.lastHit > 3 && t.hp < t.stats.hp) t.hp = Math.min(t.stats.hp, t.hp + t.stats.hp * 0.035 * (1 + this.perk.repair) * dt);
+    if (this.time - t.lastHit > 3 && t.hp < t.stats.hp) t.hp = Math.min(t.stats.hp, t.hp + t.stats.hp * TOWER_DMG.regen * (1 + this.perk.repair) * dt);
     const def = t.def;
     const s = t.stats;
     // retarget

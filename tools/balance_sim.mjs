@@ -87,7 +87,7 @@ function play(levelIdx, skill = 1) {
       const cand = g.towers.filter(o => o.level < 3).sort((a, b) => a.level - b.level)[0];
       if (cand && g.credits >= C.upgradeCost(cand.type, cand.level) + 80) g.upgrade(cand);
     }
-    for (const tw of g.towers) if (tw.hp < tw.stats.hp * 0.35 && g.credits > g.repairCost(tw) + 50) g.repair(tw);
+    for (const tw of g.towers) if (tw.hp < tw.stats.hp * 0.55 && g.credits > g.repairCost(tw) + 50) g.repair(tw);
     if (g.state === 'build') g.startWave();
     if (ABIL && Math.round(t / dt) % 15 === 0) { useAbilities(g); for (const d of [...g.drops]) g.collect(d); }
     const before = g.towers.length;

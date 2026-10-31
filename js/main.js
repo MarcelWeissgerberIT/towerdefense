@@ -1,5 +1,5 @@
 // Iron Sentinel – app controller: screens, HUD, build drawer, tower menu, game loop.
-import { TOWERS, ENEMIES, TOWER_ORDER, MAX_LEVEL, BIOMES, BIOME_ORDER, UPGRADE_TIME, ELEV_RANGE, CLASS_NAME, EFFECT, POWERUPS, NUKE, HOLE, DIFFICULTY, SPECS, PERKS, PERK_COST, WEATHER, specCost, effectOf, upgradeCost, towerStats } from './config.js';
+import { TOWERS, ENEMIES, TOWER_ORDER, MAX_LEVEL, BIOMES, BIOME_ORDER, UPGRADE_TIME, ELEV_RANGE, CLASS_NAME, EFFECT, POWERUPS, NUKE, HOLE, DIFFICULTY, SPECS, PERKS, PERK_COST, WEATHER, TOWER_DMG, specCost, effectOf, upgradeCost, towerStats } from './config.js';
 import { LEVEL_SPECS, LEVEL_COUNT, getLevel, makeWaves, hpMultiplier } from './levels.js';
 import { Assets, Models, drawIcon } from './assets.js';
 import { Renderer } from './render.js';
@@ -235,7 +235,7 @@ function updateTowerMenu(force) {
   const rc = game.repairCost(t);
   const prog = t.upgrading ? Math.floor(t.upgrading.t / t.upgrading.dur * 100) : -1;
   const sc = SPECS[t.type] ? specCost(t.type) : 0;
-  const key = [t.id, t.level, t.mode, game.credits >= cost, maxed, game.sellValue(t), rc, Math.round(t.hp), prog, t.kills, t.rank, t.spec, game.credits >= sc].join('|');
+  const key = [t.id, t.level, t.mode, game.credits >= cost, maxed, game.sellValue(t), rc, Math.round(t.hp), prog, t.kills, t.rank, t.spec, game.credits >= sc, t.repairing ? Math.floor(t.repairing.t / t.repairing.dur * 20) : -1, repairAllCost()].join('|');
   if (!force && key === tmCache) return;
   tmCache = key;
   const spec = t.spec && SPECS[t.type].find(x => x.id === t.spec);
@@ -251,15 +251,20 @@ function updateTowerMenu(force) {
   const next = maxed ? null : game.statsFor(t.type, t.level + 1, t.cx, t.cy);
   const dmg = def.dps ? `${Math.round(s.dps)}/s` : def.kind === 'hitscan' || def.kind === 'flak' ? `${Math.round(s.dmg)}×${s.rate.toFixed(1)}` : Math.round(s.dmg);
   const ndmg = next ? (def.dps ? Math.round(next.dps) : Math.round(next.dmg)) : null;
-  $('tm-stats').innerHTML = `<span>${IC('damage')} ${dmg}${ndmg ? `<em>→${ndmg}</em>` : ''}</span><span>${IC('range')} ${s.range.toFixed(1)}</span><span>${IC('kills')} ${t.kills}${t.rank ? ` <em class="rank">${IC('star').repeat(t.rank)}</em>` : ''}</span>`;
+  const eff = Math.round(game.towerEff(t) * 100);
+  $('tm-stats').innerHTML = `<span>${IC('damage')} ${dmg}${ndmg ? `<em>→${ndmg}</em>` : ''}</span><span>${IC('range')} ${s.range.toFixed(1)}</span><span>${IC('kills')} ${t.kills}${t.rank ? ` <em class="rank">${IC('star').repeat(t.rank)}</em>` : ''}</span>`
+    + (eff < 99 ? `<span class="tm-eff ${eff < 70 ? 'bad' : ''}">${IC('wrench')} Kampfkraft ${eff} %</span>` : '');
   const up = $('tm-upgrade');
   up.disabled = maxed || game.credits < cost || !!t.upgrading;
   up.textContent = t.upgrading ? `⏳ ${prog} %` : maxed ? (t.spec ? '◆ MAX' : 'MAX') : `▲ ${cost} · ${Math.round(UPGRADE_TIME[t.level] * (1 - 0.12 * Math.round(game.perk.repair / 0.35)))} s`;
   up.classList.toggle('hidden', !!choose);
   const rp = $('tm-repair');
-  rp.classList.toggle('hidden', rc <= 0);
-  rp.innerHTML = `${IC('wrench')} ${rc}`;
-  rp.disabled = game.credits < rc;
+  rp.classList.toggle('hidden', rc <= 0 && !t.repairing);
+  rp.innerHTML = t.repairing ? `${IC('wrench')} ${Math.floor(t.repairing.t / t.repairing.dur * 100)} %` : `${IC('wrench')} ${rc}`;
+  rp.disabled = !!t.repairing || game.credits < rc;
+  const ra = repairAllCost(), others = game.towers.filter(o => o !== t && game.repairCost(o) > 0).length;
+  $('tm-repair-all').classList.toggle('hidden', !others);
+  $('tm-repair-all').innerHTML = `${IC('wrench')} ALLE ${ra}`;
   $('tm-mode').innerHTML = `${IC('target')} ${MODES[t.mode]}`;
   $('tm-mode').classList.toggle('hidden', !!def.static && def.kind !== 'emp');
   $('tm-sell').innerHTML = `${IC('sell')} +${game.sellValue(t)}`;
@@ -270,6 +275,8 @@ $('tm-specs').onclick = (e) => {
   const b = e.target.closest('[data-spec]');
   if (b && ui.selected && game.specialize(ui.selected, b.dataset.spec)) updateTowerMenu(true);
 };
+function repairAllCost() { return game ? game.towers.reduce((a, o) => a + game.repairCost(o), 0) : 0; }
+$('tm-repair-all').onclick = (e) => { e.stopPropagation(); if (game) { const n = game.repairAll(); if (n) toast(`${n} Türme werden repariert`, '', 1500); updateTowerMenu(true); } };
 $('tm-repair').onclick = (e) => { e.stopPropagation(); if (ui.selected && game.repair(ui.selected)) updateTowerMenu(true); };
 $('tm-mode').onclick = (e) => {
   e.stopPropagation();
@@ -814,6 +821,8 @@ function processEvents() {
     } else if (ev.type === 'wave') toast(`WELLE ${ev.n} / ${game.waves.length}`, '', 1600);
     else if (ev.type === 'powerup') showPowerBanner(ev.pu);
     else if (ev.type === 'bossSpawn') bossIntro(ev.e);
+    else if (ev.type === 'towerDamaged') { if (!save.data.dmgHint) { save.data.dmgHint = true; save.write(); toast('Beschädigte Türme schießen schwächer – antippen und reparieren (kostet Credits und ein paar Sekunden)', 'warn', 4200); } }
+    else if (ev.type === 'repaired') { if (ui.selected === ev.t) updateTowerMenu(true); }
     else if (ev.type === 'nukeRepaired') toast('ABSCHUSSRAMPE REPARIERT – ATOMBOMBE BEREIT', 'warn', 2400);
     else if (ev.type === 'weather') { const W = WEATHER[ev.w]; showBanner(W.icon, W.name.toUpperCase(), W.desc, W.color); if (ui.selected) updateTowerMenu(true); }
     else if (ev.type === 'weatherEnd') { toast('Das Wetter klart auf', '', 1800); if (ui.selected) updateTowerMenu(true); }

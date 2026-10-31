@@ -333,7 +333,7 @@ button {
 #tm-level { color: var(--amber); letter-spacing: 0.1em; font-size: 14px; }
 .tm-hp { height: 5px; background: rgba(255,255,255,0.1); margin: 4px 0 5px; }
 #tm-hpfill { height: 100%; background: linear-gradient(90deg, #3ab8ff, #8fe0ff); width: 100%; }
-.tm-stats { display: flex; justify-content: space-between; font-size: 13px; color: #d6d2c8; margin-bottom: 6px; font-variant-numeric: tabular-nums; }
+.tm-stats { display: flex; flex-wrap: wrap; row-gap: 2px; justify-content: space-between; font-size: 13px; color: #d6d2c8; margin-bottom: 6px; font-variant-numeric: tabular-nums; }
 .tm-stats em { font-style: normal; color: var(--green); font-size: 11px; margin-left: 2px; }
 .tm-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; }
 .tm-actions .btn { min-height: 38px; padding: 4px 6px; font-size: 14px; letter-spacing: 0.03em; clip-path: none; }
@@ -687,3 +687,7 @@ body.aiming #btn-replay { display: none; }
 #replay-label { position: fixed; z-index: 13; left: calc(16px + var(--sal)); top: calc(14px + var(--sat)); font-family: var(--font-title); font-weight: 800; font-size: 15px; letter-spacing: 0.12em; color: #fff; text-shadow: 0 1px 4px #000; pointer-events: none; }
 #replay-label i { display: inline-block; width: 11px; height: 11px; border-radius: 50%; background: #ff2a1a; margin-right: 6px; animation: obarm 0.5s infinite alternate; }
 body.replaying #hud, body.replaying #btn-wave, body.replaying #btn-orbital, body.replaying #btn-nuke, body.replaying #btn-hole, body.replaying #boss-bar, body.replaying #buffs { visibility: hidden; }
+
+.tm-eff { flex-basis: 100%; color: #ffd27a; }
+.tm-eff.bad { color: #ff8a70; }
+#tm-repair-all { grid-column: 1 / -1; }
