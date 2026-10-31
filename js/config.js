@@ -231,7 +231,10 @@ export const NUKE = {
   unlock: 5, need: (lv) => 650 + 60 * lv, delay: 3.6,
   radius: 3.4, outer: 5.2, dmg: 2600, bossFrac: 0.3,
   towerRadius: 1.3, towerDmg: 0.65,           // own towers at ground zero get hurt
-  radT: 10, radR: 2.3, radDps: 0.04,          // radiation zone: share of max HP per second
+  // fallout: the area stays contaminated - share of max HP per second, shrinking slowly;
+  // irradiated machines take extra damage from everything for a while
+  radT: 45, radR: 3.2, radDps: 0.03, radAir: 0.5, radVuln: 1.2, radLinger: 2.5,
+  once: true,                                 // one warhead per mission
 };
 // power-up crates dropped by destroyed machines (tap to activate)
 export const POWERUPS = {
@@ -255,6 +258,6 @@ export function mergeMods(a = {}, b = {}) {
   if (a.lives && b.lives) o.lives = Math.min(a.lives, b.lives);
   return o;
 }
-export const DROP = { chance: 0.022, gap: 18, life: 9 };
+export const DROP = { chance: 0.022, gap: 18, life: 25 };
 // black hole (from mission 8): captures machines in its radius, spirals them in and crushes them; lasts 10 s
-export const HOLE = { unlock: 8, cd: 110, first: 45, dur: 10, radius: 2.6, pull: 1.4, dps: 0.07, flat: 30, bossSlow: 0.75, bossDps: 0.012, collapse: 0.3 };
+export const HOLE = { unlock: 8, cd: 210, first: 90, dur: 10, radius: 2.6, pull: 1.4, dps: 0.07, flat: 30, bossSlow: 0.75, bossDps: 0.012, collapse: 0.3 };

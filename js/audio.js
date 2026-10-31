@@ -237,6 +237,12 @@ const SFX = {
     noise(t, 3.5, { freq: 900, q: 0.4, type: 'lowpass', gain: 0.9, sweepTo: 80, attack: 0.01 });
     noise(t + 0.4, 3, { freq: 300, q: 0.5, type: 'lowpass', gain: 0.5, attack: 0.3 });
   },
+  geiger() {
+    // Geiger counter tick from the fallout zone
+    if (!throttle('gei', 28)) return;
+    const t = ctx.currentTime;
+    noise(t, 0.012, { freq: 3800, q: 0.8, type: 'highpass', gain: 0.22, attack: 0.0005 });
+  },
   dropSpawn() {
     if (!throttle('drp', 200)) return;
     const t = ctx.currentTime;

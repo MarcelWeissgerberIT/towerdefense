@@ -366,6 +366,7 @@ export class Game {
       mult *= SHATTER.mul;                                          // frozen machines shatter
       if (this.time > (e.shatterFx || 0)) { e.shatterFx = this.time + 0.6; this.fx.text(e.wx, this.bodyY(e) - 50, 'ZERSCHMETTERT', '#bff0ff'); this.fx.sparks(e.wx, this.bodyY(e), 10, '#e6fbff', 200); }
     }
+    if (e.radT > 0) mult *= NUKE.radVuln;                        // irradiated machines are brittle
     let dmg = raw * mult;
     if (src && (mult >= 1.35 || mult <= 0.6) && this.time > (src.fbT || 0) && this.time > (this._fbG || 0)) {
       src.fbT = this.time + 7; this._fbG = this.time + 0.9;
@@ -435,7 +436,7 @@ export class Game {
     const gain = this.mods.noRewards ? 0 : Math.max(1, Math.round(e.reward * (this.mods.reward || 1))) * (this.buffs.gold > 0 ? 3 : 1);
     this.credits += gain;
     if (this.buffs.gold > 0) this.fx.text(e.wx, this.bodyY(e) - 50, `+${gain} ×3`, '#ffd34d');
-    if (this.nuke.on && !this._nuking) this.nuke.charge = Math.min(this.nuke.need, this.nuke.charge + e.reward);
+    if (this.nuke.on && !this.nuke.used && !this._nuking) this.nuke.charge = Math.min(this.nuke.need, this.nuke.charge + e.reward);
     // power-up crate: bosses always, others rarely (spaced out)
     if (!e.air || e.def.boss) {
       if (!this.mods.noAbilities && (e.def.boss || (Math.random() < DROP.chance && this.time - this.lastDrop > DROP.gap && this.drops.length < 2))) this.spawnDrop(e.gx, e.gy);
@@ -770,6 +771,7 @@ export class Game {
     }
     // frost thaws, a freeze wears off into short immunity
     if (e.freezeImm > 0) e.freezeImm -= dt;
+    if (e.radT > 0) e.radT -= dt;
     if (e.frozenT > 0) {
       e.frozenT -= dt;
       if (e.frozenT <= 0) { e.frost = 35; e.freezeImm = FROST.immune; this.fx.sparks(e.wx, this.bodyY(e), 6, '#dff7ff', 120); }
@@ -984,10 +986,11 @@ export class Game {
   }
 
   // ---- nuclear strike ----
-  nukeReady() { return this.nuke.on && this.nuke.charge >= this.nuke.need; }
+  nukeReady() { return this.nuke.on && !this.nuke.used && this.nuke.charge >= this.nuke.need; }
   nukeStrike(gx, gy) {
     if (!this.nukeReady()) return false;
     this.nuke.charge = 0;
+    if (NUKE.once) this.nuke.used = true;
     this.nukes.push({ gx, gy, t: NUKE.delay, dur: NUKE.delay });
     sfx('siren');
     return true;
@@ -1011,7 +1014,7 @@ export class Game {
         if (d <= NUKE.towerRadius) this.damageTower(t, t.stats.hp * NUKE.towerDmg * (1 - 0.4 * d / NUKE.towerRadius));
       }
       this._nuking = false;
-      this.radZones.push({ gx: n.gx, gy: n.gy, r: NUKE.radR, t: NUKE.radT, life: NUKE.radT });
+      this.radZones.push({ gx: n.gx, gy: n.gy, r: NUKE.radR, r0: NUKE.radR, t: NUKE.radT, life: NUKE.radT });
       this.fx.nuke(w.x, w.y);
       this.startCinematic();
       this.decals.push({ x: w.x, y: w.y, s: 420 });
@@ -1021,7 +1024,14 @@ export class Game {
     if (this.nukes.some(n => n.done)) this.nukes = this.nukes.filter(n => !n.done);
     for (const z of this.radZones) {
       z.t -= dt;
-      for (const e of this.enemiesInRange(z.gx, z.gy, z.r, false, true)) this.damage(e, e.maxHp * NUKE.radDps * (e.def.boss ? 0.3 : 1) * dt, { ignoreArmor: true });
+      // the contaminated area slowly shrinks to 60 %
+      z.r = z.r0 * (0.6 + 0.4 * Math.max(0, z.t / z.life));
+      for (const e of this.enemiesInRange(z.gx, z.gy, z.r, true, true)) {
+        e.radT = NUKE.radLinger;
+        this.damage(e, e.maxHp * NUKE.radDps * (e.def.boss ? 0.3 : 1) * (e.air ? NUKE.radAir : 1) * dt, { ignoreArmor: true, dot: true });
+        if (Math.random() < dt * 3) this.fx.add({ k: 'glow', x: e.wx + (Math.random() - 0.5) * 30, y: this.bodyY(e) - Math.random() * 30, s: 22, life: 0.6, spr: 'green' });
+      }
+      if (Math.random() < dt * (6 + 10 * this.enemiesInRange(z.gx, z.gy, z.r, true, true).length)) sfx('geiger');
     }
     if (this.radZones.some(z => z.t <= 0)) this.radZones = this.radZones.filter(z => z.t > 0);
   }
@@ -1089,7 +1099,7 @@ export class Game {
 
   // ---- power-up crates ----
   spawnDrop(gx, gy) {
-    const pool = Object.entries(POWERUPS).filter(([k]) => k !== 'atom' || this.nuke.on);
+    const pool = Object.entries(POWERUPS).filter(([k]) => k !== 'atom' || (this.nuke.on && !this.nuke.used));
     let r = Math.random() * pool.reduce((a, [, p]) => a + p.w, 0), type = pool[0][0];
     for (const [k, p] of pool) { r -= p.w; if (r <= 0) { type = k; break; } }
     const w = toWorld(gx, gy);

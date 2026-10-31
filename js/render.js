@@ -868,23 +868,54 @@ export class Renderer {
     ctx.fillText(txt, c.x, ly);
     ctx.restore();
   }
+  // nuclear fallout: contaminated ground that glows and fumes, hazard sign, remaining-time ring
   drawRadiation(ctx, z) {
     const c = toWorld(z.gx, z.gy);
-    const fade = Math.min(1, z.t / 2, (z.life - z.t) / 0.4);
+    const fade = Math.min(1, (z.life - z.t) / 1.5, z.t / 4);
     const rx = z.r * HW * Math.SQRT2, ry = z.r * HH * Math.SQRT2;
+    const pul = 0.5 + 0.5 * Math.sin(this.time * 2.4);
     ctx.save();
-    ctx.globalCompositeOperation = 'lighter';
-    ctx.globalAlpha = fade * (0.55 + 0.15 * Math.sin(this.time * 3));
-    const g = ctx.createRadialGradient(c.x, c.y, 0, c.x, c.y, rx);
-    g.addColorStop(0, 'rgba(210,255,60,0.5)'); g.addColorStop(0.7, 'rgba(120,200,20,0.25)'); g.addColorStop(1, 'rgba(60,120,0,0)');
+    // dark scorched base, then the toxic glow on top
+    ctx.globalAlpha = fade * 0.45;
+    let g = ctx.createRadialGradient(c.x, c.y, 0, c.x, c.y, rx);
+    g.addColorStop(0, 'rgba(20,30,5,0.9)'); g.addColorStop(0.75, 'rgba(25,40,5,0.5)'); g.addColorStop(1, 'rgba(0,0,0,0)');
     ctx.fillStyle = g;
     ctx.beginPath(); ctx.ellipse(c.x, c.y, rx, ry, 0, 0, Math.PI * 2); ctx.fill();
-    for (let i = 0; i < 10; i++) {
-      const ph = (this.time * 0.6 + i * 0.13) % 1;
-      const a = i * 2.39;
-      ctx.globalAlpha = fade * (1 - ph) * 0.7;
-      ctx.drawImage(Assets.fx.green, c.x + Math.cos(a) * rx * 0.7 * ((i % 3) / 3 + 0.3) - 6, c.y + Math.sin(a) * ry * 0.7 - ph * 70 - 6, 12, 12);
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = fade * (0.5 + 0.2 * pul);
+    g = ctx.createRadialGradient(c.x, c.y, 0, c.x, c.y, rx);
+    g.addColorStop(0, 'rgba(190,255,60,0.55)'); g.addColorStop(0.6, 'rgba(110,210,20,0.28)'); g.addColorStop(1, 'rgba(60,120,0,0)');
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.ellipse(c.x, c.y, rx, ry, 0, 0, Math.PI * 2); ctx.fill();
+    // edge of the contaminated zone
+    ctx.globalAlpha = fade * (0.35 + 0.25 * pul);
+    ctx.strokeStyle = 'rgba(180,255,60,1)'; ctx.lineWidth = 2;
+    ctx.setLineDash([10, 12]); ctx.lineDashOffset = -this.time * 12;
+    ctx.beginPath(); ctx.ellipse(c.x, c.y, rx, ry, 0, 0, Math.PI * 2); ctx.stroke();
+    ctx.setLineDash([]);
+    // rising radioactive motes and fumes
+    const n = Math.round(10 + z.r * 6);
+    for (let i = 0; i < n; i++) {
+      const ph = (this.time * (0.35 + (i % 5) * 0.05) + i * 0.137) % 1;
+      const a = i * 2.39996, rr = Math.sqrt(((i * 0.618) % 1));
+      ctx.globalAlpha = fade * Math.sin(ph * Math.PI) * 0.8;
+      const sz = 8 + (i % 4) * 4;
+      ctx.drawImage(Assets.fx.green, c.x + Math.cos(a) * rx * rr * 0.92 - sz / 2, c.y + Math.sin(a) * ry * rr * 0.92 - ph * 90 - sz / 2, sz, sz);
     }
+    // hazard sign on the ground
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.globalAlpha = fade * (0.45 + 0.25 * pul);
+    ctx.fillStyle = '#d8ff3a';
+    for (let i = 0; i < 3; i++) {
+      const a0 = -Math.PI / 2 + i * Math.PI * 2 / 3 - 0.5;
+      ctx.beginPath(); ctx.moveTo(c.x, c.y); ctx.ellipse(c.x, c.y, 46, 23, 0, a0, a0 + 1); ctx.closePath(); ctx.fill();
+    }
+    ctx.fillStyle = 'rgba(20,30,5,0.9)';
+    ctx.beginPath(); ctx.ellipse(c.x, c.y, 9, 4.5, 0, 0, Math.PI * 2); ctx.fill();
+    // remaining time
+    ctx.globalAlpha = fade * 0.8;
+    ctx.strokeStyle = '#d8ff3a'; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.ellipse(c.x, c.y, 58, 29, 0, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * (z.t / z.life)); ctx.stroke();
     ctx.restore();
   }
   // power-up crate: hovering, glowing, blinking before it expires
@@ -904,7 +935,7 @@ export class Renderer {
   }
   drawDrops(ctx, game) {
     for (const d of game.drops) {
-      if (d.t < 3 && Math.sin(this.time * 18) < 0) continue;
+      if (d.t < 5 && Math.sin(this.time * (d.t < 2 ? 22 : 12)) < 0) continue;
       const p = POWERUPS[d.type];
       const bob = Math.sin(this.time * 3 + d.id) * 5;
       const x = d.wx, y = d.wy - 46 + bob;
@@ -916,6 +947,9 @@ export class Renderer {
       ctx.drawImage(Assets.fx[spr], x - 20, d.wy - 10, 40, 20);
       ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
       ctx.drawImage(this.crateImg(d.type), x - 32, y - 32, 64, 64);
+      ctx.strokeStyle = p.color; ctx.lineWidth = 3; ctx.globalAlpha = 0.8;
+      ctx.beginPath(); ctx.ellipse(d.wx, d.wy, 30, 15, 0, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * (d.t / d.life)); ctx.stroke();
+      ctx.globalAlpha = 1;
       ctx.font = '700 12px "Rajdhani", system-ui, sans-serif'; ctx.textAlign = 'center';
       ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,0.85)'; ctx.strokeText(p.name, x, y - 34);
       ctx.fillStyle = p.color; ctx.fillText(p.name, x, y - 34);
@@ -956,8 +990,26 @@ export class Renderer {
       const b = bins.get(k);
       if (b) { b.n++; if (e.def.boss) b.boss = true; } else bins.set(k, { a, n: 1, boss: !!e.def.boss });
     }
-    if (!bins.size) return;
+    const crates = game.drops.map(d => ({ d, p: this.worldToScreen(d.wx, d.wy - 46) })).filter(({ p }) => p.x < x0 - 10 || p.x > x1 + 10 || p.y < y0 - 10 || p.y > y1 + 10);
+    if (!bins.size && !crates.length) return;
     const pul = 0.65 + 0.35 * Math.sin(this.time * 6);
+    // crate markers stay clear of the ability buttons on the right edge
+    const cx1 = Math.min(x1, this.vw - this.insets.right - 100), ccx = (x0 + cx1) / 2;
+    for (const { d, p } of crates) {
+      const a = Math.atan2(p.y - cy, p.x - ccx), dx = Math.cos(a), dy = Math.sin(a);
+      const t = Math.min(dx ? (dx > 0 ? cx1 - ccx : x0 - ccx) / dx : 1e9, dy ? (dy > 0 ? y1 - cy : y0 - cy) / dy : 1e9);
+      const x = ccx + dx * (t - 22), y = cy + dy * (t - 22);
+      ctx.save();
+      ctx.globalAlpha = pul;
+      ctx.fillStyle = 'rgba(10,12,14,0.85)'; ctx.strokeStyle = POWERUPS[d.type].color; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(x, y, 15, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      drawIcon(ctx, POWERUPS[d.type].icon, x, y, 22);
+      ctx.translate(x + dx * 20, y + dy * 20); ctx.rotate(a);
+      ctx.fillStyle = POWERUPS[d.type].color;
+      ctx.beginPath(); ctx.moveTo(6, 0); ctx.lineTo(-4, -5); ctx.lineTo(-4, 5); ctx.closePath(); ctx.fill();
+      ctx.restore();
+    }
+    if (!bins.size) return;
     ctx.save();
     for (const b of bins.values()) {
       const dx = Math.cos(b.a), dy = Math.sin(b.a);
@@ -1244,6 +1296,7 @@ export class Renderer {
     if (e.frozenT > 0) Models.drawTinted(ctx, name, f, x, y, s, 'ice', 0.78);
     else if (e.frost > 4) Models.drawTinted(ctx, name, f, x, y, s, 'ice', e.frost / 100 * 0.6);
     if (e.acidN > 0) Models.drawTinted(ctx, name, f, x, y, s, 'acid', 0.1 + 0.07 * e.acidN + 0.05 * Math.sin(this.time * 6 + e.id));
+    if (e.radT > 0) Models.drawTinted(ctx, name, f, x, y, s, 'acid', Math.min(1, e.radT) * (0.18 + 0.14 * Math.sin(this.time * 9 + e.id)));
   }
 
   drawEnemy(ctx, e, ghost = false) {

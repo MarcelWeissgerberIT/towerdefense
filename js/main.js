@@ -500,6 +500,7 @@ function updateAim() {
     if (own) html += ` · <em>${own} eigene${own === 1 ? 'r Turm' : ' Türme'} beschädigt</em>`;
   }
   if (k === 'hole') html += ' · zieht 10 s lang alles ein';
+  if (k === 'nuke') html += ` · verstrahlt ${NUKE.radT} s · nur 1× pro Einsatz`;
   if (hudCache['aim-count'] !== html) { hudCache['aim-count'] = html; $('aim-count').innerHTML = html; }
 }
 $('aim-fire').onclick = () => { unlockAudio(); fireAim(); };
@@ -534,6 +535,7 @@ $('btn-nuke').onclick = () => {
   if (!game || paused || !game.nuke.on) return;
   unlockAudio();
   if (ui.targeting === 'nuke') { endAim(); sfx('click'); return; }
+  if (game.nuke.used) { sfx('error'); toast('Nur ein Atomschlag pro Einsatz – der Sprengkopf ist verbraucht', 'bad', 2000); return; }
   if (!game.nukeReady()) { sfx('error'); toast(`Atombombe lädt: ${Math.floor(game.nuke.charge / game.nuke.need * 100)} % – Abschüsse laden sie auf`, 'bad', 1800); return; }
   startAim('nuke');
   sfx('alarm');
@@ -560,9 +562,10 @@ function updateNuke() {
   b.classList.toggle('hidden', !n.on);
   if (!n.on) return;
   const ready = game.nukeReady();
-  b.style.setProperty('--p', (n.charge / n.need).toFixed(3));
+  b.style.setProperty('--p', n.used ? 0 : (n.charge / n.need).toFixed(3));
   b.classList.toggle('ready', ready && ui.targeting !== 'nuke');
-  setText('nuke-cd', ui.targeting === 'nuke' ? 'ZIEL' : ready ? 'BEREIT' : `${Math.floor(n.charge / n.need * 100)} %`);
+  b.classList.toggle('spent', !!n.used);
+  setText('nuke-cd', ui.targeting === 'nuke' ? 'ZIEL' : n.used ? 'LEER' : ready ? 'BEREIT' : `${Math.floor(n.charge / n.need * 100)} %`);
 }
 function updateBuffs() {
   const html = Object.entries(game.buffs).filter(([, v]) => v > 0)
@@ -793,7 +796,7 @@ async function startLevel(i, ch = null) {
   } else if (game.routes.length > 1) setTimeout(() => toast(`${game.routes.length} Angriffspfade – verteidige alle Zugänge!`, '', 3200), 1400);
   if (freePlay() && game.hole.on && game.nuke.on && game.orbital.on && !(save.data.holeHint && save.data.nukeHint && save.data.orbitalHint)) {
     save.data.holeHint = save.data.nukeHint = save.data.orbitalHint = true; save.write();
-    setTimeout(() => toast('Spezialwaffen rechts: Orbitalschlag (lädt nach), Atombombe (lädt durch Abschüsse), Schwarzes Loch – antippen, dann Ziel wählen', 'warn', 6000), 2400);
+    setTimeout(() => toast('Spezialwaffen rechts: Orbitalschlag (lädt nach), Atombombe (lädt durch Abschüsse, 1× pro Einsatz), Schwarzes Loch – antippen, dann Ziel wählen', 'warn', 6000), 2400);
   }
   if (game.hole.on && !save.data.holeHint) {
     save.data.holeHint = true; save.write();
@@ -801,7 +804,7 @@ async function startLevel(i, ch = null) {
   }
   if (game.nuke.on && !save.data.nukeHint) {
     save.data.nukeHint = true; save.write();
-    setTimeout(() => toast('Neu: ATOMBOMBE – lädt sich durch Abschüsse auf (Knopf rechts)', 'warn', 5000), 3400);
+    setTimeout(() => toast('Neu: ATOMBOMBE – lädt sich durch Abschüsse auf, nur einmal pro Einsatz, verstrahlt das Gebiet (Knopf rechts)', 'warn', 5000), 3400);
   }
   if (game.orbital.on && !save.data.orbitalHint) {
     save.data.orbitalHint = true; save.write();
