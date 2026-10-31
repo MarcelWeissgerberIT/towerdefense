@@ -95,12 +95,13 @@ export class Game {
     this.props = [];
     this.puddles = [];
     // orbital strike: special ability with cooldown (from mission 2)
-    this.orbital = { cd: 25, max: 85, on: L.number >= 2 && !M.noAbilities };
+    // free play (unlockAll): every tower and ability from the first mission on
+    this.orbital = { cd: 25, max: 85, on: (L.number >= 2 || M.unlockAll) && !M.noAbilities };
     this.strikes = [];
     // nuclear strike, charged by kills; power-up crates and active buffs
-    this.nuke = { charge: 0, need: NUKE.need(L.number), on: L.number >= NUKE.unlock && !M.noAbilities };
+    this.nuke = { charge: 0, need: NUKE.need(L.number), on: (L.number >= NUKE.unlock || M.unlockAll) && !M.noAbilities };
     this.nukes = [];
-    this.hole = { cd: HOLE.first, max: HOLE.cd, on: L.number >= HOLE.unlock && !M.noAbilities };
+    this.hole = { cd: HOLE.first, max: HOLE.cd, on: (L.number >= HOLE.unlock || M.unlockAll) && !M.noAbilities };
     this.holes = [];
     this.radZones = [];
     this.drops = [];
@@ -168,7 +169,7 @@ export class Game {
   emit(type, data) { this.events.push({ type, ...data }); }
 
   // ---------------- building ----------------
-  unlocked(type) { return TOWERS[type].unlock <= this.level.number && (!this.mods.towers || this.mods.towers.includes(type)); }
+  unlocked(type) { return (this.mods.unlockAll || TOWERS[type].unlock <= this.level.number) && (!this.mods.towers || this.mods.towers.includes(type)); }
   canBuild(cx, cy) { return this.cell(cx, cy) === CELL.FREE; }
   towerAt(cx, cy) { return this.towers.find(t => t.cx === cx && t.cy === cy); }
 

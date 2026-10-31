@@ -34,7 +34,9 @@ function setInGameUI(on) {
 }
 function starsHTML(n) { let s = ''; for (let i = 0; i < 3; i++) s += i < n ? '★' : '<span class="off">★</span>'; return s; }
 
-function levelUnlocked(i) { return i === 0 || (save.data.stars[i - 1] || 0) > 0; }
+// free play (default): everything is available without unlocking it first
+const freePlay = () => save.data.free !== false;
+function levelUnlocked(i) { return freePlay() || i === 0 || (save.data.stars[i - 1] || 0) > 0; }
 function renderLevels() {
   const list = $('level-list');
   list.innerHTML = '';
@@ -621,7 +623,7 @@ function onWin() {
   btns.push(['NOCHMAL SPIELEN', hasNext ? '' : 'primary', () => { closeModal(); startLevel(i); }]);
   btns.push(['EINSATZÜBERSICHT', '', () => { closeModal(); toLevels(); }]);
   const nextLevel = hasNext ? LEVEL_SPECS[i + 1] : null;
-  const newTower = hasNext ? TOWER_ORDER.find(k => TOWERS[k].unlock === i + 2) : null;
+  const newTower = hasNext && !freePlay() ? TOWER_ORDER.find(k => TOWERS[k].unlock === i + 2) : null;
   setTimeout(() => modal('SIEG', 'win',
     `Einsatz ${i + 1} „${game.level.name}" gehalten.<br>Basis: <b>${game.lives}/${game.maxLives}</b> · Zerstörte Maschinen: <b>${game.kills}</b>` +
     (newTower ? `<br><br>🔓 Neuer Turm freigeschaltet: <b>${TOWERS[newTower].name}</b>` : '') +
@@ -677,7 +679,7 @@ async function startLevel(i, ch = null) {
   unlockAudio();
   const spec = LEVEL_SPECS[i];
   challenge = ch;
-  const g = new Game(i, ch ? ch.mods : null);
+  const g = new Game(i, { ...(ch ? ch.mods : {}), unlockAll: freePlay() });
   // only the enemy types of this mission (incl. units launched by carriers / bursting out)
   const types = new Set();
   for (const w of g.waves.slice(0, 60)) for (const gr of w.groups) {
@@ -706,13 +708,17 @@ async function startLevel(i, ch = null) {
   updateHUD();
   if (ch) toast(`CHALLENGE: ${ch.name.toUpperCase()} – ${ch.desc}`, 'warn', 4500);
   else toast(`EINSATZ ${i + 1}: ${spec.name.toUpperCase()} – ${BIOMES[spec.biome].name}`, '', 2600);
-  const newTower = TOWER_ORDER.find(k => TOWERS[k].unlock === i + 1 && i > 0);
+  const newTower = freePlay() ? null : TOWER_ORDER.find(k => TOWERS[k].unlock === i + 1 && i > 0);
   if (newTower) setTimeout(() => toast(`Neuer Turm verfügbar: ${TOWERS[newTower].name}`, 'warn', 3500), 900);
   if (i === 0) setTimeout(() => toast('Tippe ein freies Feld an, um einen Turm zu bauen', '', 4000), 1200);
   else if (game.N > 15 && !save.data.bigMapHint) {
     save.data.bigMapHint = true; save.write();
     setTimeout(() => toast('Große Karte: mit zwei Fingern zoomen und verschieben – rote Pfeile zeigen Gegner außerhalb', '', 5000), 1200);
   } else if (game.routes.length > 1) setTimeout(() => toast(`${game.routes.length} Angriffspfade – verteidige alle Zugänge!`, '', 3200), 1400);
+  if (freePlay() && game.hole.on && game.nuke.on && game.orbital.on && !(save.data.holeHint && save.data.nukeHint && save.data.orbitalHint)) {
+    save.data.holeHint = save.data.nukeHint = save.data.orbitalHint = true; save.write();
+    setTimeout(() => toast('Spezialwaffen rechts: Orbitalschlag (lädt nach), Atombombe (lädt durch Abschüsse), Schwarzes Loch – antippen, dann Ziel wählen', 'warn', 6000), 2400);
+  }
   if (game.hole.on && !save.data.holeHint) {
     save.data.holeHint = true; save.write();
     setTimeout(() => toast('Neu: SCHWARZES LOCH – saugt Gegner 10 Sekunden lang ein (Knopf rechts oben)', 'warn', 5000), 4200);
@@ -748,7 +754,7 @@ function medalHTML(m) { return m ? `<span class="medal-s m${m}">${IC('trophy')}$
 function renderChallenges() {
   const list = $('challenge-list');
   list.innerHTML = '';
-  const cleared = (n) => (save.data.stars[n - 1] || 0) > 0;
+  const cleared = (n) => freePlay() || (save.data.stars[n - 1] || 0) > 0;
   let maxLevel = 0;
   while (maxLevel < LEVEL_COUNT && cleared(maxLevel + 1)) maxLevel++;
   const res = save.data.challenges || {};
@@ -788,6 +794,13 @@ $('btn-help').onclick = () => { unlockAudio(); sfx('click'); showScreen('screen-
 $('btn-help-back').onclick = () => { sfx('click'); showScreen('screen-menu'); };
 $('btn-levels-back').onclick = () => { sfx('click'); showScreen('screen-menu'); };
 $('btn-sound').onclick = () => { unlockAudio(); toggleSound(); sfx('click'); };
+function updateFreeBtn() { $('btn-free').textContent = `FREIES SPIEL: ${freePlay() ? 'AN' : 'AUS'}`; }
+$('btn-free').onclick = () => {
+  unlockAudio(); sfx('click');
+  save.data.free = !freePlay(); save.write(); updateFreeBtn();
+  toast(freePlay() ? 'Freies Spiel: alle Einsätze, Challenges, Türme und Fähigkeiten verfügbar' : 'Klassisch: Einsätze, Türme und Fähigkeiten werden nacheinander freigeschaltet', '', 3200);
+};
+updateFreeBtn();
 
 window.addEventListener('resize', () => { renderer.resize(); if (game) { updateInsets(); renderer.clampCam(); maybeRotateHint(); } });
 window.addEventListener('orientationchange', () => setTimeout(() => { renderer.resize(); if (game) { updateInsets(); renderer.resetCamera(); maybeRotateHint(); } }, 250));
