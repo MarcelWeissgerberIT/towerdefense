@@ -210,3 +210,20 @@ export const ELEV_PX = 46;
 export const ELEV_RANGE = 0.2;
 export const BIOME_ORDER = ['wasteland', 'jungle', 'desert', 'ice', 'volcano'];
 
+// ---- special abilities ----
+// nuclear strike: charged by the credits earned from kills (from mission 5)
+export const NUKE = {
+  unlock: 5, need: (lv) => 650 + 60 * lv, delay: 2.6,
+  radius: 3.4, outer: 5.2, dmg: 2600, bossFrac: 0.3,
+  towerRadius: 1.3, towerDmg: 0.65,           // own towers at ground zero get hurt
+  radT: 10, radR: 2.3, radDps: 0.04,          // radiation zone: share of max HP per second
+};
+// power-up crates dropped by destroyed machines (tap to activate)
+export const POWERUPS = {
+  overdrive: { name: 'OVERDRIVE', icon: '⚡', color: '#ff5a3c', dur: 15, w: 3, desc: 'Alle Türme feuern doppelt so schnell' },
+  timestop: { name: 'ZEITSTOPP', icon: '⏸', color: '#7fdcff', dur: 6, w: 2.5, desc: 'Alle Gegner erstarren' },
+  gold: { name: 'GOLDRAUSCH', icon: '💰', color: '#ffd34d', dur: 20, w: 3, desc: 'Dreifache Credits pro Abschuss' },
+  repair: { name: 'NANO-REPARATUR', icon: '🛡', color: '#7dff9f', dur: 10, w: 2.5, desc: 'Alle Türme repariert und unverwundbar' },
+  atom: { name: 'ATOMCODE', icon: '☢', color: '#e8ff3a', dur: 0, w: 1, desc: 'Atombombe zur Hälfte geladen' },
+};
+export const DROP = { chance: 0.022, gap: 18, life: 9 };

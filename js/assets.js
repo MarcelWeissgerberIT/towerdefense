@@ -229,6 +229,7 @@ export const Assets = {
     for (const [k, [file, cols, n, size, ay]] of Object.entries(VFX)) {
       jobs.push(loadImage(`assets/vfx/${file}.webp`).then((im) => { this.vfx[k] = { img: im, cols, n, size, ay }; }));
     }
+    this._vfxLazy = { nuke: ['explosion_nuke', 7, 28, 300, 0.84] };
     await Promise.all(jobs);
     this.fx = {
       orange: glow(255, 150, 40), yellow: glow(255, 220, 120), cyan: glow(70, 220, 255), violet: glow(190, 120, 255),
@@ -239,6 +240,13 @@ export const Assets = {
     this.ready = true;
   },
 
+  // big effect sheets that only some levels need (the mushroom cloud)
+  async loadVfx(k) {
+    if (this.vfx[k] || !this._vfxLazy[k]) return;
+    const [file, cols, n, size, ay] = this._vfxLazy[k];
+    const img = await loadImage(`assets/vfx/${file}.webp`);
+    if (img) this.vfx[k] = { img, cols, n, size, ay };
+  },
   async loadBiome(id) {
     const b = BIOMES[id];
     const want = [b.ground, b.road].filter(k => !this.tex[k]);

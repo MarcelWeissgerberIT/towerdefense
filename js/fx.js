@@ -5,11 +5,15 @@ import { rand } from './iso.js';
 const MAX_PARTICLES = 900;
 
 export class FX {
-  constructor() { this.p = []; this.shake = 0; this.flash = 0; }
-  clear() { this.p.length = 0; this.shake = 0; this.flash = 0; }
+  constructor() { this.p = []; this.shake = 0; this.flash = 0; this.whiteout = 0; }
+  clear() { this.p.length = 0; this.shake = 0; this.flash = 0; this.whiteout = 0; }
 
   add(o) {
-    if (this.p.length >= MAX_PARTICLES) this.p.splice(0, 40);
+    if (this.p.length >= MAX_PARTICLES) {
+      // drop the 40 oldest particles, but never key effects (mushroom cloud, big flashes)
+      let n = 0;
+      this.p = this.p.filter(q => q.keep || n++ >= 40);
+    }
     o.t = 0;
     this.p.push(o);
     return o;
@@ -44,8 +48,9 @@ export class FX {
   // video fireball (sprite sheet) + procedural layers
   // video explosion; kind = fire | plasma | heavy | ground, randomly varied in size, speed, rotation and mirroring
   boom(x, y, size, life = 0.95, kind = 'fire') {
-    const v = rand(0.85, 1.2);
-    this.add({ k: 'boom', x, y, s: size * v, life: life * rand(0.85, 1.15), rot: kind === 'heavy' ? rand(-0.08, 0.08) : rand(-0.35, 0.35), flip: Math.random() < 0.5, kind });
+    const nuke = kind === 'nuke';
+    const v = nuke ? 1 : rand(0.85, 1.2);
+    return this.add({ k: 'boom', x, y, s: size * v, life: nuke ? life : life * rand(0.85, 1.15), rot: nuke ? 0 : kind === 'heavy' ? rand(-0.08, 0.08) : rand(-0.35, 0.35), flip: Math.random() < 0.5, kind, keep: nuke });
   }
   later(ms, fn) { setTimeout(fn, ms); }
   explosion(x, y, scale = 1, kind = 'fire') {
@@ -189,6 +194,28 @@ export class FX {
     this.add({ k: 'bolt', pts: out, life: 0.16, w: 1 + 0.4 * (lvl - 1) });
     for (let i = 1; i < pts.length; i++) this.add({ k: 'glow', x: pts[i][0], y: pts[i][1], s: 46, life: 0.18, spr: 'violet' });
   }
+  // nuclear detonation: white-out, mushroom cloud, shock waves, a ring of dust and burning debris
+  nuke(x, y) {
+    this.whiteout = 1.35;
+    this.flash = 1;
+    this.shake = 36;
+    this.boom(x, y + 20, 820, 3.4, Assets.vfx.nuke ? 'nuke' : 'heavy');
+    this.add({ k: 'glow', x, y: y - 60, s: 900, life: 0.9, spr: 'white', keep: true });
+    this.add({ k: 'glow', x, y: y - 40, s: 600, life: 1.6, spr: 'orange', keep: true });
+    for (const [r1, life, c] of [[1100, 1.4, '255,255,255'], [800, 1.1, '255,200,120'], [520, 0.8, '255,150,60']]) this.add({ k: 'ring', x, y, r0: 30, r1, life, c, keep: true });
+    this.later(450, () => this.add({ k: 'ring', x, y, r0: 60, r1: 1300, life: 1.8, c: '220,200,180' }));
+    for (let i = 0; i < 46; i++) {
+      const a = Math.random() * Math.PI * 2, v = rand(160, 420);
+      this.add({ k: 'smoke', x: x + Math.cos(a) * 40, y: y + Math.sin(a) * 20, vx: Math.cos(a) * v, vy: Math.sin(a) * v * 0.5, s: rand(30, 50), grow: 120, life: rand(1.6, 2.6), a: 0.7, dark: Math.random() < 0.6 });
+    }
+    for (let i = 0; i < 40; i++) this.add({ k: 'ember', x: x + rand(-60, 60), y: y - rand(0, 80), vx: rand(-420, 420), vy: rand(-620, -120), trail: 0, life: rand(1.0, 1.8) });
+    this.debris(x, y, 30, 520);
+    for (let i = 0; i < 10; i++) this.later(300 + i * 160, () => {
+      const a = Math.random() * Math.PI * 2, r = rand(120, 360);
+      this.boom(x + Math.cos(a) * r, y + Math.sin(a) * r * 0.5, rand(110, 190), 1.0, Math.random() < 0.5 ? 'ground' : 'fire');
+      this.shake = Math.max(this.shake, 8);
+    });
+  }
   frostMist(x, y) {
     this.add({ k: 'mist', x, y, vx: rand(-14, 14), vy: rand(-18, -6), s: rand(14, 24), grow: 26, life: rand(0.5, 0.9) });
     if (Math.random() < 0.5) this.add({ k: 'spark', x, y, vx: rand(-60, 60), vy: rand(-90, -20), c: '#eafcff', life: rand(0.25, 0.45) });
@@ -261,6 +288,7 @@ export class FX {
     for (const o of spawned) if (p.length < MAX_PARTICLES) p.push(o);
     this.shake = Math.max(0, this.shake - dt * 18);
     this.flash = Math.max(0, this.flash - dt * 1.6);
+    this.whiteout = Math.max(0, this.whiteout - dt * 0.8);
   }
 
   draw(ctx) {

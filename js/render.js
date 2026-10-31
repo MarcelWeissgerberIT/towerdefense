@@ -1,5 +1,5 @@
 // Isometric canvas renderer
-import { HW, HH, TOWERS, BIOMES, TOWER_SCALE, ELEV_PX } from './config.js';
+import { HW, HH, TOWERS, BIOMES, TOWER_SCALE, ELEV_PX, NUKE, POWERUPS } from './config.js';
 import { toWorld, toGrid, mulberry32, clamp } from './iso.js';
 import { Assets, Models } from './assets.js';
 import { CELL } from './game.js';
@@ -485,6 +485,7 @@ export class Renderer {
       if (!Models.drawShadow(ctx, t.def.model, Models.frameFor(t.def.model, t.ang), t.wx, t.wy, TS)) ctx.drawImage(fx.shadow, t.wx - 66, t.wy - 22, 132, 58);
     }
     for (const p of game.puddles) this.drawPuddle(ctx, p);
+    for (const z of game.radZones) this.drawRadiation(ctx, z);
     for (const e of game.enemies) {
       const m = Models.meta(e.def.model);
       const s = (m ? m.w * m.scale * 0.6 : 60) * e.def.scale;
@@ -535,6 +536,8 @@ export class Renderer {
     this.drawBeams(ctx, game);
     this.drawShots(ctx, game.shots);
     this.drawStrikes(ctx, game);
+    this.drawNukes(ctx, game);
+    this.drawDrops(ctx, game);
     game.fx.draw(ctx);
     for (const e of game.enemies) this.drawHp(ctx, e);
     for (const t of game.towers) if (t.hp < t.stats.hp) this.drawTowerHp(ctx, t);
@@ -543,6 +546,14 @@ export class Renderer {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     this.drawAmbient(ctx, dt);
     this.drawOffscreen(ctx, game);
+    if (game.buffs.timestop > 0) {
+      const a = Math.min(1, game.buffs.timestop / 0.5, (6 - game.buffs.timestop) / 0.3 + 0.2);
+      ctx.fillStyle = `rgba(90,170,255,${0.14 * a})`; ctx.fillRect(0, 0, this.vw, this.vh);
+    }
+    if (game.fx.whiteout > 0) {
+      ctx.fillStyle = `rgba(255,252,240,${Math.min(1, game.fx.whiteout)})`;
+      ctx.fillRect(0, 0, this.vw, this.vh);
+    }
     if (game.fx.flash > 0) {
       ctx.globalCompositeOperation = 'lighter';
       ctx.fillStyle = `rgba(255,170,90,${game.fx.flash * 0.35})`;
@@ -574,6 +585,95 @@ export class Renderer {
       const g = 60 + 160 * k;
       ctx.drawImage(Assets.fx.red, c.x - g / 2, c.y - g / 2, g, g);
       ctx.restore();
+    }
+  }
+
+  // nuclear strike countdown: warning zone + warhead falling from the sky
+  drawNukes(ctx, game) {
+    for (const n of game.nukes) {
+      const c = toWorld(n.gx, n.gy);
+      const k = 1 - n.t / n.dur;
+      const pul = 0.5 + 0.5 * Math.sin(this.time * 18);
+      ctx.save();
+      for (const [r, a] of [[NUKE.radius, 0.9], [NUKE.outer, 0.45]]) {
+        ctx.strokeStyle = `rgba(255,${200 * (1 - pul)},40,${a})`;
+        ctx.lineWidth = r === NUKE.radius ? 4 : 2;
+        ctx.setLineDash([22, 14]); ctx.lineDashOffset = -this.time * 90;
+        ctx.beginPath(); ctx.ellipse(c.x, c.y, r * HW * Math.SQRT2, r * HH * Math.SQRT2, 0, 0, Math.PI * 2); ctx.stroke();
+      }
+      ctx.setLineDash([]);
+      ctx.fillStyle = `rgba(255,60,20,${0.08 + 0.08 * pul})`;
+      ctx.beginPath(); ctx.ellipse(c.x, c.y, NUKE.radius * HW * Math.SQRT2, NUKE.radius * HH * Math.SQRT2, 0, 0, Math.PI * 2); ctx.fill();
+      // hazard symbol on the ground
+      ctx.fillStyle = `rgba(255,220,40,${0.5 + 0.4 * pul})`;
+      for (let i = 0; i < 3; i++) {
+        const a0 = -Math.PI / 2 + i * Math.PI * 2 / 3 - 0.5;
+        ctx.beginPath(); ctx.moveTo(c.x, c.y);
+        ctx.ellipse(c.x, c.y, 60, 30, 0, a0, a0 + 1);
+        ctx.closePath(); ctx.fill();
+      }
+      // warhead
+      const hy = c.y - 1500 * (1 - k * k), hx = c.x + 260 * (1 - k);
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.strokeStyle = 'rgba(255,230,200,0.7)'; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.moveTo(hx + 120 * (1 - k) + 40, hy - 220); ctx.lineTo(hx, hy); ctx.stroke();
+      ctx.drawImage(Assets.fx.orange, hx - 30, hy - 30, 60, 60);
+      ctx.drawImage(Assets.fx.white, hx - 12, hy - 12, 24, 24);
+      ctx.restore();
+    }
+  }
+  drawRadiation(ctx, z) {
+    const c = toWorld(z.gx, z.gy);
+    const fade = Math.min(1, z.t / 2, (z.life - z.t) / 0.4);
+    const rx = z.r * HW * Math.SQRT2, ry = z.r * HH * Math.SQRT2;
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = fade * (0.55 + 0.15 * Math.sin(this.time * 3));
+    const g = ctx.createRadialGradient(c.x, c.y, 0, c.x, c.y, rx);
+    g.addColorStop(0, 'rgba(210,255,60,0.5)'); g.addColorStop(0.7, 'rgba(120,200,20,0.25)'); g.addColorStop(1, 'rgba(60,120,0,0)');
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.ellipse(c.x, c.y, rx, ry, 0, 0, Math.PI * 2); ctx.fill();
+    for (let i = 0; i < 10; i++) {
+      const ph = (this.time * 0.6 + i * 0.13) % 1;
+      const a = i * 2.39;
+      ctx.globalAlpha = fade * (1 - ph) * 0.7;
+      ctx.drawImage(Assets.fx.green, c.x + Math.cos(a) * rx * 0.7 * ((i % 3) / 3 + 0.3) - 6, c.y + Math.sin(a) * ry * 0.7 - ph * 70 - 6, 12, 12);
+    }
+    ctx.restore();
+  }
+  // power-up crate: hovering, glowing, blinking before it expires
+  crateImg(type) {
+    this._crates = this._crates || {};
+    if (this._crates[type]) return this._crates[type];
+    const p = POWERUPS[type], c = makeCanvas(84, 84), g = c.getContext('2d');
+    const top = [[42, 10], [70, 24], [42, 38], [14, 24]];
+    const face = (pts, col) => { g.beginPath(); g.moveTo(pts[0][0], pts[0][1]); for (const q of pts.slice(1)) g.lineTo(q[0], q[1]); g.closePath(); g.fillStyle = col; g.fill(); g.strokeStyle = 'rgba(0,0,0,0.6)'; g.lineWidth = 1.5; g.stroke(); };
+    face([[14, 24], [42, 38], [42, 70], [14, 56]], '#2b2f33');
+    face([[42, 38], [70, 24], [70, 56], [42, 70]], '#1c1f22');
+    face(top, '#3d4247');
+    g.strokeStyle = p.color; g.lineWidth = 3;
+    g.beginPath(); g.moveTo(14, 40); g.lineTo(42, 54); g.lineTo(70, 40); g.stroke();
+    g.font = '24px system-ui, "Apple Color Emoji", sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.fillText(p.icon, 42, 24);
+    return (this._crates[type] = c);
+  }
+  drawDrops(ctx, game) {
+    for (const d of game.drops) {
+      if (d.t < 3 && Math.sin(this.time * 18) < 0) continue;
+      const p = POWERUPS[d.type];
+      const bob = Math.sin(this.time * 3 + d.id) * 5;
+      const x = d.wx, y = d.wy - 46 + bob;
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.globalAlpha = 0.55 + 0.25 * Math.sin(this.time * 6 + d.id);
+      const spr = { overdrive: 'red', timestop: 'cyan', gold: 'yellow', repair: 'green', atom: 'yellow' }[d.type];
+      ctx.drawImage(Assets.fx[spr], x - 50, y - 50, 100, 100);
+      ctx.globalAlpha = 0.35;
+      ctx.drawImage(Assets.fx[spr], x - 20, d.wy - 10, 40, 20);
+      ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
+      ctx.drawImage(this.crateImg(d.type), x - 32, y - 32, 64, 64);
+      ctx.font = '700 12px "Rajdhani", system-ui, sans-serif'; ctx.textAlign = 'center';
+      ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,0.85)'; ctx.strokeText(p.name, x, y - 34);
+      ctx.fillStyle = p.color; ctx.fillText(p.name, x, y - 34);
     }
   }
 
@@ -763,6 +863,23 @@ export class Renderer {
       ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
     }
     if (t.upgrading) this.drawUpgrade(ctx, t, m, f, y);
+    const bf = this.game.buffs;
+    if (bf.overdrive > 0) {
+      // overdrive: red-hot glow on the gun
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.globalAlpha = 0.45 + 0.25 * Math.sin(this.time * 14 + t.id);
+      ctx.drawImage(Assets.fx.red, t.wx - 40, y - m.topPx * TS * 0.7 - 40, 80, 80);
+      ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
+    }
+    if (bf.repair > 0) {
+      // nano shield bubble
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.strokeStyle = `rgba(120,255,200,${0.35 + 0.2 * Math.sin(this.time * 5 + t.id)})`;
+      ctx.fillStyle = 'rgba(80,255,180,0.06)';
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.ellipse(t.wx, y - 34, 58, 64, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      ctx.globalCompositeOperation = 'source-over';
+    }
     if (t.level > 1) {
       const bx = t.wx + 34, by = t.wy + 18;
       for (let i = 0; i < t.level - 1; i++) {

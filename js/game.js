@@ -1,6 +1,6 @@
 // Core simulation: grid, routes, towers (turret aiming), enemies (attack towers), projectiles, waves.
 import {
-  TOWERS, ENEMIES, BIOMES, EFFECT, FROST, SHATTER, THERMAL, ACID_ARMOR, ELEV_PX, ELEV_RANGE, MAX_LEVEL, TOWER_SCALE, UPGRADE_TIME, WAVE_GAP, SELL_RATE, FULL_REFUND_TIME, towerStats, upgradeCost, totalInvested,
+  TOWERS, ENEMIES, BIOMES, EFFECT, FROST, SHATTER, THERMAL, ACID_ARMOR, NUKE, POWERUPS, DROP, ELEV_PX, ELEV_RANGE, MAX_LEVEL, TOWER_SCALE, UPGRADE_TIME, WAVE_GAP, SELL_RATE, FULL_REFUND_TIME, towerStats, upgradeCost, totalInvested,
 } from './config.js';
 import { getLevel, makeWaves, hpMultiplier } from './levels.js';
 import { toWorld, rand, mulberry32 } from './iso.js';
@@ -92,6 +92,13 @@ export class Game {
     // orbital strike: special ability with cooldown (from mission 2)
     this.orbital = { cd: 25, max: 85, on: L.number >= 2 };
     this.strikes = [];
+    // nuclear strike, charged by kills; power-up crates and active buffs
+    this.nuke = { charge: 0, need: NUKE.need(L.number), on: L.number >= NUKE.unlock };
+    this.nukes = [];
+    this.radZones = [];
+    this.drops = [];
+    this.lastDrop = -99;
+    this.buffs = { overdrive: 0, timestop: 0, gold: 0, repair: 0 };
     this.setupGrid();
   }
 
@@ -251,6 +258,7 @@ export class Game {
 
   damageTower(t, dmg) {
     if (!this.towers.includes(t)) return;
+    if (this.buffs.repair > 0) { if (Math.random() < 0.3) this.fx.add({ k: 'glow', x: t.wx, y: t.wy - 40, s: 90, life: 0.2, spr: 'cyan' }); return; }
     t.hp -= dmg;
     t.lastHit = this.time;
     if (t.hp <= 0) {
@@ -407,7 +415,14 @@ export class Game {
         }
       }
     }
-    this.credits += e.reward;
+    const gain = e.reward * (this.buffs.gold > 0 ? 3 : 1);
+    this.credits += gain;
+    if (this.buffs.gold > 0) this.fx.text(e.wx, this.bodyY(e) - 50, `💰 ×3`, '#ffd34d');
+    if (this.nuke.on && !this._nuking) this.nuke.charge = Math.min(this.nuke.need, this.nuke.charge + e.reward);
+    // power-up crate: bosses always, others rarely (spaced out)
+    if (!e.air || e.def.boss) {
+      if (e.def.boss || (Math.random() < DROP.chance && this.time - this.lastDrop > DROP.gap && this.drops.length < 2)) this.spawnDrop(e.gx, e.gy);
+    }
     const y = this.bodyY(e);
     const big = e.def.boss ? 3.0 : e.def.cost >= 10 ? 1.7 : e.def.cost >= 5 ? 1.3 : e.type === 'spider' ? 0.8 : 1;
     // explosion style depends on what killed the machine
@@ -462,7 +477,8 @@ export class Game {
   updateTower(t, dt) {
     t.recoil = Math.max(0, t.recoil - dt * 7);
     t.built += dt;
-    t.cool -= dt;
+    const odm = this.buffs.overdrive > 0 ? 2 : 1;      // OVERDRIVE: double fire rate
+    t.cool -= dt * odm;
     if (t.powerUp > 0) t.powerUp = Math.max(0, t.powerUp - dt * 0.8);
     if (t.upgrading) {
       const u = t.upgrading;
@@ -517,15 +533,15 @@ export class Game {
       t.firing = true;
       t.beamT = Math.min(def.rampTime, t.beamT + dt);
       const mul = 1 + (def.ramp - 1) * (t.beamT / def.rampTime);
-      this.damage(target, s.dps * mul * dt, { src: t });
+      this.damage(target, s.dps * mul * dt * odm, { src: t });
       if (Math.random() < dt * 20) { const a = this.aimPoint(target); this.fx.sparks(a.x, a.y, 1, '#ff9a8a', 120); }
       sfx('laser');
       return;
     }
     if (def.kind === 'cryo') {
       t.firing = true;
-      this.damage(target, s.dps * dt, { src: t });
-      this.chill(target, s.frost * dt);
+      this.damage(target, s.dps * dt * odm, { src: t });
+      this.chill(target, s.frost * dt * odm);
       // upgraded cryo spreads the cold around the target
       if (t.level >= 2) for (const e of this.enemiesInRange(target.gx, target.gy, 0.45 + 0.2 * t.level, true, true)) if (e !== target) this.chill(e, s.frost * 0.35 * dt);
       if (Math.random() < dt * 14) { const a = this.aimPoint(target); this.fx.frostMist(a.x + rand(-10, 10), a.y + rand(-8, 8)); }
@@ -538,7 +554,7 @@ export class Game {
       for (const e of this.enemiesInRange(t.gx, t.gy, s.range, false, true)) {
         const a = Math.atan2(e.gy - t.gy, e.gx - t.gx);
         if (Math.abs(angDiff(t.ang, a)) <= cone / 2 + 0.12) {
-          this.damage(e, s.dps * dt, { src: t });
+          this.damage(e, s.dps * dt * odm, { src: t });
           e.burnT = def.burnDur; e.burnDps = Math.max(e.burnDps, s.burn);
           // thermal shock: fire on a deep-frozen machine cracks it open
           if (e.alive && (e.frost >= THERMAL.frost || e.frozenT > 0) && this.time > (e.thermalCd || 0)) {
@@ -777,6 +793,7 @@ export class Game {
     slow = Math.max(slow, (e.frost / FROST.max) * (def.boss ? FROST.bossSlow : FROST.slow));
     sp *= 1 - slow;
     if (e.frozenT > 0) sp = 0;
+    if (this.buffs.timestop > 0) sp *= def.boss ? 0.3 : 0;
     e.d += sp * dt;
     // footfalls: two per animation cycle (or per configured stride for unanimated gaits)
     const stepLen = Models.meta(def.model)?.af ? Models.cycleOf(def) / 2 : (def.stride || 0.6);
@@ -842,7 +859,7 @@ export class Game {
       }
     }
     // attack towers
-    if (def.atk && e.frozenT <= 0) {
+    if (def.atk && e.frozenT <= 0 && !(this.buffs.timestop > 0 && !def.boss)) {
       e.atkCool -= dt;
       if (e.atkCool <= 0) {
         const a = def.atk;
@@ -891,6 +908,77 @@ export class Game {
   }
 
   // ---------------- update ----------------
+  // ---- nuclear strike ----
+  nukeReady() { return this.nuke.on && this.nuke.charge >= this.nuke.need; }
+  nukeStrike(gx, gy) {
+    if (!this.nukeReady()) return false;
+    this.nuke.charge = 0;
+    this.nukes.push({ gx, gy, t: NUKE.delay, dur: NUKE.delay });
+    sfx('siren');
+    return true;
+  }
+  updateNukes(dt) {
+    for (const n of this.nukes) {
+      n.t -= dt;
+      if (n.t > 0) continue;
+      n.done = true;
+      const w = toWorld(n.gx, n.gy);
+      const hpm = Math.pow(hpMultiplier(this.level.number, Math.max(1, this.wave)), 0.9);
+      this._nuking = true;
+      for (const e of this.enemiesInRange(n.gx, n.gy, NUKE.outer, true, true)) {
+        const d = Math.hypot(e.gx - n.gx, e.gy - n.gy);
+        const k = d <= NUKE.radius ? 1 : 0.4;
+        const dmg = e.def.boss ? e.maxHp * NUKE.bossFrac * k + NUKE.dmg * 0.2 * hpm : NUKE.dmg * hpm * k;
+        this.damage(e, dmg, { ignoreArmor: true });
+      }
+      for (const t of [...this.towers]) {
+        const d = Math.hypot(t.gx - n.gx, t.gy - n.gy);
+        if (d <= NUKE.towerRadius) this.damageTower(t, t.stats.hp * NUKE.towerDmg * (1 - 0.4 * d / NUKE.towerRadius));
+      }
+      this._nuking = false;
+      this.radZones.push({ gx: n.gx, gy: n.gy, r: NUKE.radR, t: NUKE.radT, life: NUKE.radT });
+      this.fx.nuke(w.x, w.y);
+      this.decals.push({ x: w.x, y: w.y, s: 420 });
+      this.emit('nukeHit', {});
+      sfx('nuke');
+    }
+    if (this.nukes.some(n => n.done)) this.nukes = this.nukes.filter(n => !n.done);
+    for (const z of this.radZones) {
+      z.t -= dt;
+      for (const e of this.enemiesInRange(z.gx, z.gy, z.r, false, true)) this.damage(e, e.maxHp * NUKE.radDps * (e.def.boss ? 0.3 : 1) * dt, { ignoreArmor: true });
+    }
+    if (this.radZones.some(z => z.t <= 0)) this.radZones = this.radZones.filter(z => z.t > 0);
+  }
+  // ---- power-up crates ----
+  spawnDrop(gx, gy) {
+    const pool = Object.entries(POWERUPS).filter(([k]) => k !== 'atom' || this.nuke.on);
+    let r = Math.random() * pool.reduce((a, [, p]) => a + p.w, 0), type = pool[0][0];
+    for (const [k, p] of pool) { r -= p.w; if (r <= 0) { type = k; break; } }
+    const w = toWorld(gx, gy);
+    this.drops.push({ type, gx, gy, wx: w.x, wy: w.y, t: DROP.life, life: DROP.life, id: uid++ });
+    this.lastDrop = this.time;
+    this.fx.add({ k: 'ring', x: w.x, y: w.y, r0: 6, r1: 50, life: 0.4, c: '255,240,160' });
+    sfx('dropSpawn');
+  }
+  collect(drop) {
+    if (!this.drops.includes(drop)) return false;
+    this.drops = this.drops.filter(d => d !== drop);
+    const p = POWERUPS[drop.type];
+    if (drop.type === 'atom') this.nuke.charge = Math.min(this.nuke.need, this.nuke.charge + this.nuke.need * 0.5);
+    else this.buffs[drop.type] = p.dur;
+    if (drop.type === 'repair') for (const t of this.towers) { t.hp = t.stats.hp; this.fx.add({ k: 'glow', x: t.wx, y: t.wy - 40, s: 120, life: 0.5, spr: 'green' }); }
+    this.fx.add({ k: 'glow', x: drop.wx, y: drop.wy - 30, s: 220, life: 0.45, spr: 'white' });
+    this.fx.add({ k: 'ring', x: drop.wx, y: drop.wy, r0: 10, r1: 160, life: 0.5, c: '255,240,180' });
+    this.emit('powerup', { pu: drop.type });
+    sfx('powerup');
+    return true;
+  }
+  updateDrops(dt) {
+    for (const k in this.buffs) if (this.buffs[k] > 0) this.buffs[k] = Math.max(0, this.buffs[k] - dt);
+    for (const d of this.drops) d.t -= dt;
+    if (this.drops.some(d => d.t <= 0)) this.drops = this.drops.filter(d => d.t > 0);
+  }
+
   // orbital strike at grid point: a targeting beam, then a huge blast (ground and air)
   orbitalStrike(gx, gy) {
     if (!this.orbital.on || this.orbital.cd > 0) return false;
@@ -927,6 +1015,8 @@ export class Game {
     if (this.state === 'won' || this.state === 'lost') { this.fx.update(dt); return; }
     this.time += dt;
     this.updateStrikes(dt);
+    this.updateNukes(dt);
+    this.updateDrops(dt);
     while (this.queue.length && this.queue[0].t <= this.time) {
       const s = this.queue.shift();
       const e = this.spawn(s.type, s.route, s.hpMul, s.rewardMul);

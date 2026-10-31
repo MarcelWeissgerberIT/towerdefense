@@ -1,5 +1,5 @@
 // Iron Sentinel – app controller: screens, HUD, build drawer, tower menu, game loop.
-import { TOWERS, ENEMIES, TOWER_ORDER, MAX_LEVEL, BIOMES, BIOME_ORDER, UPGRADE_TIME, ELEV_RANGE, CLASS_NAME, EFFECT, effectOf, upgradeCost, towerStats } from './config.js';
+import { TOWERS, ENEMIES, TOWER_ORDER, MAX_LEVEL, BIOMES, BIOME_ORDER, UPGRADE_TIME, ELEV_RANGE, CLASS_NAME, EFFECT, POWERUPS, NUKE, effectOf, upgradeCost, towerStats } from './config.js';
 import { LEVEL_SPECS, LEVEL_COUNT, getLevel, makeWaves, hpMultiplier } from './levels.js';
 import { Assets, Models } from './assets.js';
 import { Renderer } from './render.js';
@@ -126,6 +126,7 @@ function openBuildMenu(cx, cy) {
   $('builddrawer').classList.remove('hidden');
   $('btn-wave').classList.add('under-drawer');
   $('btn-orbital').classList.add('under-drawer');
+  $('btn-nuke').classList.add('under-drawer');
   requestAnimationFrame(() => ensureCellVisible(cx, cy));
   sfx('click');
 }
@@ -178,6 +179,7 @@ function closeBuildMenu() {
   $('builddrawer').classList.add('hidden');
   $('btn-wave').classList.remove('under-drawer');
   $('btn-orbital').classList.remove('under-drawer');
+  $('btn-nuke').classList.remove('under-drawer');
 }
 $('bd-build').onclick = (e) => { e.stopPropagation(); buildChosen(); };
 $('bd-close').onclick = (e) => { e.stopPropagation(); closeBuildMenu(); sfx('click'); };
@@ -369,6 +371,18 @@ function openCatalog() {
 function onTap(p) {
   unlockAudio();
   if (!game || paused || game.state === 'won' || game.state === 'lost') return;
+  if (ui.targeting === 'nuke') {
+    const w = renderer.screenToWorld(p.x, p.y), g = toGrid(w.x, w.y);
+    if (game.nukeStrike(g.x, g.y)) toast('☢ ATOMSCHLAG – EINSCHLAG IN 3 SEKUNDEN', 'bad', 2400);
+    ui.targeting = null;
+    $('btn-nuke').classList.remove('arming');
+    return;
+  }
+  // power-up crates take priority: tap to activate
+  for (const d of game.drops) {
+    const sp = renderer.worldToScreen(d.wx, d.wy - 46);
+    if (Math.hypot(sp.x - p.x, sp.y - p.y) < Math.max(34, 52 * renderer.cam.zoom)) { game.collect(d); return; }
+  }
   if (ui.targeting === 'orbital') {
     const w = renderer.screenToWorld(p.x, p.y), g = toGrid(w.x, w.y);
     if (game.orbitalStrike(g.x, g.y)) toast('ORBITALSCHLAG EINGELEITET', 'warn', 1400);
@@ -398,14 +412,59 @@ new Input(canvas, renderer, { tap: onTap, hover: () => {} });
 $('btn-orbital').onclick = () => {
   if (!game || paused || !game.orbital.on) return;
   unlockAudio();
+  if (ui.targeting === 'nuke') {
+    const w = renderer.screenToWorld(p.x, p.y), g = toGrid(w.x, w.y);
+    if (game.nukeStrike(g.x, g.y)) toast('☢ ATOMSCHLAG – EINSCHLAG IN 3 SEKUNDEN', 'bad', 2400);
+    ui.targeting = null;
+    $('btn-nuke').classList.remove('arming');
+    return;
+  }
+  // power-up crates take priority: tap to activate
+  for (const d of game.drops) {
+    const sp = renderer.worldToScreen(d.wx, d.wy - 46);
+    if (Math.hypot(sp.x - p.x, sp.y - p.y) < Math.max(34, 52 * renderer.cam.zoom)) { game.collect(d); return; }
+  }
   if (ui.targeting === 'orbital') { ui.targeting = null; $('btn-orbital').classList.remove('arming'); sfx('click'); return; }
   if (game.orbital.cd > 0) { sfx('error'); toast(`Orbitalschlag lädt noch ${Math.ceil(game.orbital.cd)} s`, 'bad', 1400); return; }
   closeBuildMenu(); closeTowerMenu();
+  if (ui.targeting === 'nuke') $('btn-nuke').classList.remove('arming');
   ui.targeting = 'orbital';
   $('btn-orbital').classList.add('arming');
   sfx('click');
   toast('Ziel für den Orbitalschlag antippen', 'warn', 2200);
 };
+$('btn-nuke').onclick = () => {
+  if (!game || paused || !game.nuke.on) return;
+  unlockAudio();
+  if (ui.targeting === 'nuke') { ui.targeting = null; $('btn-nuke').classList.remove('arming'); sfx('click'); return; }
+  if (!game.nukeReady()) { sfx('error'); toast(`Atombombe lädt: ${Math.floor(game.nuke.charge / game.nuke.need * 100)} % – Abschüsse laden sie auf`, 'bad', 1800); return; }
+  closeBuildMenu(); closeTowerMenu();
+  if (ui.targeting === 'orbital') $('btn-orbital').classList.remove('arming');
+  ui.targeting = 'nuke';
+  $('btn-nuke').classList.add('arming');
+  sfx('alarm');
+  toast('☢ Ziel antippen – Vorsicht: beschädigt eigene Türme im Zentrum', 'warn', 2600);
+};
+function updateNuke() {
+  const b = $('btn-nuke'), n = game.nuke;
+  b.classList.toggle('hidden', !n.on);
+  if (!n.on) return;
+  const ready = game.nukeReady();
+  b.style.setProperty('--p', (n.charge / n.need).toFixed(3));
+  b.classList.toggle('ready', ready && ui.targeting !== 'nuke');
+  setText('nuke-cd', ui.targeting === 'nuke' ? 'ZIEL' : ready ? 'BEREIT' : `${Math.floor(n.charge / n.need * 100)} %`);
+}
+function updateBuffs() {
+  const html = Object.entries(game.buffs).filter(([, v]) => v > 0)
+    .map(([k, v]) => `<span class="buff" style="--bc:${POWERUPS[k].color}">${POWERUPS[k].icon} ${POWERUPS[k].name} ${Math.ceil(v)}s</span>`).join('');
+  if (hudCache.buffs !== html) { hudCache.buffs = html; $('buffs').innerHTML = html; }
+}
+function showPowerBanner(type) {
+  const p = POWERUPS[type], b = $('pu-banner');
+  $('pu-icon').textContent = p.icon; $('pu-name').textContent = p.name + '!'; $('pu-desc').textContent = p.desc;
+  b.style.setProperty('--pc', p.color);
+  b.classList.remove('hidden', 'show'); void b.offsetWidth; b.classList.add('show');
+}
 function updateOrbital() {
   const b = $('btn-orbital'), o = game.orbital;
   b.classList.toggle('hidden', !o.on);
@@ -424,6 +483,8 @@ function pulse(id) { const el = $(id); el.classList.remove('pulse'); void el.off
 function updateHUD() {
   if (!game) return;
   updateOrbital();
+  updateNuke();
+  updateBuffs();
   setText('hud-lives', String(game.lives));
   if (setText('hud-credits', String(game.credits))) pulse('stat-credits');
   setText('hud-wave', `${game.wave}/${game.waves.length}`);
@@ -536,6 +597,8 @@ function processEvents() {
     } else if (ev.type === 'towerLost') {
       if (ui.selected === ev.t) closeTowerMenu();
     } else if (ev.type === 'wave') toast(`WELLE ${ev.n} / ${game.waves.length}`, '', 1600);
+    else if (ev.type === 'powerup') showPowerBanner(ev.pu);
+    else if (ev.type === 'nukeHit') { if (navigator.vibrate) try { navigator.vibrate([120, 60, 200]); } catch (e) { /* ignore */ } }
     else if (ev.type === 'rankUp') { if (ev.rank >= 2) toast(`${TOWERS[ev.t.type].name} erreicht Rang ${'★'.repeat(ev.rank)} (+${ev.rank * 8} % Schaden)`, '', 1800); }
     else if (ev.type === 'newTypes') {
       save.data.intel = save.data.intel || {};
@@ -561,7 +624,7 @@ async function startLevel(i) {
   for (const w of makeWaves(getLevel(i))) for (const g of w.groups) { types.add(g.type); if (ENEMIES[g.type].spawns) types.add(ENEMIES[g.type].spawns.type); }
   const models = [...types].map(t => ENEMIES[t].model);
   const slow = setTimeout(() => toast('Lade Einsatzdaten …', '', 1500), 400);
-  await Promise.all([Assets.loadBiome(spec.biome), Assets.loadModels(models)]);
+  await Promise.all([Assets.loadBiome(spec.biome), Assets.loadModels(models), i + 1 >= NUKE.unlock ? Assets.loadVfx('nuke') : null]);
   clearTimeout(slow);
   game = new Game(i);
   window.__game = game;
@@ -585,6 +648,10 @@ async function startLevel(i) {
     save.data.bigMapHint = true; save.write();
     setTimeout(() => toast('Große Karte: mit zwei Fingern zoomen und verschieben – rote Pfeile zeigen Gegner außerhalb', '', 5000), 1200);
   } else if (game.routes.length > 1) setTimeout(() => toast(`${game.routes.length} Angriffspfade – verteidige alle Zugänge!`, '', 3200), 1400);
+  if (game.nuke.on && !save.data.nukeHint) {
+    save.data.nukeHint = true; save.write();
+    setTimeout(() => toast('Neu: ☢ ATOMBOMBE – lädt sich durch Abschüsse auf (Knopf rechts)', 'warn', 5000), 3400);
+  }
   if (game.orbital.on && !save.data.orbitalHint) {
     save.data.orbitalHint = true; save.write();
     setTimeout(() => toast('Neu: ORBITALSCHLAG – Knopf unten rechts, dann Ziel antippen', 'warn', 4500), 2600);

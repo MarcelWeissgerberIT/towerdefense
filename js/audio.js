@@ -139,6 +139,28 @@ const SFX = {
     tone(t, 1.2, { type: 'sawtooth', f0: 1800, f1: 120, gain: 0.08, attack: 0.3 });
     noise(t, 1.2, { freq: 3000, q: 0.5, sweepTo: 200, gain: 0.08, attack: 0.4 });
   },
+  siren() {
+    const t = ctx.currentTime;
+    for (let i = 0; i < 3; i++) tone(t + i * 0.8, 0.78, { type: 'sawtooth', f0: 420, f1: 880, gain: 0.07, attack: 0.05 });
+  },
+  nuke() {
+    const t = ctx.currentTime;
+    tone(t, 3.2, { type: 'sine', f0: 70, f1: 18, gain: 0.9, attack: 0.01 });
+    tone(t, 1.6, { type: 'sawtooth', f0: 110, f1: 30, gain: 0.25 });
+    noise(t, 3.5, { freq: 900, q: 0.4, type: 'lowpass', gain: 0.9, sweepTo: 80, attack: 0.01 });
+    noise(t + 0.4, 3, { freq: 300, q: 0.5, type: 'lowpass', gain: 0.5, attack: 0.3 });
+  },
+  dropSpawn() {
+    if (!throttle('drp', 200)) return;
+    const t = ctx.currentTime;
+    tone(t, 0.12, { type: 'triangle', f0: 880, gain: 0.06 });
+    tone(t + 0.1, 0.18, { type: 'triangle', f0: 1320, gain: 0.06 });
+  },
+  powerup() {
+    const t = ctx.currentTime;
+    [523, 659, 784, 1047].forEach((f, i) => tone(t + i * 0.07, 0.22, { type: 'square', f0: f, gain: 0.06 }));
+    noise(t, 0.5, { freq: 2000, q: 0.5, sweepTo: 8000, gain: 0.08 });
+  },
   rankUp() {
     const t = ctx.currentTime;
     tone(t, 0.12, { type: 'square', f0: 660, gain: 0.05 });
