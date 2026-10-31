@@ -1,37 +1,32 @@
 # Iron Sentinel – Tower Defense
 
-Isometrisches Tower Defense im Browser – optimiert für das iPhone (Touch, Safe-Areas, Hoch- und Querformat, „Zum Home-Bildschirm“ als Vollbild-App).
+Isometrisches Tower Defense im Browser, gebaut für das iPhone (Touch, Safe Areas, Hoch- und Querformat, „Zum Home-Bildschirm“ als Vollbild-App).
 
-**Szenario:** Jahr 2049. Eine KI-Maschinenarmee aus Chrom-Endoskeletten, Spinnendrohnen, Jagdpanzern und Gunship-Drohnen marschiert auf das letzte Hauptquartier der Menschheit. Du verteidigst es mit realistischen, futuristischen Militärtürmen.
+**Szenario:** Jahr 2049. Eine KI-Maschinenarmee aus Chrom-Endoskeletten, Spinnendrohnen, Jagdpanzern, Gunships und Mutterschiffen marschiert auf das letzte Hauptquartier der Menschheit. Du verteidigst es mit futuristischen Militärtürmen – in 25 Einsätzen auf 5 Kriegsschauplätzen.
 
 ▶ **Spielen:** https://marcelweissgerberit.github.io/towerdefense/
 
-## Features
-- 3 Einsätze (Ödland, Ruinenstadt, Letzte Festung mit Zangenangriff über zwei Routen), je 20 Wellen, Sterne-Wertung, Fortschritt wird lokal gespeichert
-- 5 Türme mit je 3 Stufen und Zielmodi (Erster / Stärkster / Nächster):
-  - **Gatling-MG** – Rotorkanone, hohe Feuerrate, Boden + Luft
-  - **Raketenwerfer** – Lenkraketen mit Flächenschaden, doppelt gegen Drohnen
-  - **Plasmakanone** – ignoriert Panzerung, nur Bodenziele
-  - **Railgun** – durchschlägt alles in einer Linie, riesige Reichweite
-  - **EMP-Turm** – Kettenblitz, verlangsamt Maschinen
-- 6 Gegnertypen inkl. fliegender Drohnen und Boss „Koloss“, gepanzerte Einheiten
-- Effekte: Leuchtspur, Raketen mit Rauchspur, Plasma, Railgun-Strahl, Kettenblitze, Explosionen, Trümmer, Brandspuren am Boden
-- Prozedurale Soundeffekte (WebAudio), 1×/2×/3× Geschwindigkeit, Pause
-- Touch: Turm wählen → Feld antippen (Vorschau mit Reichweite) → nochmal tippen/„Bauen“; 1 Finger verschieben, 2 Finger zoomen
+## Inhalt
+- **25 Level** mit steigender Schwierigkeit in 5 Biomen: Ödland, Dschungel, Wüste, Arktis, Vulkan – 1 bis 3 Angriffsrouten, 10–25 Wellen, Sterne-Wertung, Fortschritt wird lokal gespeichert
+- **9 Türme** (je 3 Stufen, Zielmodus Erster/Stärkster/Nächster), schrittweise freigeschaltet:
+  Gatling-MG · Raketenwerfer · Plasmakanone · EMP-Turm · Flak · Flammenwerfer · Railgun · Laser · Mörser
+- **11 Gegnertypen:** Späher-Spinne, Endoskelett, Jäger-Drohne, Sturm-Mech, HK-Panzer, Schild-Android, Reparatur-Crawler, Kamikaze-Drohne, Belagerungs-Walker und die Bosse Koloss & Mutterschiff
+- **Gegner greifen an:** Mechs, Panzer, Drohnen, Walker und Bosse beschießen die Türme; Kamikaze-Drohnen stürzen sich auf sie. Türme haben Panzerung, regenerieren langsam und lassen sich reparieren.
+- **Echte 3D-Drehung:** Geschütztürme schwenken realistisch zum Ziel (32 Winkel), mit Rückstoß und Mündungsfeuer am echten Laufende; Gegner laufen in 16 Richtungen.
+- **Effekte:** Explosionen aus einem echten Feuerball-Video, Druckwellen, Glutbrocken, Trümmer, Rauchsäulen, Brandspuren, Laserstrahlen, Flammenstrahl, Flak-Wolken, Kettenblitze, Biom-Atmosphäre (Asche, Glühwürmchen, Staub, Schnee, Glut)
+- **Einfache Touch-Bedienung:** Feld antippen → Ring-Menü → Turm 1× antippen (Vorschau + Reichweite) → nochmal antippen zum Bauen. Turm antippen → Upgrade, Reparieren, Zielmodus, Verkaufen. 1 Finger verschiebt, 2 Finger zoomen.
 
-## Technik
-- Reines HTML5 Canvas 2D + ES-Module, kein Build-Schritt, keine Abhängigkeiten
-- Isometrische Projektion: Bodentexturen werden top-down komponiert und per affiner Transformation in die Iso-Ansicht projiziert (inkl. Erdschicht-Seitenflächen)
-- Alle Grafiken (Türme, Gegner inkl. Rückansichten, Requisiten, Basis, Tor, Texturen, Titelbild) wurden mit **OpenArt** (GPT Image 2) generiert und mit `tools/process_assets.py` freigestellt (Hintergrund-Entfernung, Kantenbereinigung, WebP)
-- Deployment über GitHub Actions → GitHub Pages (`.github/workflows/pages.yml`)
+## Asset-Pipeline
+1. **OpenArt** (GPT Image 2): Konzeptbilder aller Türme und Gegner, Requisiten, Bodentexturen pro Biom, Titelbild; **OpenArt-Video** (PixVerse) für die Explosion.
+2. **Meshy** (Image-to-3D): aus jedem Turm-/Gegnerbild ein texturiertes PBR-3D-Modell (`tools/meshy.py`, Eingaben in `tools/meshy_jobs.json`; der API-Key wird nur per Umgebungsvariable übergeben und nie gespeichert).
+3. **Offline-Renderer** (`tools/render/`): Three.js rendert die Modelle headless exakt im Iso-Winkel des Spiels. Türme werden in Sockel + drehbaren Geschützkopf geteilt (32 Winkel, Mündungspunkte pro Frame), Gegner in 16 Richtungen → WebP-Sprite-Sheets in `assets/models/`.
+4. `tools/process_assets.py` stellt die 2D-Requisiten frei (weißer bzw. Magenta-Hintergrund, Kantenbereinigung), `tools/make_vfx.py` macht aus dem Explosions-Video ein RGBA-Sheet.
+5. `tools/gen_levels.mjs` generiert die 25 Karten (Pfade auf einem Grobraster, garantierter Bauplatz zwischen den Straßen), `tools/balance_sim.mjs` lässt einen Bot alle Level durchspielen.
+
+Das Spiel selbst ist reines HTML5 Canvas 2D + ES-Module ohne Build-Schritt und läuft flüssig auf dem iPhone.
 
 ## Lokal starten
 ```bash
 python3 -m http.server 8000
-# http://localhost:8000
+# http://localhost:8000          (?level=7 startet direkt Einsatz 7)
 ```
-`?level=0|1|2` startet direkt einen Einsatz. Desktop: Tasten 1–5 wählen Türme, Leertaste ruft die nächste Welle, Mausrad zoomt.
-
-## Werkzeuge
-- `tools/process_assets.py <raw_dir> assets` – baut Sprites/Texturen aus den Roh-Renderings (Quellen + OpenArt-URLs in `tools/sources.json`)
-- `node tools/balance_sim.mjs` – ein Bot spielt alle Level headless durch (Balancing)

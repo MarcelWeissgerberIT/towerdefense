@@ -1,0 +1,152 @@
+{
+ "tower_gatling": {
+  "mode": "tower",
+  "frames": 32,
+  "size": 0.8,
+  "cut": 0.42,
+  "P": 136,
+  "capR": 0.3
+ },
+ "tower_missile": {
+  "mode": "tower",
+  "frames": 32,
+  "size": 0.8,
+  "cut": 0.45,
+  "P": 136,
+  "capR": 0.3
+ },
+ "tower_plasma": {
+  "mode": "tower",
+  "frames": 32,
+  "size": 0.8,
+  "cut": 0.45,
+  "P": 136,
+  "capR": 0.3
+ },
+ "tower_rail": {
+  "mode": "tower",
+  "frames": 32,
+  "size": 0.74,
+  "cut": 0.4,
+  "P": 136,
+  "capR": 0.28
+ },
+ "tower_emp": {
+  "mode": "unit",
+  "frames": 1,
+  "size": 0.78,
+  "yaw0": 0,
+  "P": 136
+ },
+ "enemy_spider": {
+  "mode": "unit",
+  "frames": 16,
+  "size": 0.62,
+  "yaw0": 90,
+  "P": 128
+ },
+ "enemy_android": {
+  "mode": "unit",
+  "frames": 16,
+  "size": 0.95,
+  "byHeight": true,
+  "yaw0": -90,
+  "P": 128
+ },
+ "enemy_mech": {
+  "mode": "unit",
+  "frames": 16,
+  "size": 0.85,
+  "yaw0": 90,
+  "P": 128
+ },
+ "enemy_tank": {
+  "mode": "unit",
+  "frames": 16,
+  "size": 0.95,
+  "yaw0": 180,
+  "P": 128
+ },
+ "enemy_drone": {
+  "mode": "unit",
+  "frames": 16,
+  "size": 0.9,
+  "yaw0": 180,
+  "P": 128
+ },
+ "enemy_boss": {
+  "mode": "unit",
+  "frames": 16,
+  "size": 1.7,
+  "yaw0": 90,
+  "P": 128
+ },
+ "tower_flame": {
+  "mode": "tower",
+  "frames": 32,
+  "size": 0.8,
+  "cut": 0.42,
+  "P": 136,
+  "capR": 0.3
+ },
+ "tower_mortar": {
+  "mode": "tower",
+  "frames": 32,
+  "size": 0.8,
+  "cut": 0.4,
+  "P": 136,
+  "capR": 0.3
+ },
+ "tower_laser": {
+  "mode": "tower",
+  "frames": 32,
+  "size": 0.78,
+  "cut": 0.42,
+  "P": 136,
+  "capR": 0.3
+ },
+ "tower_flak": {
+  "mode": "tower",
+  "frames": 32,
+  "size": 0.8,
+  "cut": 0.35,
+  "P": 136,
+  "capR": 0.3
+ },
+ "enemy_shield": {
+  "mode": "unit",
+  "frames": 16,
+  "size": 1.0,
+  "byHeight": true,
+  "yaw0": 90,
+  "P": 128
+ },
+ "enemy_kamikaze": {
+  "mode": "unit",
+  "frames": 16,
+  "size": 0.55,
+  "yaw0": 180,
+  "P": 128
+ },
+ "enemy_repair": {
+  "mode": "unit",
+  "frames": 16,
+  "size": 0.75,
+  "yaw0": 180,
+  "P": 128
+ },
+ "enemy_siege": {
+  "mode": "unit",
+  "frames": 16,
+  "size": 1.05,
+  "yaw0": 90,
+  "P": 128
+ },
+ "enemy_mothership": {
+  "mode": "unit",
+  "frames": 16,
+  "size": 1.9,
+  "yaw0": 180,
+  "P": 128
+ }
+}

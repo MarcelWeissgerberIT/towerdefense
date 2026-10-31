@@ -1,186 +1,162 @@
-// Iron Sentinel – game data (towers, enemies, levels, waves)
+// Iron Sentinel – game data: towers, enemies, biomes.
 
 export const TILE_W = 128;          // iso tile width in world px
-export const TILE_H = 64;           // iso tile height in world px
+export const TILE_H = 64;
 export const HW = TILE_W / 2;
 export const HH = TILE_H / 2;
+export const UNIT_PX = HW * Math.SQRT2; // world px per 3D model unit (1 tile = 1 unit)
 
-export const MAX_LEVEL = 3;         // tower upgrade levels (1..3)
+export const TOWER_SCALE = 1.25;   // draw scale for tower models (readability)
+export const MAX_LEVEL = 3;
 export const SELL_RATE = 0.7;
+export const FULL_REFUND_TIME = 6;   // seconds after building: 100 % refund (undo)
 
+// kind: hitscan | missile | plasma | rail | emp | flak | flame | laser | mortar
 export const TOWERS = {
   gatling: {
-    name: 'Gatling-MG', key: 'gatling', sprite: 'tower_gatling',
-    desc: 'Rotorkanone mit enormer Feuerrate. Trifft Boden- und Luftziele, schwach gegen Panzerung.',
-    cost: 100, range: 2.6, rate: 7.5, dmg: 7, ground: true, air: true,
-    color: '#ffc04d', width: 118,
+    name: 'Gatling-MG', model: 'tower_gatling', unlock: 1, kind: 'hitscan',
+    desc: 'Rotorkanone mit enormer Feuerrate. Boden + Luft. Schwach gegen Panzerung.',
+    cost: 100, range: 2.6, rate: 8, dmg: 7, ground: true, air: true, turn: 8, hp: 630, color: '#ffc04d',
   },
   missile: {
-    name: 'Raketenwerfer', key: 'missile', sprite: 'tower_missile',
+    name: 'Raketenwerfer', model: 'tower_missile', unlock: 1, kind: 'missile',
     desc: 'Zielsuchende Raketen mit Flächenschaden. Doppelter Schaden gegen Luftziele.',
-    cost: 180, range: 3.7, rate: 0.85, dmg: 36, splash: 0.95, airBonus: 2.0, ground: true, air: true,
-    color: '#ff6a3d', width: 112,
+    cost: 170, range: 3.6, rate: 0.9, dmg: 34, splash: 0.9, airBonus: 2, ground: true, air: true, turn: 4, hp: 570, color: '#ff6a3d',
   },
   plasma: {
-    name: 'Plasmakanone', key: 'plasma', sprite: 'tower_plasma',
-    desc: 'Überhitzte Plasmaladung ignoriert Panzerung. Nur Bodenziele.',
-    cost: 240, range: 2.9, rate: 0.95, dmg: 80, splash: 0.55, ignoreArmor: true, ground: true, air: false,
-    color: '#4fe3ff', width: 120,
-  },
-  rail: {
-    name: 'Railgun', key: 'rail', sprite: 'tower_rail',
-    desc: 'Elektromagnetisches Geschoss durchschlägt alles in einer Linie. Extreme Reichweite.',
-    cost: 340, range: 5.6, rate: 0.33, dmg: 230, ground: true, air: true,
-    color: '#9fd8ff', width: 152,
+    name: 'Plasmakanone', model: 'tower_plasma', unlock: 2, kind: 'plasma',
+    desc: 'Plasmaladung ignoriert Panzerung, zerstört Schilde. Nur Bodenziele.',
+    cost: 230, range: 2.9, rate: 1.0, dmg: 72, splash: 0.55, ground: true, air: false, turn: 3.5, hp: 690, color: '#4fe3ff',
   },
   emp: {
-    name: 'EMP-Turm', key: 'emp', sprite: 'tower_emp',
-    desc: 'Kettenblitz springt auf mehrere Maschinen und verlangsamt sie stark.',
-    cost: 200, range: 2.5, rate: 1.1, dmg: 13, chain: 4, slow: 0.45, slowDur: 1.6, ground: true, air: true,
-    color: '#c58bff', width: 104,
+    name: 'EMP-Turm', model: 'tower_emp', unlock: 3, kind: 'emp', static: true,
+    desc: 'Kettenblitz verlangsamt Maschinen und reißt Energieschilde ein.',
+    cost: 200, range: 2.5, rate: 1.1, dmg: 12, chain: 4, slow: 0.45, slowDur: 1.6, ground: true, air: true, hp: 540, color: '#c58bff',
+  },
+  flak: {
+    name: 'Flak', model: 'tower_flak', unlock: 5, kind: 'flak',
+    desc: 'Vierlings-Flugabwehr. Zerfetzt Drohnen mit Splitterwolken. Nur Luftziele.',
+    cost: 180, range: 3.5, rate: 3.2, dmg: 17, splash: 0.65, ground: false, air: true, turn: 6, hp: 570, color: '#d8ff6a',
+  },
+  flame: {
+    name: 'Flammenwerfer', model: 'tower_flame', unlock: 7, kind: 'flame',
+    desc: 'Flammenstrahl trifft alles im Kegel und setzt Maschinen in Brand. Kurze Reichweite.',
+    cost: 210, range: 1.95, dps: 58, cone: 0.62, burn: 14, burnDur: 2.2, ground: true, air: false, turn: 5, hp: 810, color: '#ff8c2a',
+  },
+  rail: {
+    name: 'Railgun', model: 'tower_rail', unlock: 9, kind: 'rail',
+    desc: 'Elektromagnetisches Geschoss durchschlägt alles in einer Linie. Extreme Reichweite.',
+    cost: 340, range: 5.6, rate: 0.33, dmg: 235, ground: true, air: true, turn: 2.6, hp: 600, color: '#9fd8ff',
+  },
+  laser: {
+    name: 'Laser', model: 'tower_laser', unlock: 12, kind: 'laser',
+    desc: 'Dauerstrahl, dessen Schaden sich auf demselben Ziel bis zum Dreifachen aufheizt.',
+    cost: 300, range: 3.4, dps: 46, ramp: 3, rampTime: 2.4, ground: true, air: true, turn: 4.5, hp: 600, color: '#ff4040',
+  },
+  mortar: {
+    name: 'Mörser', model: 'tower_mortar', unlock: 15, kind: 'mortar',
+    desc: 'Schwere Artillerie mit riesigem Wirkungsradius. Mindestreichweite, nur Bodenziele.',
+    cost: 280, range: 5.2, minRange: 1.4, rate: 0.42, dmg: 120, splash: 1.25, ground: true, air: false, turn: 2.2, hp: 780, color: '#e0c080',
   },
 };
-export const TOWER_ORDER = ['gatling', 'missile', 'plasma', 'rail', 'emp'];
+export const TOWER_ORDER = ['gatling', 'missile', 'plasma', 'emp', 'flak', 'flame', 'rail', 'laser', 'mortar'];
 
 export function towerStats(type, level) {
   const t = TOWERS[type];
   const l = level - 1;
+  const m = Math.pow(1.5, l);
   return {
-    dmg: t.dmg * Math.pow(1.55, l),
+    dmg: (t.dmg || 0) * m,
+    dps: (t.dps || 0) * m,
+    burn: (t.burn || 0) * m,
     range: t.range * (1 + 0.1 * l),
-    rate: t.rate * (1 + 0.12 * l),
+    rate: (t.rate || 1) * (1 + 0.12 * l),
     splash: t.splash ? t.splash * (1 + 0.1 * l) : 0,
     chain: t.chain ? t.chain + l : 0,
     slow: t.slow ? Math.min(0.7, t.slow + 0.08 * l) : 0,
-    slowDur: t.slowDur || 0,
+    hp: Math.round(t.hp * (1 + 0.35 * l)),
   };
 }
-export function upgradeCost(type, level) {
-  return Math.round(TOWERS[type].cost * 0.8 * level);
-}
+export const upgradeCost = (type, level) => Math.round(TOWERS[type].cost * 0.8 * level);
 export function totalInvested(type, level) {
   let c = TOWERS[type].cost;
   for (let l = 1; l < level; l++) c += upgradeCost(type, l);
   return c;
 }
 
-// size: drawn sprite width in world px; lift: flying height
+// scale: extra draw scale on top of the model's real size (readability)
+// atk: weapon used against towers {dmg, range, rate, kind: laser|cannon|plasma|missile|shell, splash}
 export const ENEMIES = {
-  spider:  { name: 'Späher-Spinne', hp: 42,   speed: 1.6,  armor: 0,  reward: 6,   leak: 1,  size: 74,  air: false, bob: 2.2, bobHz: 9 },
-  android: { name: 'Endoskelett',   hp: 120,  speed: 0.95, armor: 1,  reward: 9,   leak: 1,  size: 72,  air: false, bob: 2.0, bobHz: 4, tall: true },
-  drone:   { name: 'Jäger-Drohne',  hp: 95,   speed: 1.3,  armor: 0,  reward: 12,  leak: 1,  size: 100, air: true,  lift: 58, bob: 4, bobHz: 1.6 },
-  mech:    { name: 'Sturm-Mech',    hp: 430,  speed: 0.68, armor: 4,  reward: 22,  leak: 2,  size: 104, air: false, bob: 2.5, bobHz: 2.4 },
-  tank:    { name: 'HK-Panzer',     hp: 640,  speed: 0.55, armor: 8,  reward: 30,  leak: 3,  size: 118, air: false, bob: 0.6, bobHz: 14 },
-  boss:    { name: 'Koloss',        hp: 3800, speed: 0.36, armor: 12, reward: 260, leak: 8, size: 196, air: false, bob: 3, bobHz: 1.3, boss: true },
+  spider:   { name: 'Späher-Spinne',   model: 'enemy_spider',   hp: 40,   speed: 1.6,  armor: 0,  reward: 5,   leak: 1, cost: 1,  scale: 1.2 },
+  android:  { name: 'Endoskelett',     model: 'enemy_android',  hp: 110,  speed: 0.95, armor: 1,  reward: 8,   leak: 1, cost: 2,  scale: 1.35,
+    atk: { dmg: 5, range: 1.8, rate: 1.0, kind: 'laser' } },
+  drone:    { name: 'Jäger-Drohne',    model: 'enemy_drone',    hp: 90,   speed: 1.3,  armor: 0,  reward: 11,  leak: 1, cost: 2.5, scale: 1.2, air: true, lift: 62,
+    atk: { dmg: 9, range: 2.2, rate: 0.6, kind: 'missile' } },
+  mech:     { name: 'Sturm-Mech',      model: 'enemy_mech',     hp: 420,  speed: 0.68, armor: 4,  reward: 20,  leak: 2, cost: 7,  scale: 1.25,
+    atk: { dmg: 15, range: 2.2, rate: 0.8, kind: 'cannon' } },
+  tank:     { name: 'HK-Panzer',       model: 'enemy_tank',     hp: 620,  speed: 0.55, armor: 8,  reward: 28,  leak: 3, cost: 10, scale: 1.2,
+    atk: { dmg: 28, range: 2.6, rate: 0.45, kind: 'plasma' } },
+  shield:   { name: 'Schild-Android',  model: 'enemy_shield',   hp: 190,  speed: 0.8,  armor: 2,  reward: 16,  leak: 2, cost: 5,  scale: 1.3, shield: 240 },
+  repair:   { name: 'Reparatur-Crawler', model: 'enemy_repair', hp: 250,  speed: 0.78, armor: 3,  reward: 18,  leak: 1, cost: 5,  scale: 1.25, heal: 26, healRange: 1.7 },
+  kamikaze: { name: 'Kamikaze-Drohne', model: 'enemy_kamikaze', hp: 55,   speed: 1.9,  armor: 0,  reward: 10,  leak: 1, cost: 3.5, scale: 1.25, air: true, lift: 46,
+    dive: { range: 1.3, dmg: 95, splash: 0.6 } },
+  siege:    { name: 'Belagerungs-Walker', model: 'enemy_siege', hp: 720,  speed: 0.45, armor: 6,  reward: 40,  leak: 4, cost: 14, scale: 1.2,
+    atk: { dmg: 42, range: 3.0, rate: 0.25, kind: 'shell', splash: 0.7 } },
+  boss:     { name: 'Koloss',          model: 'enemy_boss',     hp: 3600, speed: 0.36, armor: 12, reward: 260, leak: 8, cost: 80, scale: 1.0, boss: true,
+    atk: { dmg: 40, range: 3.0, rate: 0.9, kind: 'cannon' } },
+  mothership: { name: 'Mutterschiff',  model: 'enemy_mothership', hp: 3000, speed: 0.42, armor: 6, reward: 280, leak: 8, cost: 80, scale: 1.0, boss: true, air: true, lift: 100,
+    atk: { dmg: 30, range: 3.2, rate: 1.1, kind: 'missile' }, spawns: { type: 'kamikaze', every: 6.5, count: 2 } },
 };
 
-// ---------- Waves ----------
-// group: [type, count, gap(s), startDelay(s)]
-const WAVES = [
-  [['android', 8, 1.15, 0]],
-  [['spider', 14, 0.6, 0]],
-  [['android', 10, 1.0, 0], ['spider', 8, 0.55, 5]],
-  [['drone', 8, 1.0, 0]],
-  [['android', 12, 0.9, 0], ['mech', 2, 3.5, 6]],
-  [['spider', 22, 0.42, 0]],
-  [['drone', 10, 0.9, 0], ['android', 10, 0.9, 3]],
-  [['tank', 3, 3.2, 0], ['android', 12, 0.8, 2]],
-  [['mech', 5, 2.4, 0], ['spider', 16, 0.45, 4]],
-  [['mech', 6, 2.0, 0], ['drone', 10, 0.9, 3]],
-  [['tank', 6, 2.4, 0], ['spider', 22, 0.4, 2]],
-  [['drone', 20, 0.6, 0]],
-  [['android', 26, 0.55, 0], ['mech', 6, 2.2, 5]],
-  [['tank', 8, 2.0, 0], ['drone', 12, 0.8, 4]],
-  [['boss', 1, 1, 0], ['android', 14, 0.8, 4]],
-  [['spider', 44, 0.28, 0]],
-  [['mech', 12, 1.4, 0], ['drone', 16, 0.6, 3]],
-  [['tank', 12, 1.5, 0], ['android', 22, 0.55, 2]],
-  [['mech', 10, 1.4, 0], ['tank', 9, 1.7, 3], ['drone', 18, 0.5, 6]],
-  [['boss', 2, 9, 0], ['tank', 6, 2.2, 3], ['mech', 8, 1.6, 6], ['drone', 14, 0.6, 10]],
-];
-
-export const WAVE_TIPS = {
-  1: 'Endoskelette nähern sich – baue Gatling-MGs an der Straße.',
-  4: 'Luftangriff! Jäger-Drohnen – die Plasmakanone kann sie nicht treffen.',
-  8: 'Gepanzerte HK-Panzer – Plasma ignoriert Panzerung.',
-  12: 'Großer Drohnenschwarm im Anflug!',
-  15: 'WARNUNG: Ein Koloss wurde gesichtet!',
-  20: 'Letzte Welle – zwei Kolosse greifen an!',
+// level number at which each regular enemy type starts appearing
+export const ENEMY_UNLOCK = {
+  android: 1, spider: 1, drone: 2, mech: 3, tank: 4, repair: 6, shield: 8, kamikaze: 11, siege: 13,
 };
 
-export function waveHpMul(w, levelMul) {
-  const n = w - 1;
-  return (1 + 0.14 * n + 0.009 * n * n) * levelMul;
-}
-
-export function buildWave(waveIdx, level) {
-  // waveIdx: 0-based. returns list of {t, type, path}
-  const groups = WAVES[Math.min(waveIdx, WAVES.length - 1)];
-  const spawns = [];
-  const nPaths = level.paths.length;
-  let gi = 0;
-  for (const [type, count0, gap, delay] of groups) {
-    const count = Math.round(count0 * (level.countMul || 1));
-    for (let i = 0; i < count; i++) {
-      const path = nPaths > 1 ? (i + gi) % nPaths : 0;
-      spawns.push({ t: delay + i * gap, type, path });
-    }
-    gi++;
-  }
-  spawns.sort((a, b) => a.t - b.t);
-  return spawns;
-}
-export const WAVE_COUNT = WAVES.length;
-
-// ---------- Levels ----------
-// Grid: x grows to screen bottom-right, y grows to screen bottom-left.
-// spawn/base are 2x2 blocks (top-left cell given). Path waypoints are cell coords (axis aligned).
-export const LEVELS = [
-  {
-    id: 'oedland', name: 'Ödland', sub: 'Sektor 7 – Außenposten',
-    size: 14, credits: 350, lives: 20, hpMul: 1.1, countMul: 1.0,
-    base: [12, 12],
-    paths: [
-      { spawn: [0, 0], cells: [[2, 1], [11, 1], [11, 4], [3, 4], [3, 8], [9, 8], [9, 12], [11, 12]] },
-    ],
-    props: [
-      ['ruin', 6, 2], ['wreck', 13, 6], ['barrier', 6, 6], ['tree', 1, 10], ['crates', 12, 9], ['tree', 7, 10],
-      ['barrier', 0, 5], ['ruin', 5, 12], ['scrap', 13, 2],
-    ],
+export const BIOMES = {
+  wasteland: {
+    name: 'Ödland', ground: 'ground', road: 'road',
+    props: ['prop_ruin', 'prop_wreck', 'prop_barrier', 'prop_tree', 'prop_crates', 'prop_scrap'],
+    grade: { screen: 'rgba(62,50,40,0.5)', multiply: 'rgb(255,226,200)' },
+    slab: ['#5b4a3b', '#2a221c', '#3a2f27', '#17120f'],
+    bg: ['#2a1d16', '#140f0d', '#07080a'], ambient: 'ash', roadEdge: 'rgba(30,24,18,0.3)',
   },
-  {
-    id: 'ruinen', name: 'Ruinenstadt', sub: 'Die Trümmer von Sektor 3',
-    size: 16, credits: 420, lives: 20, hpMul: 1.6, countMul: 1.2,
-    base: [14, 13],
-    paths: [
-      { spawn: [0, 7], cells: [[2, 8], [5, 8], [5, 2], [9, 2], [9, 11], [3, 11], [3, 14], [12, 14], [12, 6], [14, 6], [14, 12]] },
-    ],
-    props: [
-      ['ruin', 1, 2], ['ruin', 12, 2], ['wreck', 7, 5], ['tree', 7, 8], ['barrier', 11, 9], ['crates', 0, 13],
-      ['scrap', 15, 3], ['tree', 6, 15], ['ruin', 15, 9], ['wreck', 1, 5], ['barrier', 7, 12], ['scrap', 10, 0],
-    ],
+  jungle: {
+    name: 'Dschungel', ground: 'jungle_ground', road: 'jungle_road',
+    props: ['prop_j_tree', 'prop_j_tree', 'prop_j_bush', 'prop_j_bush', 'prop_j_temple', 'prop_j_heli', 'prop_crates'],
+    grade: { screen: 'rgba(40,52,30,0.35)', multiply: 'rgb(235,255,225)' },
+    slab: ['#4a3a24', '#1f180e', '#30251a', '#120d08'],
+    bg: ['#13201a', '#0b130f', '#050807'], ambient: 'fireflies', roadEdge: 'rgba(20,16,8,0.35)',
   },
-  {
-    id: 'festung', name: 'Letzte Festung', sub: 'Zangenangriff auf das Hauptquartier',
-    size: 16, credits: 900, lives: 20, hpMul: 0.88, countMul: 1.0,
-    base: [7, 14],
-    paths: [
-      { spawn: [0, 0], cells: [[2, 1], [6, 1], [6, 4], [3, 4], [3, 9], [5, 9], [5, 13], [7, 13]] },
-      { spawn: [14, 0], cells: [[14, 2], [14, 4], [11, 4], [11, 8], [14, 8], [14, 11], [10, 11], [10, 14], [9, 14]] },
-    ],
-    props: [
-      ['ruin', 9, 2], ['wreck', 0, 13], ['tree', 1, 6], ['barrier', 8, 7], ['crates', 15, 15], ['scrap', 12, 0],
-      ['tree', 15, 6], ['ruin', 0, 10], ['wreck', 12, 6], ['barrier', 7, 5],
-    ],
+  desert: {
+    name: 'Wüste', ground: 'desert_ground', road: 'desert_road',
+    props: ['prop_d_rock', 'prop_d_rock', 'prop_d_tank', 'prop_d_pump', 'prop_scrap', 'prop_barrier'],
+    grade: { screen: 'rgba(30,20,10,0.15)', multiply: 'rgb(235,215,190)' },
+    slab: ['#a0703f', '#4a3018', '#7a5530', '#2c1c0e'],
+    bg: ['#3a2814', '#1c140b', '#0a0806'], ambient: 'dust', roadEdge: 'rgba(80,55,25,0.3)',
   },
-];
+  ice: {
+    name: 'Arktis', ground: 'ice_ground', road: 'ice_road',
+    props: ['prop_i_pine', 'prop_i_pine', 'prop_i_ice', 'prop_i_ice', 'prop_i_station', 'prop_i_wreck'],
+    grade: { screen: 'rgba(0,0,0,0)', multiply: 'rgb(225,235,250)' },
+    slab: ['#c8d6e6', '#6a7f96', '#9fb2c8', '#3f5168'],
+    bg: ['#1a2533', '#0d141c', '#05080c'], ambient: 'snow', roadEdge: 'rgba(60,70,85,0.25)',
+  },
+  volcano: {
+    name: 'Vulkan', ground: 'volcano_ground', road: 'volcano_road',
+    props: ['prop_v_spire', 'prop_v_rocks', 'prop_v_rocks', 'prop_v_factory', 'prop_scrap', 'prop_tree'],
+    grade: { screen: 'rgba(40,12,4,0.25)', multiply: 'rgb(255,225,210)' },
+    slab: ['#3a2a26', '#120c0b', '#2a1c19', '#080505'],
+    bg: ['#2a0e08', '#140806', '#060303'], ambient: 'embers', roadEdge: 'rgba(10,6,4,0.4)', lava: true,
+  },
+};
+export const BIOME_ORDER = ['wasteland', 'jungle', 'desert', 'ice', 'volcano'];
 
-// Prop sprites: width in world px, cells it blocks are just its own cell
-export const PROPS = {
-  ruin:    { sprite: 'prop_ruin',    width: 176 },
-  wreck:   { sprite: 'prop_wreck',   width: 150 },
-  barrier: { sprite: 'prop_barrier', width: 150 },
-  tree:    { sprite: 'prop_tree',    width: 128 },
-  crates:  { sprite: 'prop_crates',  width: 124 },
-  scrap:   { sprite: 'prop_scrap',   width: 134 },
+// prop sprite draw widths (world px)
+export const PROP_W = {
+  prop_ruin: 151, prop_wreck: 132, prop_barrier: 128, prop_tree: 109, prop_crates: 106, prop_scrap: 114,
+  prop_j_tree: 106, prop_j_heli: 155, prop_j_temple: 141, prop_j_bush: 116,
+  prop_i_pine: 104, prop_i_ice: 128, prop_i_station: 132, prop_i_wreck: 143,
+  prop_d_rock: 141, prop_d_tank: 150, prop_d_pump: 132,
+  prop_v_spire: 123, prop_v_rocks: 132, prop_v_factory: 148,
 };

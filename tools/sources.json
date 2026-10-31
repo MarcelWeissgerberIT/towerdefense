@@ -1,91 +1,6 @@
 {
  "_comment": "Raw renders generated with OpenArt (GPT Image 2). 'file' = local raw filename, 'url' = OpenArt CDN source.",
  "sprites": {
-  "tower_gatling": {
-   "file": "gatling_b.png",
-   "size": 300,
-   "url": "https://cdn.openart.ai/openart-ai/production/2026-10/create-image/wRD6PTxSzjxZwjWN69MC/gpt-image-2-1_1793439524353_48e753a9.png"
-  },
-  "tower_missile": {
-   "file": "missile_b.png",
-   "size": 300,
-   "url": "https://cdn.openart.ai/openart-ai/production/2026-10/create-image/wRD6PTxSzjxZwjWN69MC/gpt-image-2-1_1793439524987_9b11547f.png"
-  },
-  "tower_plasma": {
-   "file": "plasma_b.png",
-   "size": 300,
-   "url": "https://cdn.openart.ai/openart-ai/production/2026-10/create-image/wRD6PTxSzjxZwjWN69MC/gpt-image-2-1_1793439528307_7b21c1b9.png"
-  },
-  "tower_rail": {
-   "file": "rail_a.png",
-   "size": 320,
-   "url": "https://cdn.openart.ai/openart-ai/production/2026-10/create-image/wRD6PTxSzjxZwjWN69MC/gpt-image-2-1_1793439527990_77213b86.png"
-  },
-  "tower_emp": {
-   "file": "emp_a.png",
-   "size": 320,
-   "url": "https://cdn.openart.ai/openart-ai/production/2026-10/create-image/wRD6PTxSzjxZwjWN69MC/gpt-image-2-1_1793439527111_5a8d3a49.png"
-  },
-  "enemy_spider": {
-   "file": "spider_a.png",
-   "size": 200,
-   "url": "https://cdn.openart.ai/openart-ai/production/2026-10/create-image/wRD6PTxSzjxZwjWN69MC/gpt-image-2-1_1793439552605_e7032d1b.png"
-  },
-  "enemy_spider_back": {
-   "file": "spider_back.png",
-   "size": 200,
-   "url": "https://cdn.openart.ai/openart-ai/production/2026-10/create-image/wRD6PTxSzjxZwjWN69MC/gpt-image-2-edit-1_1793439823061_a6654556.png"
-  },
-  "enemy_android": {
-   "file": "android_a.png",
-   "size": 230,
-   "url": "https://cdn.openart.ai/openart-ai/production/2026-10/create-image/wRD6PTxSzjxZwjWN69MC/gpt-image-2-1_1793439547307_9d98c07b.png"
-  },
-  "enemy_android_back": {
-   "file": "android_back.png",
-   "size": 230,
-   "url": "https://cdn.openart.ai/openart-ai/production/2026-10/create-image/wRD6PTxSzjxZwjWN69MC/gpt-image-2-edit-1_1793439826124_0c01bf93.png"
-  },
-  "enemy_mech": {
-   "file": "mech_b.png",
-   "size": 260,
-   "url": "https://cdn.openart.ai/openart-ai/production/2026-10/create-image/wRD6PTxSzjxZwjWN69MC/gpt-image-2-1_1793439555527_9513123c.png"
-  },
-  "enemy_mech_back": {
-   "file": "mech_back.png",
-   "size": 260,
-   "url": "https://cdn.openart.ai/openart-ai/production/2026-10/create-image/wRD6PTxSzjxZwjWN69MC/gpt-image-2-edit-1_1793439828838_430a04d2.png"
-  },
-  "enemy_tank": {
-   "file": "tank_b.png",
-   "size": 280,
-   "url": "https://cdn.openart.ai/openart-ai/production/2026-10/create-image/wRD6PTxSzjxZwjWN69MC/gpt-image-2-1_1793439708076_cd897b1d.png"
-  },
-  "enemy_tank_back": {
-   "file": "tank_back.png",
-   "size": 280,
-   "url": "https://cdn.openart.ai/openart-ai/production/2026-10/create-image/wRD6PTxSzjxZwjWN69MC/gpt-image-2-edit-1_1793440036855_a70950e3.png"
-  },
-  "enemy_drone": {
-   "file": "drone_a.png",
-   "size": 260,
-   "url": "https://cdn.openart.ai/openart-ai/production/2026-10/create-image/wRD6PTxSzjxZwjWN69MC/gpt-image-2-1_1793439703233_928c2cfe.png"
-  },
-  "enemy_drone_back": {
-   "file": "drone_back.png",
-   "size": 260,
-   "url": "https://cdn.openart.ai/openart-ai/production/2026-10/create-image/wRD6PTxSzjxZwjWN69MC/gpt-image-2-edit-1_1793440038901_f9a5bf0c.png"
-  },
-  "enemy_boss": {
-   "file": "boss_a.png",
-   "size": 420,
-   "url": "https://cdn.openart.ai/openart-ai/production/2026-10/create-image/wRD6PTxSzjxZwjWN69MC/gpt-image-2-1_1793439708801_43124801.png"
-  },
-  "enemy_boss_back": {
-   "file": "boss_back.png",
-   "size": 420,
-   "url": "https://cdn.openart.ai/openart-ai/production/2026-10/create-image/wRD6PTxSzjxZwjWN69MC/gpt-image-2-edit-1_1793440047860_8e8eaf52.png"
-  },
   "base_hq": {
    "file": "base_a.png",
    "size": 420,
@@ -125,6 +40,108 @@
    "file": "scrap_a.png",
    "size": 260,
    "url": "https://cdn.openart.ai/openart-ai/production/2026-10/create-image/wRD6PTxSzjxZwjWN69MC/gpt-image-2-1_1793440070405_99b8876b.png"
+  },
+  "prop_j_tree": {
+   "file": "j_tree.png",
+   "size": 300,
+   "url": "https://cdn.openart.ai/openart-ai/production/2026-10/create-image/wRD6PTxSzjxZwjWN69MC/gpt-image-2-1_1793441858406_f517ca77.png"
+  },
+  "prop_j_heli": {
+   "file": "j_heli.png",
+   "size": 300,
+   "url": "https://cdn.openart.ai/openart-ai/production/2026-10/create-image/wRD6PTxSzjxZwjWN69MC/gpt-image-2-1_1793441861276_52bf40b2.png"
+  },
+  "prop_j_temple": {
+   "file": "j_temple.png",
+   "size": 300,
+   "url": "https://cdn.openart.ai/openart-ai/production/2026-10/create-image/wRD6PTxSzjxZwjWN69MC/gpt-image-2-1_1793441867717_9f76ddd6.png"
+  },
+  "prop_j_bush": {
+   "file": "j_bush.png",
+   "size": 260,
+   "url": "https://cdn.openart.ai/openart-ai/production/2026-10/create-image/wRD6PTxSzjxZwjWN69MC/gpt-image-2-1_1793441868322_32cc0022.png"
+  },
+  "prop_i_pine": {
+   "file": "i_pine.png",
+   "size": 300,
+   "url": "https://cdn.openart.ai/openart-ai/production/2026-10/create-image/wRD6PTxSzjxZwjWN69MC/gpt-image-2-1_1793441994788_f787015c.png",
+   "bg": {
+    "color": [
+     255,
+     0,
+     255
+    ],
+    "thresh": 60
+   }
+  },
+  "prop_i_ice": {
+   "file": "i_ice.png",
+   "size": 280,
+   "url": "https://cdn.openart.ai/openart-ai/production/2026-10/create-image/wRD6PTxSzjxZwjWN69MC/gpt-image-2-1_1793442001183_db4597bb.png",
+   "bg": {
+    "color": [
+     255,
+     0,
+     255
+    ],
+    "thresh": 60
+   }
+  },
+  "prop_i_station": {
+   "file": "i_station.png",
+   "size": 300,
+   "url": "https://cdn.openart.ai/openart-ai/production/2026-10/create-image/wRD6PTxSzjxZwjWN69MC/gpt-image-2-1_1793442000166_3b40aa9d.png",
+   "bg": {
+    "color": [
+     255,
+     0,
+     255
+    ],
+    "thresh": 60
+   }
+  },
+  "prop_i_wreck": {
+   "file": "i_wreck.png",
+   "size": 300,
+   "url": "https://cdn.openart.ai/openart-ai/production/2026-10/create-image/wRD6PTxSzjxZwjWN69MC/gpt-image-2-1_1793442007537_262b6239.png",
+   "bg": {
+    "color": [
+     255,
+     0,
+     255
+    ],
+    "thresh": 60
+   }
+  },
+  "prop_d_rock": {
+   "file": "d_rock.png",
+   "size": 300,
+   "url": "https://cdn.openart.ai/openart-ai/production/2026-10/create-image/wRD6PTxSzjxZwjWN69MC/gpt-image-2-1_1793442429320_2da2f57a.png"
+  },
+  "prop_d_tank": {
+   "file": "d_tank.png",
+   "size": 300,
+   "url": "https://cdn.openart.ai/openart-ai/production/2026-10/create-image/wRD6PTxSzjxZwjWN69MC/gpt-image-2-1_1793442432514_99b651f8.png"
+  },
+  "prop_d_pump": {
+   "file": "d_pump.png",
+   "size": 300,
+   "url": "https://cdn.openart.ai/openart-ai/production/2026-10/create-image/wRD6PTxSzjxZwjWN69MC/gpt-image-2-1_1793442427277_35fcd09c.png"
+  },
+  "prop_v_spire": {
+   "file": "v_spire.png",
+   "size": 300,
+   "url": "https://cdn.openart.ai/openart-ai/production/2026-10/create-image/wRD6PTxSzjxZwjWN69MC/gpt-image-2-1_1793442426915_534beb11.png"
+  },
+  "prop_v_rocks": {
+   "file": "v_rocks.png",
+   "size": 300,
+   "url": "https://cdn.openart.ai/openart-ai/production/2026-10/create-image/wRD6PTxSzjxZwjWN69MC/gpt-image-2-1_1793442433735_0f61c484.png"
+  },
+  "prop_v_factory": {
+   "file": "v_factory.png",
+   "size": 300,
+   "url": "https://cdn.openart.ai/openart-ai/production/2026-10/create-image/wRD6PTxSzjxZwjWN69MC/gpt-image-2-1_1793442434051_fa427e13.png"
   }
  },
  "textures": {
@@ -139,6 +156,46 @@
    "size": 1024,
    "q": 80,
    "url": "https://cdn.openart.ai/openart-ai/production/2026-10/create-image/wRD6PTxSzjxZwjWN69MC/gpt-image-2-1_1793439806121_69eebd1d.png"
+  },
+  "jungle_ground": {
+   "file": "jungle_ground.png",
+   "size": 1024,
+   "q": 78
+  },
+  "jungle_road": {
+   "file": "jungle_road.png",
+   "size": 1024,
+   "q": 78
+  },
+  "ice_ground": {
+   "file": "ice_ground.png",
+   "size": 1024,
+   "q": 78
+  },
+  "ice_road": {
+   "file": "ice_road.png",
+   "size": 1024,
+   "q": 78
+  },
+  "desert_ground": {
+   "file": "desert_ground.png",
+   "size": 1024,
+   "q": 78
+  },
+  "desert_road": {
+   "file": "desert_road.png",
+   "size": 1024,
+   "q": 78
+  },
+  "volcano_ground": {
+   "file": "volcano_ground.png",
+   "size": 1024,
+   "q": 78
+  },
+  "volcano_road": {
+   "file": "volcano_road.png",
+   "size": 1024,
+   "q": 78
   }
  },
  "images": {
@@ -148,5 +205,6 @@
    "q": 78,
    "url": "https://cdn.openart.ai/openart-ai/production/2026-10/create-image/wRD6PTxSzjxZwjWN69MC/gpt-image-2-1_1793440069273_4e8f7cde.png"
   }
- }
+ },
+ "_meshy_note": "Towers and enemies are 3D models: OpenArt concept image -> Meshy image-to-3D -> tools/render (see tools/meshy_jobs.json)"
 }

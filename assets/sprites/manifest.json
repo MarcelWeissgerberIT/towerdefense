@@ -3,54 +3,6 @@
   "h": 411,
   "w": 420
  },
- "enemy_android": {
-  "h": 230,
-  "w": 116
- },
- "enemy_android_back": {
-  "h": 230,
-  "w": 93
- },
- "enemy_boss": {
-  "h": 414,
-  "w": 420
- },
- "enemy_boss_back": {
-  "h": 395,
-  "w": 420
- },
- "enemy_drone": {
-  "h": 197,
-  "w": 260
- },
- "enemy_drone_back": {
-  "h": 172,
-  "w": 260
- },
- "enemy_mech": {
-  "h": 260,
-  "w": 197
- },
- "enemy_mech_back": {
-  "h": 260,
-  "w": 175
- },
- "enemy_spider": {
-  "h": 200,
-  "w": 199
- },
- "enemy_spider_back": {
-  "h": 164,
-  "w": 200
- },
- "enemy_tank": {
-  "h": 203,
-  "w": 280
- },
- "enemy_tank_back": {
-  "h": 184,
-  "w": 280
- },
  "prop_barrier": {
   "h": 215,
   "w": 280
@@ -58,6 +10,50 @@
  "prop_crates": {
   "h": 260,
   "w": 256
+ },
+ "prop_d_pump": {
+  "h": 300,
+  "w": 235
+ },
+ "prop_d_rock": {
+  "h": 289,
+  "w": 300
+ },
+ "prop_d_tank": {
+  "h": 268,
+  "w": 300
+ },
+ "prop_i_ice": {
+  "h": 280,
+  "w": 280
+ },
+ "prop_i_pine": {
+  "h": 300,
+  "w": 300
+ },
+ "prop_i_station": {
+  "h": 292,
+  "w": 300
+ },
+ "prop_i_wreck": {
+  "h": 254,
+  "w": 300
+ },
+ "prop_j_bush": {
+  "h": 247,
+  "w": 260
+ },
+ "prop_j_heli": {
+  "h": 268,
+  "w": 300
+ },
+ "prop_j_temple": {
+  "h": 300,
+  "w": 255
+ },
+ "prop_j_tree": {
+  "h": 300,
+  "w": 166
  },
  "prop_ruin": {
   "h": 320,
@@ -71,6 +67,18 @@
   "h": 280,
   "w": 190
  },
+ "prop_v_factory": {
+  "h": 300,
+  "w": 230
+ },
+ "prop_v_rocks": {
+  "h": 285,
+  "w": 300
+ },
+ "prop_v_spire": {
+  "h": 300,
+  "w": 195
+ },
  "prop_wreck": {
   "h": 179,
   "w": 280
@@ -78,25 +86,5 @@
  "spawn_gate": {
   "h": 400,
   "w": 387
- },
- "tower_emp": {
-  "h": 320,
-  "w": 230
- },
- "tower_gatling": {
-  "h": 300,
-  "w": 256
- },
- "tower_missile": {
-  "h": 300,
-  "w": 240
- },
- "tower_plasma": {
-  "h": 300,
-  "w": 287
- },
- "tower_rail": {
-  "h": 259,
-  "w": 320
  }
 }

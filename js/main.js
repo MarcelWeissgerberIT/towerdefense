@@ -1,21 +1,19 @@
-// Iron Sentinel – app controller: screens, HUD, build bar, game loop.
-import { TOWERS, TOWER_ORDER, LEVELS, MAX_LEVEL, WAVE_COUNT, upgradeCost, towerStats } from './config.js';
-import { Assets } from './assets.js';
+// Iron Sentinel – app controller: screens, HUD, radial build menu, tower menu, game loop.
+import { TOWERS, TOWER_ORDER, MAX_LEVEL, BIOMES, BIOME_ORDER, upgradeCost, towerStats } from './config.js';
+import { LEVEL_SPECS, LEVEL_COUNT } from './levels.js';
+import { Assets, Models } from './assets.js';
 import { Renderer } from './render.js';
 import { Input } from './input.js';
 import { Game } from './game.js';
+import { toWorld } from './iso.js';
 import { sfx, unlockAudio, setSound, soundOn } from './audio.js';
 
 const $ = (id) => document.getElementById(id);
-const STORE = 'ironsentinel.v1';
-
+const STORE = 'ironsentinel.v2';
 const save = (() => {
   let data = { stars: {}, sound: true, rotateHintSeen: false };
   try { Object.assign(data, JSON.parse(localStorage.getItem(STORE) || '{}')); } catch (e) { /* private mode */ }
-  return {
-    data,
-    write() { try { localStorage.setItem(STORE, JSON.stringify(data)); } catch (e) { /* ignore */ } },
-  };
+  return { data, write() { try { localStorage.setItem(STORE, JSON.stringify(data)); } catch (e) { /* ignore */ } } };
 })();
 
 const canvas = $('game');
@@ -23,45 +21,53 @@ const renderer = new Renderer(canvas);
 let game = null;
 let paused = false;
 let speed = 1;
-const ui = { placing: null, ghost: null, selected: null, pending: null };
+const ui = { buildCell: null, previewType: null, selected: null };
+const icons = {};
 
 // ---------------- screens ----------------
-function showScreen(id) {
-  for (const s of document.querySelectorAll('.screen')) s.classList.toggle('hidden', s.id !== id);
-}
+function showScreen(id) { for (const s of document.querySelectorAll('.screen')) s.classList.toggle('hidden', s.id !== id); }
 function hideScreens() { for (const s of document.querySelectorAll('.screen')) s.classList.add('hidden'); }
 function setInGameUI(on) {
-  for (const id of ['hud', 'buildbar', 'btn-wave']) $(id).classList.toggle('hidden', !on);
-  if (!on) { $('towerpanel').classList.add('hidden'); $('confirm').classList.add('hidden'); }
+  for (const id of ['hud', 'btn-wave']) $(id).classList.toggle('hidden', !on);
+  if (!on) { closeBuildMenu(); closeTowerMenu(); }
 }
+function starsHTML(n) { let s = ''; for (let i = 0; i < 3; i++) s += i < n ? '★' : '<span class="off">★</span>'; return s; }
 
-function starsHTML(n) {
-  let s = '';
-  for (let i = 0; i < 3; i++) s += i < n ? '★' : '<span class="off">★</span>';
-  return s;
-}
-
+function levelUnlocked(i) { return i === 0 || (save.data.stars[i - 1] || 0) > 0; }
 function renderLevels() {
   const list = $('level-list');
   list.innerHTML = '';
-  LEVELS.forEach((L, i) => {
-    const prev = i === 0 ? 1 : (save.data.stars[LEVELS[i - 1].id] || 0);
-    const locked = prev === 0;
-    const stars = save.data.stars[L.id] || 0;
-    const b = document.createElement('button');
-    b.className = 'lcard' + (locked ? ' locked' : '');
-    b.innerHTML = `<div class="num">EINSATZ ${i + 1}</div><div class="name">${L.name}</div><div class="sub">${L.sub}</div>
-      <div class="meta"><span>${locked ? '🔒 Gesperrt' : `${L.paths.length > 1 ? '2 Angriffsrouten · ' : ''}${WAVE_COUNT} Wellen`}</span><span class="stars">${starsHTML(stars)}</span></div>`;
-    b.onclick = () => {
-      if (locked) { sfx('error'); toast('Schließe zuerst den vorherigen Einsatz ab', 'bad'); return; }
-      sfx('click');
-      startLevel(i);
-    };
-    list.appendChild(b);
-  });
+  let total = 0;
+  for (const bid of BIOME_ORDER) {
+    const b = BIOMES[bid];
+    const sec = document.createElement('div');
+    sec.className = 'biome-sec';
+    sec.innerHTML = `<div class="biome-head" style="background-image:url(assets/tex/${b.ground}.jpg)"><span>${b.name.toUpperCase()}</span></div>`;
+    const row = document.createElement('div');
+    row.className = 'lrow';
+    LEVEL_SPECS.forEach((L, i) => {
+      if (L.biome !== bid) return;
+      const stars = save.data.stars[i] || 0;
+      total += stars;
+      const locked = !levelUnlocked(i);
+      const btn = document.createElement('button');
+      btn.className = 'ltile' + (locked ? ' locked' : '') + (stars ? ' done' : '');
+      btn.innerHTML = `<div class="lnum">${locked ? '🔒' : i + 1}</div><div class="lname">${L.name}</div><div class="stars small">${starsHTML(stars)}</div>`;
+      btn.onclick = () => {
+        if (locked) { sfx('error'); toast('Schließe zuerst den vorherigen Einsatz ab', 'bad'); return; }
+        sfx('click'); startLevel(i);
+      };
+      row.appendChild(btn);
+    });
+    sec.appendChild(row);
+    list.appendChild(sec);
+  }
+  $('total-stars').innerHTML = `★ ${total} / ${LEVEL_COUNT * 3}`;
+  // scroll to the first unfinished level
+  const next = [...list.querySelectorAll('.ltile')].find(t => !t.classList.contains('done') && !t.classList.contains('locked'));
+  if (next) setTimeout(() => next.scrollIntoView({ block: 'center' }), 30);
 }
 
-// ---------------- toasts ----------------
 function toast(text, kind = '', ms = 2200) {
   const el = document.createElement('div');
   el.className = 'toast ' + kind;
@@ -72,107 +78,153 @@ function toast(text, kind = '', ms = 2200) {
   setTimeout(() => { el.classList.add('out'); setTimeout(() => el.remove(), 450); }, ms);
 }
 
-// ---------------- build bar ----------------
-const cards = {};
-function buildBar() {
-  const bar = $('buildbar');
-  bar.innerHTML = '';
-  for (const key of TOWER_ORDER) {
-    const def = TOWERS[key];
-    const b = document.createElement('button');
-    b.className = 'tcard';
-    b.innerHTML = `<span class="tname">${def.name.toUpperCase()}</span><img src="assets/sprites/${def.sprite}.webp" alt=""><span class="cost">${def.cost}</span>`;
-    b.onclick = (e) => { e.stopPropagation(); unlockAudio(); selectBuild(key); };
-    bar.appendChild(b);
-    cards[key] = b;
+// tower icons (base + turret frame rendered into a small canvas)
+function makeIcons() {
+  for (const k of TOWER_ORDER) {
+    const def = TOWERS[k], m = Models.meta(def.model);
+    if (!m) continue;
+    const c = document.createElement('canvas');
+    c.width = 96; c.height = 96;
+    const g = c.getContext('2d');
+    const s = 70 / Math.max(m.w, m.h) / m.scale;
+    const sc = m.scale * s;
+    const x = 48, y = 48 + (m.ay - m.h / 2) * sc;
+    if (m.baseImg) g.drawImage(m.baseImg, x - m.ax * sc, y - m.ay * sc, m.w * sc, m.h * sc);
+    const f = Models.frameFor(def.model, Math.PI / 4 - 0.3);
+    g.drawImage(m.img, (f % m.cols) * m.w, Math.floor(f / m.cols) * m.h, m.w, m.h, x - m.ax * sc, y - m.ay * sc, m.w * sc, m.h * sc);
+    icons[k] = c.toDataURL('image/png');
   }
 }
 
-function selectBuild(key) {
-  if (!game || game.state === 'won' || game.state === 'lost') return;
-  closeTowerPanel();
-  if (ui.placing === key) { cancelPlacing(); return; }
+// ---------------- radial build menu ----------------
+let bmButtons = [];
+function openBuildMenu(cx, cy) {
+  closeTowerMenu();
+  ui.buildCell = { x: cx, y: cy };
+  ui.previewType = null;
+  const menu = $('buildmenu');
+  menu.querySelectorAll('.bm-btn').forEach(b => b.remove());
+  bmButtons = [];
+  const types = TOWER_ORDER.filter(k => game.unlocked(k));
+  const n = types.length;
+  const R = n <= 4 ? 70 : n <= 6 ? 82 : 96;
+  types.forEach((k, i) => {
+    const def = TOWERS[k];
+    const a = -Math.PI / 2 + (i / n) * Math.PI * 2;
+    const b = document.createElement('button');
+    b.className = 'bm-btn';
+    b.style.left = `${Math.cos(a) * R}px`;
+    b.style.top = `${Math.sin(a) * R}px`;
+    b.innerHTML = `<img src="${icons[k] || ''}" alt=""><span class="bm-cost">${def.cost}</span><span class="bm-ok">✓</span>`;
+    b.onclick = (e) => {
+      e.stopPropagation();
+      if (!game) return;
+      if (game.credits < def.cost) { sfx('error'); toast('Nicht genug Credits', 'bad', 1200); return; }
+      if (ui.previewType === k) {
+        const t = game.build(k, cx, cy);
+        if (t) { closeBuildMenu(); }
+        return;
+      }
+      ui.previewType = k;
+      bmButtons.forEach(o => o.el.classList.toggle('armed', o.k === k));
+      $('bm-info').innerHTML = `<b>${def.name}</b> · ⚡${def.cost} — ${def.desc} <em>Nochmal tippen zum Bauen ✓</em>`;
+      $('bm-info').classList.remove('hidden');
+      sfx('click');
+    };
+    menu.appendChild(b);
+    bmButtons.push({ el: b, k });
+  });
+  $('bm-info').classList.add('hidden');
+  menu.classList.remove('hidden');
+  positionMenus();
   sfx('click');
-  ui.placing = key;
-  ui.ghost = null;
-  ui.pending = null;
-  $('confirm').classList.add('hidden');
-  for (const k in cards) cards[k].classList.toggle('sel', k === key);
-  if (game.credits < TOWERS[key].cost) toast('Nicht genug Credits', 'bad', 1400);
-  else toast(`${TOWERS[key].name}: freies Feld antippen`, '', 1600);
+}
+function closeBuildMenu() {
+  ui.buildCell = null; ui.previewType = null;
+  $('buildmenu').classList.add('hidden');
+  $('bm-info').classList.add('hidden');
 }
 
-function cancelPlacing() {
-  ui.placing = null;
-  ui.ghost = null;
-  ui.pending = null;
-  $('confirm').classList.add('hidden');
-  for (const k in cards) cards[k].classList.remove('sel');
-}
-
-function confirmBuild() {
-  if (!ui.pending || !game) return;
-  const { type, cx, cy } = ui.pending;
-  const t = game.build(type, cx, cy);
-  if (t) cancelPlacing();
-  else { ui.pending = null; $('confirm').classList.add('hidden'); }
-}
-
-// ---------------- tower panel ----------------
-function openTowerPanel(t) {
-  cancelPlacing();
+// ---------------- tower menu ----------------
+function openTowerMenu(t) {
+  closeBuildMenu();
   ui.selected = t;
-  $('towerpanel').classList.remove('hidden');
-  $('tp-img').src = `assets/sprites/${TOWERS[t.type].sprite}.webp`;
-  updateTowerPanel(true);
+  $('towermenu').classList.remove('hidden');
+  updateTowerMenu(true);
+  positionMenus();
   sfx('click');
 }
-function closeTowerPanel() {
-  ui.selected = null;
-  $('towerpanel').classList.add('hidden');
-}
+function closeTowerMenu() { ui.selected = null; $('towermenu').classList.add('hidden'); }
 
-let tpCache = '';
-function updateTowerPanel(force) {
+const MODES = { first: 'Erster', strong: 'Stärkster', near: 'Nächster' };
+let tmCache = '';
+function updateTowerMenu(force) {
   const t = ui.selected;
   if (!t || !game) return;
   const def = TOWERS[t.type];
-  const s = t.stats;
-  const maxed = t.level >= MAX_LEVEL;
-  const next = maxed ? null : towerStats(t.type, t.level + 1);
+  const s = t.stats, maxed = t.level >= MAX_LEVEL;
   const cost = maxed ? 0 : upgradeCost(t.type, t.level);
-  const key = [t.id, t.level, t.mode, game.credits >= cost, maxed, game.sellValue(t), t.kills].join('|');
-  if (!force && key === tpCache) return;
-  tpCache = key;
-  $('tp-name').textContent = def.name;
-  $('tp-level').textContent = 'STUFE ' + ['I', 'II', 'III'][t.level - 1] + (maxed ? ' · MAX' : '');
-  const d = (a, b, f = (v) => Math.round(v)) => `${f(a)}${b !== undefined && b !== null ? `<em>→${f(b)}</em>` : ''}`;
-  const f1 = (v) => v.toFixed(1);
-  let special = '';
-  if (t.type === 'missile') special = `<div class="tp-stat"><small>FLÄCHE</small><b>${d(s.splash, next && next.splash, f1)}</b></div>`;
-  else if (t.type === 'plasma') special = `<div class="tp-stat"><small>PANZERUNG</small><b>ignoriert</b></div>`;
-  else if (t.type === 'rail') special = `<div class="tp-stat"><small>DURCHSCHLAG</small><b>Linie</b></div>`;
-  else if (t.type === 'emp') special = `<div class="tp-stat"><small>KETTE / SLOW</small><b>${s.chain} · ${Math.round(s.slow * 100)}%</b></div>`;
-  else special = `<div class="tp-stat"><small>ZIELE</small><b>Boden+Luft</b></div>`;
-  $('tp-stats').innerHTML =
-    `<div class="tp-stat"><small>SCHADEN</small><b>${d(s.dmg, next && next.dmg)}</b></div>` +
-    `<div class="tp-stat"><small>REICHWEITE</small><b>${d(s.range, next && next.range, f1)}</b></div>` +
-    `<div class="tp-stat"><small>SCHUSS/S</small><b>${d(s.rate, next && next.rate, f1)}</b></div>` + special;
-  for (const b of $('tp-modes').children) b.classList.toggle('on', b.dataset.mode === t.mode);
-  const up = $('tp-upgrade');
+  const rc = game.repairCost(t);
+  const key = [t.id, t.level, t.mode, game.credits >= cost, maxed, game.sellValue(t), rc, Math.round(t.hp)].join('|');
+  if (!force && key === tmCache) return;
+  tmCache = key;
+  $('tm-name').textContent = def.name;
+  $('tm-level').textContent = ['I', 'II', 'III'][t.level - 1];
+  $('tm-hpfill').style.width = `${Math.max(0, t.hp / s.hp) * 100}%`;
+  const next = maxed ? null : towerStats(t.type, t.level + 1);
+  const dmg = def.dps ? `${Math.round(s.dps)}/s` : def.kind === 'hitscan' || def.kind === 'flak' ? `${Math.round(s.dmg)}×${s.rate.toFixed(1)}` : Math.round(s.dmg);
+  const ndmg = next ? (def.dps ? Math.round(next.dps) : Math.round(next.dmg)) : null;
+  $('tm-stats').innerHTML = `<span>💥 ${dmg}${ndmg ? `<em>→${ndmg}</em>` : ''}</span><span>📡 ${s.range.toFixed(1)}</span><span>☠ ${t.kills}</span>`;
+  const up = $('tm-upgrade');
   up.disabled = maxed || game.credits < cost;
-  up.textContent = maxed ? 'MAXIMAL' : `UPGRADE · ${cost}`;
-  $('tp-sell').textContent = `VERKAUFEN · +${game.sellValue(t)}`;
+  up.textContent = maxed ? 'MAX' : `▲ ${cost}`;
+  const rp = $('tm-repair');
+  rp.classList.toggle('hidden', rc <= 0);
+  rp.textContent = `🔧 ${rc}`;
+  rp.disabled = game.credits < rc;
+  $('tm-mode').textContent = `🎯 ${MODES[t.mode]}`;
+  $('tm-mode').classList.toggle('hidden', !!def.static && def.kind !== 'emp');
+  $('tm-sell').textContent = `💰 +${game.sellValue(t)}`;
 }
+$('tm-upgrade').onclick = (e) => { e.stopPropagation(); if (ui.selected && game.upgrade(ui.selected)) updateTowerMenu(true); };
+$('tm-repair').onclick = (e) => { e.stopPropagation(); if (ui.selected && game.repair(ui.selected)) updateTowerMenu(true); };
+$('tm-mode').onclick = (e) => {
+  e.stopPropagation();
+  const t = ui.selected; if (!t) return;
+  const order = ['first', 'strong', 'near'];
+  t.mode = order[(order.indexOf(t.mode) + 1) % order.length];
+  t.target = null;
+  sfx('click'); updateTowerMenu(true);
+};
+$('tm-sell').onclick = (e) => { e.stopPropagation(); if (ui.selected) { game.sell(ui.selected); closeTowerMenu(); } };
 
-$('tp-close').onclick = () => { closeTowerPanel(); sfx('click'); };
-$('tp-upgrade').onclick = () => { if (ui.selected && game.upgrade(ui.selected)) updateTowerPanel(true); };
-$('tp-sell').onclick = () => { if (ui.selected) { game.sell(ui.selected); closeTowerPanel(); } };
-for (const b of $('tp-modes').children) {
-  b.onclick = () => { if (ui.selected) { ui.selected.mode = b.dataset.mode; sfx('click'); updateTowerPanel(true); } };
+function positionMenus() {
+  if (!game) return;
+  const pad = 8;
+  if (ui.buildCell) {
+    const w = toWorld(ui.buildCell.x + 0.5, ui.buildCell.y + 0.5);
+    const p = renderer.worldToScreen(w.x, w.y);
+    const n = bmButtons.length, R = (n <= 4 ? 70 : n <= 6 ? 82 : 96) + 30;
+    const x = Math.max(R + pad, Math.min(window.innerWidth - R - pad, p.x));
+    const y = Math.max(R + 50, Math.min(window.innerHeight - R - pad, p.y));
+    const m = $('buildmenu');
+    m.style.transform = `translate(${x}px, ${y}px)`;
+  }
+  if (ui.selected) {
+    const t = ui.selected;
+    const p = renderer.worldToScreen(t.wx, t.wy - 40);
+    const m = $('towermenu');
+    const mw = m.offsetWidth || 210, mh = m.offsetHeight || 120;
+    const gap = 60 * Math.max(0.5, renderer.cam.zoom) + 8;
+    // beside the tower: right if there is room, otherwise left
+    let x = p.x + gap;
+    if (x + mw > window.innerWidth - pad) x = p.x - gap - mw;
+    let y = p.y - mh / 2;
+    x = Math.max(pad, Math.min(window.innerWidth - mw - pad, x));
+    y = Math.max(52, Math.min(window.innerHeight - mh - pad, y));
+    m.style.transform = `translate(${x}px, ${y}px)`;
+  }
 }
-$('btn-confirm').onclick = () => confirmBuild();
-$('btn-cancel').onclick = () => { cancelPlacing(); sfx('click'); };
 
 // ---------------- map interaction ----------------
 function onTap(p) {
@@ -180,90 +232,48 @@ function onTap(p) {
   if (!game || paused || game.state === 'won' || game.state === 'lost') return;
   const c = renderer.screenToCell(p.x, p.y);
   const inMap = c.x >= 0 && c.y >= 0 && c.x < game.N && c.y < game.N;
-  if (ui.placing) {
-    if (!inMap) { cancelPlacing(); return; }
-    const existing = game.towerAt(c.x, c.y);
-    if (existing) { openTowerPanel(existing); return; }
-    const ok = game.canBuild(c.x, c.y);
-    if (!ok) { sfx('error'); toast('Hier kann nicht gebaut werden', 'bad', 1200); return; }
-    if (p.type === 'mouse') { ui.pending = { type: ui.placing, cx: c.x, cy: c.y }; confirmBuild(); return; }
-    // touch: two-step (preview, then confirm)
-    if (ui.pending && ui.pending.cx === c.x && ui.pending.cy === c.y) { confirmBuild(); return; }
-    ui.pending = { type: ui.placing, cx: c.x, cy: c.y };
-    ui.ghost = { type: ui.placing, cx: c.x, cy: c.y, ok: true };
-    const def = TOWERS[ui.placing];
-    const bc = $('btn-confirm');
-    bc.textContent = `${def.name.toUpperCase()} BAUEN · ${def.cost}`;
-    bc.disabled = game.credits < def.cost;
-    $('confirm').classList.remove('hidden');
-    sfx('click');
-    return;
-  }
   const t = inMap ? game.towerAt(c.x, c.y) : null;
-  if (t) { if (ui.selected === t) closeTowerPanel(); else openTowerPanel(t); }
-  else if (ui.selected) closeTowerPanel();
+  if (t) { if (ui.selected === t) closeTowerMenu(); else openTowerMenu(t); return; }
+  if (ui.buildCell || ui.selected) { closeBuildMenu(); closeTowerMenu(); return; }
+  if (inMap && game.canBuild(c.x, c.y)) openBuildMenu(c.x, c.y);
 }
-
-function onHover(p) {
-  if (!game || !ui.placing) return;
-  if (!p) { if (!ui.pending) ui.ghost = null; return; }
-  const c = renderer.screenToCell(p.x, p.y);
-  const inMap = c.x >= 0 && c.y >= 0 && c.x < game.N && c.y < game.N;
-  ui.ghost = inMap ? { type: ui.placing, cx: c.x, cy: c.y, ok: game.canBuild(c.x, c.y) } : null;
-}
-
-new Input(canvas, renderer, { tap: onTap, hover: onHover });
+new Input(canvas, renderer, { tap: onTap, hover: () => {} });
 
 // ---------------- HUD ----------------
 const hudCache = {};
-function setText(id, v) {
-  if (hudCache[id] === v) return false;
-  hudCache[id] = v;
-  $(id).textContent = v;
-  return true;
-}
-function pulse(id) {
-  const el = $(id);
-  el.classList.remove('pulse');
-  void el.offsetWidth;
-  el.classList.add('pulse');
-}
+function setText(id, v) { if (hudCache[id] === v) return false; hudCache[id] = v; $(id).textContent = v; return true; }
+function pulse(id) { const el = $(id); el.classList.remove('pulse'); void el.offsetWidth; el.classList.add('pulse'); }
 
 function updateHUD() {
   if (!game) return;
   setText('hud-lives', String(game.lives));
   if (setText('hud-credits', String(game.credits))) pulse('stat-credits');
-  setText('hud-wave', `${game.wave}/${WAVE_COUNT}`);
-  for (const k of TOWER_ORDER) {
-    const poor = game.credits < TOWERS[k].cost;
-    if (cards[k]._poor !== poor) { cards[k]._poor = poor; cards[k].classList.toggle('poor', poor); }
-  }
-  // wave button
+  setText('hud-wave', `${game.wave}/${game.waves.length}`);
   const b = $('btn-wave');
   let label, sub = '', enabled;
   if (game.state === 'build') { label = '▶ ANGRIFF STARTEN'; sub = 'Welle 1 rufen'; enabled = true; }
-  else if (game.wave >= WAVE_COUNT) { label = 'LETZTE WELLE'; sub = `${game.enemies.length + game.queue.length} Gegner übrig`; enabled = false; }
-  else if (game.canCallWave()) {
-    label = `⏩ WELLE ${game.wave + 1}`;
-    sub = game.breakTimer > 0 ? `startet in ${Math.ceil(game.breakTimer)} s · Bonus` : 'jetzt rufen · Bonus';
-    enabled = true;
-  } else { label = `WELLE ${game.wave} LÄUFT`; sub = `${game.enemies.length + game.queue.length} Gegner`; enabled = false; }
+  else if (game.wave >= game.waves.length) { label = 'LETZTE WELLE'; sub = `${game.enemies.length + game.queue.length} Gegner übrig`; enabled = false; }
+  else if (game.canCallWave()) { label = `⏩ WELLE ${game.wave + 1}`; sub = game.breakTimer > 0 ? `startet in ${Math.ceil(game.breakTimer)} s · Bonus` : 'jetzt rufen · Bonus'; enabled = true; }
+  else { label = `WELLE ${game.wave} LÄUFT`; sub = `${game.enemies.length + game.queue.length} Gegner`; enabled = false; }
   setText('wave-label', label);
   setText('wave-sub', sub);
   if (b.disabled === enabled) b.disabled = !enabled;
   b.classList.toggle('attention', game.state === 'build');
-  if (ui.pending) {
-    const bc = $('btn-confirm');
-    const poor = game.credits < TOWERS[ui.pending.type].cost;
-    if (bc.disabled !== poor) bc.disabled = poor;
+  if (ui.buildCell) {
+    for (const o of bmButtons) {
+      const poor = game.credits < TOWERS[o.k].cost;
+      if (o.el._poor !== poor) { o.el._poor = poor; o.el.classList.toggle('poor', poor); }
+    }
+    if (!game.canBuild(ui.buildCell.x, ui.buildCell.y)) closeBuildMenu();
   }
   if (ui.selected) {
-    if (!game.towers.includes(ui.selected)) closeTowerPanel();
-    else updateTowerPanel(false);
+    if (!game.towers.includes(ui.selected)) closeTowerMenu();
+    else updateTowerMenu(false);
   }
+  positionMenus();
 }
 
-$('btn-wave').onclick = () => { unlockAudio(); if (game && game.canCallWave()) game.startWave(); };
+$('btn-wave').onclick = () => { unlockAudio(); if (game && game.canCallWave()) { game.startWave(); closeBuildMenu(); } };
 $('btn-speed').onclick = () => {
   speed = speed === 1 ? 2 : speed === 2 ? 3 : 1;
   $('btn-speed').textContent = speed + '×';
@@ -296,52 +306,54 @@ function openPause() {
   if (!game || game.state === 'won' || game.state === 'lost') return;
   paused = true;
   sfx('click');
-  modal('PAUSE', '', `Einsatz: <b>${game.level.name}</b> · Welle ${game.wave}/${WAVE_COUNT}`, 0, [
+  modal('PAUSE', '', `Einsatz ${game.level.number}: <b>${game.level.name}</b> · Welle ${game.wave}/${game.waves.length}`, 0, [
     ['WEITER', 'primary', () => { paused = false; closeModal(); }],
     [`TON: ${soundOn() ? 'AN' : 'AUS'}`, '', () => { toggleSound(); openPause(); }],
     ['NEU STARTEN', '', () => { closeModal(); startLevel(game.levelIdx); }],
-    ['EINSATZ VERLASSEN', 'danger', () => { closeModal(); toMenu(); }],
+    ['EINSATZ VERLASSEN', 'danger', () => { closeModal(); toLevels(); }],
   ]);
 }
-
 function onWin() {
   const stars = game.stars();
-  const id = game.level.id;
-  save.data.stars[id] = Math.max(save.data.stars[id] || 0, stars);
+  const i = game.levelIdx;
+  save.data.stars[i] = Math.max(save.data.stars[i] || 0, stars);
   save.write();
   sfx('victory');
-  const hasNext = game.levelIdx < LEVELS.length - 1;
+  const hasNext = i < LEVEL_COUNT - 1;
   const btns = [];
-  if (hasNext) btns.push(['NÄCHSTER EINSATZ', 'primary', () => { closeModal(); startLevel(game.levelIdx + 1); }]);
-  btns.push(['NOCHMAL SPIELEN', hasNext ? '' : 'primary', () => { closeModal(); startLevel(game.levelIdx); }]);
+  if (hasNext) btns.push(['NÄCHSTER EINSATZ', 'primary', () => { closeModal(); startLevel(i + 1); }]);
+  btns.push(['NOCHMAL SPIELEN', hasNext ? '' : 'primary', () => { closeModal(); startLevel(i); }]);
   btns.push(['EINSATZÜBERSICHT', '', () => { closeModal(); toLevels(); }]);
+  const nextLevel = hasNext ? LEVEL_SPECS[i + 1] : null;
+  const newTower = hasNext ? TOWER_ORDER.find(k => TOWERS[k].unlock === i + 2) : null;
   setTimeout(() => modal('SIEG', 'win',
-    `Das Hauptquartier hält stand.<br>Basis-Integrität: <b>${game.lives}/${game.maxLives}</b> · Zerstörte Maschinen: <b>${game.kills}</b>` +
-    (hasNext ? '' : '<br><br><b>Alle Einsätze abgeschlossen – die Menschheit hat eine Zukunft.</b>'),
-    stars, btns), 900);
+    `Einsatz ${i + 1} „${game.level.name}" gehalten.<br>Basis: <b>${game.lives}/${game.maxLives}</b> · Zerstörte Maschinen: <b>${game.kills}</b>` +
+    (newTower ? `<br><br>🔓 Neuer Turm freigeschaltet: <b>${TOWERS[newTower].name}</b>` : '') +
+    (nextLevel && nextLevel.biome !== game.level.biome ? `<br>🌍 Neues Einsatzgebiet: <b>${BIOMES[nextLevel.biome].name}</b>` : '') +
+    (hasNext ? '' : '<br><br><b>Alle 25 Einsätze abgeschlossen – die Menschheit hat eine Zukunft.</b>'),
+    stars, btns), 1100);
 }
 function onLose() {
   sfx('defeat');
   setTimeout(() => modal('BASIS ZERSTÖRT', 'lose',
-    `Die Maschinen haben das Hauptquartier überrannt – in Welle ${game.wave}.<br>Zerstörte Maschinen: <b>${game.kills}</b>`,
-    0, [
+    `Die Maschinen haben das Hauptquartier überrannt – in Welle ${game.wave}.<br>Zerstörte Maschinen: <b>${game.kills}</b>`, 0, [
       ['NOCHMAL VERSUCHEN', 'primary', () => { closeModal(); startLevel(game.levelIdx); }],
       ['EINSATZÜBERSICHT', '', () => { closeModal(); toLevels(); }],
-    ]), 900);
+    ]), 1100);
 }
 
 function processEvents() {
   for (const ev of game.events) {
-    if (ev.type === 'toast') toast(ev.text, ev.bad ? 'bad' : ev.warn ? 'warn' : '', ev.long ? 3800 : 2200);
+    if (ev.type === 'toast') toast(ev.text, ev.bad ? 'bad' : ev.warn ? 'warn' : '', ev.long ? 4000 : 2200);
     else if (ev.type === 'baseHit') {
       pulse('stat-lives');
       const f = $('damage-flash');
-      f.classList.add('on');
-      setTimeout(() => f.classList.remove('on'), 60);
+      f.classList.add('on'); setTimeout(() => f.classList.remove('on'), 60);
       if (navigator.vibrate) try { navigator.vibrate(40); } catch (e) { /* ignore */ }
-    } else if (ev.type === 'wave') {
-      toast(`WELLE ${ev.n} / ${WAVE_COUNT}`, '', 1600);
-    } else if (ev.type === 'won') onWin();
+    } else if (ev.type === 'towerLost') {
+      if (ui.selected === ev.t) closeTowerMenu();
+    } else if (ev.type === 'wave') toast(`WELLE ${ev.n} / ${game.waves.length}`, '', 1600);
+    else if (ev.type === 'won') onWin();
     else if (ev.type === 'lost') onLose();
   }
   game.events.length = 0;
@@ -350,13 +362,13 @@ function processEvents() {
 // ---------------- flow ----------------
 function updateInsets() {
   const portrait = window.innerWidth <= window.innerHeight;
-  renderer.insets = portrait
-    ? { top: 50, bottom: 96, left: 0, right: 0 }
-    : { top: 48, bottom: 0, left: 0, right: window.innerHeight <= 430 ? 76 : 92 };
+  renderer.insets = portrait ? { top: 50, bottom: 70, left: 0, right: 0 } : { top: 46, bottom: 0, left: 0, right: 0 };
 }
 
-function startLevel(i) {
+async function startLevel(i) {
   unlockAudio();
+  const spec = LEVEL_SPECS[i];
+  await Assets.loadBiome(spec.biome);
   game = new Game(i);
   window.__game = game;
   window.__renderer = renderer;
@@ -364,65 +376,45 @@ function startLevel(i) {
   speed = 1;
   $('btn-speed').textContent = '1×';
   $('btn-speed').classList.remove('on');
-  cancelPlacing();
-  closeTowerPanel();
+  closeBuildMenu(); closeTowerMenu();
   updateInsets();
   renderer.setGame(game);
   hideScreens();
   setInGameUI(true);
   for (const k in hudCache) delete hudCache[k];
   updateHUD();
-  toast(`${game.level.name.toUpperCase()} – ${game.level.sub}`, '', 2600);
+  toast(`EINSATZ ${i + 1}: ${spec.name.toUpperCase()} – ${BIOMES[spec.biome].name}`, '', 2600);
+  const newTower = TOWER_ORDER.find(k => TOWERS[k].unlock === i + 1 && i > 0);
+  if (newTower) setTimeout(() => toast(`Neuer Turm verfügbar: ${TOWERS[newTower].name}`, 'warn', 3500), 900);
+  if (i === 0) setTimeout(() => toast('Tippe ein freies Feld an, um einen Turm zu bauen', '', 4000), 1200);
   maybeRotateHint();
 }
-
-function toMenu() {
-  game = null;
-  setInGameUI(false);
-  showScreen('screen-menu');
-}
-function toLevels() {
-  game = null;
-  setInGameUI(false);
-  renderLevels();
-  showScreen('screen-levels');
-}
-
+function toMenu() { game = null; setInGameUI(false); showScreen('screen-menu'); }
+function toLevels() { game = null; setInGameUI(false); renderLevels(); showScreen('screen-levels'); }
 function toggleSound() {
   save.data.sound = !soundOn();
   setSound(save.data.sound);
   save.write();
   $('btn-sound').textContent = `TON: ${save.data.sound ? 'AN' : 'AUS'}`;
 }
-
 function maybeRotateHint() {
-  const el = $('rotate-hint');
   const portrait = window.innerWidth < window.innerHeight;
-  el.classList.toggle('hidden', !(portrait && game && !save.data.rotateHintSeen && window.innerWidth < 700));
+  $('rotate-hint').classList.toggle('hidden', !(portrait && game && !save.data.rotateHintSeen && window.innerWidth < 700));
 }
 $('rotate-ok').onclick = () => { save.data.rotateHintSeen = true; save.write(); $('rotate-hint').classList.add('hidden'); };
-
 $('btn-play').onclick = () => { unlockAudio(); sfx('click'); toLevels(); };
 $('btn-help').onclick = () => { unlockAudio(); sfx('click'); showScreen('screen-help'); };
 $('btn-help-back').onclick = () => { sfx('click'); showScreen('screen-menu'); };
 $('btn-levels-back').onclick = () => { sfx('click'); showScreen('screen-menu'); };
 $('btn-sound').onclick = () => { unlockAudio(); toggleSound(); sfx('click'); };
 
-window.addEventListener('resize', () => {
-  renderer.resize();
-  if (game) { updateInsets(); renderer.clampCam(); maybeRotateHint(); }
-});
-window.addEventListener('orientationchange', () => setTimeout(() => {
-  renderer.resize();
-  if (game) { updateInsets(); renderer.resetCamera(); maybeRotateHint(); }
-}, 250));
+window.addEventListener('resize', () => { renderer.resize(); if (game) { updateInsets(); renderer.clampCam(); maybeRotateHint(); } });
+window.addEventListener('orientationchange', () => setTimeout(() => { renderer.resize(); if (game) { updateInsets(); renderer.resetCamera(); maybeRotateHint(); } }, 250));
 document.addEventListener('visibilitychange', () => { if (document.hidden && game && game.state !== 'won' && game.state !== 'lost' && $('modal').classList.contains('hidden')) openPause(); });
 window.addEventListener('keydown', (e) => {
   if (!game) return;
-  if (e.key === 'Escape') { if (ui.placing) cancelPlacing(); else if (ui.selected) closeTowerPanel(); else openPause(); }
+  if (e.key === 'Escape') { if (ui.buildCell) closeBuildMenu(); else if (ui.selected) closeTowerMenu(); else openPause(); }
   if (e.key === ' ') { e.preventDefault(); if (game.canCallWave()) game.startWave(); }
-  const n = parseInt(e.key, 10);
-  if (n >= 1 && n <= TOWER_ORDER.length) selectBuild(TOWER_ORDER[n - 1]);
 });
 
 // ---------------- loop ----------------
@@ -442,21 +434,19 @@ function frame(now) {
     processEvents();
     updateHUD();
   }
-  if (game) renderer.draw(paused ? 0 : dt, ui);
+  if (game) renderer.draw(paused ? 0 : dt * Math.min(speed, 2), ui);
 }
 
-// ---------------- boot ----------------
 async function boot() {
   setSound(save.data.sound !== false);
   $('btn-sound').textContent = `TON: ${save.data.sound !== false ? 'AN' : 'AUS'}`;
   renderer.resize();
-  buildBar();
   await Assets.load((p) => { $('loadfill').style.width = Math.round(p * 100) + '%'; });
-  // preload title image before showing the menu
+  makeIcons();
   await new Promise((res) => { const im = new Image(); im.onload = im.onerror = res; im.src = 'assets/title.jpg'; });
   showScreen('screen-menu');
   requestAnimationFrame((t) => { last = t; frame(t); });
   const q = new URLSearchParams(location.search);
-  if (q.has('level')) startLevel(Math.max(0, Math.min(LEVELS.length - 1, parseInt(q.get('level'), 10) || 0)));
+  if (q.has('level')) startLevel(Math.max(0, Math.min(LEVEL_COUNT - 1, (parseInt(q.get('level'), 10) || 1) - 1)));
 }
 boot();

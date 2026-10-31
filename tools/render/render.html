@@ -1,0 +1,216 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>Iron Sentinel sprite renderer</title></head>
+<body style="margin:0;background:#777">
+<!--
+  Offline sprite renderer for Meshy GLB models (driven by tools/render/render.mjs via Playwright).
+  Camera = the game's isometric projection: orthographic, 45° azimuth, 30° elevation
+  (a 1x1 ground tile becomes a 2:1 diamond). Towers are split at a cut height into a static
+  base and a rotating turret; units are rendered in N directions.
+-->
+<script type="importmap">
+{ "imports": { "three": "./node_modules/three/build/three.module.js", "three/addons/": "./node_modules/three/examples/jsm/" } }
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
+renderer.setPixelRatio(1);
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+renderer.localClippingEnabled = true;
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.setClearColor(0x000000, 0);
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+scene.environmentIntensity = 0.55;
+
+// light from screen upper-left (= world -X), warm key + cool rim + hemisphere fill
+const key = new THREE.DirectionalLight(0xffeedd, 2.7);
+key.position.set(-5, 7, 1.2);
+key.castShadow = true;
+key.shadow.mapSize.set(2048, 2048);
+key.shadow.camera.left = -3; key.shadow.camera.right = 3; key.shadow.camera.top = 3; key.shadow.camera.bottom = -3;
+key.shadow.bias = -0.0004;
+key.shadow.normalBias = 0.02;
+scene.add(key);
+const rim = new THREE.DirectionalLight(0xb8d0ff, 1.1);
+rim.position.set(-3, 4, -5);
+scene.add(rim);
+const fill = new THREE.DirectionalLight(0xffd2a8, 0.45);
+fill.position.set(4, 3, 4);
+scene.add(fill);
+scene.add(new THREE.HemisphereLight(0xcfdcff, 0x3a2c20, 0.55));
+
+const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.01, 200);
+const EL = Math.PI / 6, AZ = Math.PI / 4;
+const D = new THREE.Vector3(Math.cos(EL) * Math.sin(AZ), Math.sin(EL), Math.cos(EL) * Math.cos(AZ));
+camera.position.copy(D).multiplyScalar(50);
+camera.up.set(0, 1, 0);
+camera.lookAt(0, 0, 0);
+camera.updateMatrixWorld();
+
+const loader = new GLTFLoader();
+let current = null;
+
+function collectVerts(root, filter) {
+  const out = [];
+  const v = new THREE.Vector3();
+  root.updateMatrixWorld(true);
+  root.traverse((o) => {
+    if (!o.isMesh) return;
+    const pos = o.geometry.attributes.position;
+    const step = Math.max(1, Math.floor(pos.count / 6000));
+    for (let i = 0; i < pos.count; i += step) {
+      v.fromBufferAttribute(pos, i).applyMatrix4(o.matrixWorld);
+      if (!filter || filter(v)) out.push(v.clone());
+    }
+  });
+  return out;
+}
+
+window.renderModel = async function (opt) {
+  // opt: {url, mode:'tower'|'unit', frames, size, byHeight, cut, yaw0 (deg, model forward angle), muzzle:[x,y,z]|null, P, pad}
+  if (current) { scene.remove(current.pivot); }
+  const gltf = await loader.loadAsync(opt.url);
+  const model = gltf.scene;
+  model.traverse((o) => {
+    if (o.isMesh) {
+      o.castShadow = true; o.receiveShadow = true;
+      const mats = Array.isArray(o.material) ? o.material : [o.material];
+      for (const m of mats) { if (m.map) m.map.anisotropy = 8; m.envMapIntensity = 1.0; }
+    }
+  });
+  // normalise: feet at y=0; towers are centred + scaled on their base footprint (the turret axis),
+  // units on their full bounding box
+  let box = new THREE.Box3().setFromObject(model);
+  const sz = box.getSize(new THREE.Vector3());
+  let ref = box;
+  if (opt.mode === 'tower') {
+    const lowV = collectVerts(model, (v) => v.y < box.min.y + sz.y * (opt.baseFrac ?? 0.25));
+    ref = new THREE.Box3().setFromPoints(lowV);
+  }
+  const rs = ref.getSize(new THREE.Vector3());
+  const s = opt.byHeight ? opt.size / sz.y : opt.size / Math.max(rs.x, rs.z);
+  const rc = ref.getCenter(new THREE.Vector3());
+  model.scale.setScalar(s);
+  model.position.set(-rc.x * s, -box.min.y * s, -rc.z * s);
+  if (opt.offset) { model.position.x += opt.offset[0]; model.position.z += opt.offset[1]; }
+  const inner = new THREE.Group(); inner.add(model);
+  const pivot = new THREE.Group(); pivot.add(inner);
+  scene.add(pivot);
+  current = { pivot };
+  pivot.updateMatrixWorld(true);
+  box = new THREE.Box3().setFromObject(pivot);
+  const H = box.max.y;
+
+  const N = opt.frames || 16;
+  const cutY = opt.mode === 'tower' ? H * (opt.cut ?? 0.45) : null;
+
+  // auto-detect forward direction / muzzle for turrets (farthest vertex from the axis above the cut)
+  let yaw0 = opt.yaw0 != null ? THREE.MathUtils.degToRad(opt.yaw0) : null;
+  let muzzle = opt.muzzle ? new THREE.Vector3(...opt.muzzle) : null;
+  let autoInfo = null;
+  if (opt.mode === 'tower') {
+    const vs = collectVerts(pivot, (v) => v.y >= cutY);
+    let best = null, br = -1;
+    for (const v of vs) { const r = Math.hypot(v.x, v.z); if (r > br) { br = r; best = v; } }
+    autoInfo = { yaw: THREE.MathUtils.radToDeg(Math.atan2(best.z, best.x)), tip: [best.x, best.y, best.z], r: br };
+    if (yaw0 == null) yaw0 = Math.atan2(best.z, best.x);
+    if (!muzzle) {
+      // average of vertices near the tip along the forward direction
+      const fx = Math.cos(yaw0), fz = Math.sin(yaw0);
+      let maxA = -1e9;
+      for (const v of vs) maxA = Math.max(maxA, v.x * fx + v.z * fz);
+      const near = vs.filter((v) => v.x * fx + v.z * fz > maxA - 0.04);
+      const m = new THREE.Vector3();
+      for (const v of near) m.add(v);
+      muzzle = m.multiplyScalar(1 / near.length);
+    }
+  }
+  if (yaw0 == null) yaw0 = Math.PI / 4;
+
+  // frame bounds over all rotations (view space)
+  const view = camera.matrixWorldInverse;
+  let minX = 1e9, maxX = -1e9, minY = 1e9, maxY = -1e9;
+  const allV = collectVerts(pivot);
+  for (let i = 0; i < N; i++) {
+    const rot = new THREE.Matrix4().makeRotationY(-(2 * Math.PI * i / N));
+    for (const v of allV) {
+      const p = v.clone().applyMatrix4(rot).applyMatrix4(view);
+      minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x); minY = Math.min(minY, p.y); maxY = Math.max(maxY, p.y);
+    }
+  }
+  const pad = opt.pad ?? 0.03;
+  minX -= pad; maxX += pad; minY -= pad; maxY += pad;
+  const P = opt.P;
+  const W = Math.ceil((maxX - minX) * P), Hh = Math.ceil((maxY - minY) * P);
+  maxX = minX + W / P; minY = maxY - Hh / P;
+  renderer.setSize(W, Hh, false);
+  camera.left = minX; camera.right = maxX; camera.top = maxY; camera.bottom = minY;
+  camera.updateProjectionMatrix();
+  const toPx = (p) => {
+    const q = p.clone().applyMatrix4(view);
+    return [(q.x - minX) * P, (maxY - q.y) * P];
+  };
+  const anchor = toPx(new THREE.Vector3(0, 0, 0));
+
+  const setClip = (planes) => {
+    model.traverse((o) => {
+      if (!o.isMesh) return;
+      const mats = Array.isArray(o.material) ? o.material : [o.material];
+      for (const m of mats) { m.clippingPlanes = planes; m.side = planes.length ? THREE.DoubleSide : THREE.FrontSide; m.needsUpdate = true; }
+    });
+  };
+  const shot = () => { renderer.render(scene, camera); return renderer.domElement.toDataURL('image/png'); };
+
+  const out = { W, H: Hh, anchor, N, autoInfo, scale: s, height: H };
+  if (opt.mode === 'tower') {
+    // base (static) with a dark turret-ring cap over the cut
+    setClip([new THREE.Plane(new THREE.Vector3(0, -1, 0), cutY)]);
+    pivot.rotation.y = 0;
+    const capR = opt.capR ?? 0.3;
+    const cap = new THREE.Mesh(new THREE.CircleGeometry(capR, 48), new THREE.MeshStandardMaterial({ color: 0x1b1c1e, metalness: 0.35, roughness: 0.85 }));
+    cap.rotation.x = -Math.PI / 2; cap.position.y = cutY - 0.002; cap.receiveShadow = true;
+    scene.add(cap);
+    out.base = shot();
+    scene.remove(cap);
+    // turret frames
+    setClip([new THREE.Plane(new THREE.Vector3(0, 1, 0), -cutY)]);
+    out.frames = []; out.muzzles = [];
+    for (let i = 0; i < N; i++) {
+      const a = 2 * Math.PI * i / N;      // desired forward angle (atan2(z,x)) == grid angle atan2(dy,dx)
+      pivot.rotation.y = yaw0 - a;
+      pivot.updateMatrixWorld(true);
+      out.frames.push(shot());
+      const mw = muzzle.clone().applyMatrix4(pivot.matrixWorld);
+      const px = toPx(mw);
+      out.muzzles.push([px[0] - anchor[0], px[1] - anchor[1]]);
+    }
+    setClip([]);
+    out.cutPx = toPx(new THREE.Vector3(0, cutY, 0))[1] - anchor[1];
+  } else {
+    out.frames = [];
+    for (let i = 0; i < N; i++) {
+      const a = 2 * Math.PI * i / N;
+      pivot.rotation.y = yaw0 - a;
+      pivot.updateMatrixWorld(true);
+      out.frames.push(shot());
+    }
+    // body centre (for aiming) in px relative to anchor
+    out.center = toPx(new THREE.Vector3(0, H * 0.5, 0)).map((v, k) => v - anchor[k]);
+    out.top = toPx(new THREE.Vector3(0, H, 0)).map((v, k) => v - anchor[k]);
+  }
+  return out;
+};
+window.ready = true;
+</script>
+</body>
+</html>

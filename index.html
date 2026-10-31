@@ -8,7 +8,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Iron Sentinel">
   <meta name="theme-color" content="#0b0c0e">
-  <meta name="description" content="Iron Sentinel – isometrisches Tower Defense: Verteidige das letzte Hauptquartier der Menschheit gegen die Maschinenarmee.">
+  <meta name="description" content="Iron Sentinel – isometrisches Tower Defense: 25 Einsätze in Ödland, Dschungel, Wüste, Arktis und Vulkan gegen die Maschinenarmee.">
   <title>Iron Sentinel – Tower Defense</title>
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="apple-touch-icon" href="assets/icon-180.png">
@@ -23,7 +23,6 @@
   <div id="vignette"></div>
   <div id="damage-flash"></div>
 
-  <!-- HUD -->
   <div id="hud" class="hidden">
     <div class="hud-left">
       <div class="stat" id="stat-lives" title="Basis-Integrität">
@@ -44,38 +43,27 @@
     </div>
   </div>
 
-  <div id="buildbar" class="hidden"></div>
   <button id="btn-wave" class="hidden"><span id="wave-label">ANGRIFF STARTEN</span><small id="wave-sub"></small></button>
 
-  <div id="confirm" class="hidden">
-    <button id="btn-confirm" class="btn primary">BAUEN</button>
-    <button id="btn-cancel" class="btn">✕</button>
-  </div>
+  <!-- radial build menu (positioned at the tapped tile) -->
+  <div id="buildmenu" class="hidden"></div>
+  <div id="bm-info" class="hidden"></div>
 
-  <div id="towerpanel" class="hidden">
-    <div class="tp-head">
-      <img id="tp-img" alt="">
-      <div class="tp-title">
-        <div id="tp-name">Gatling-MG</div>
-        <div id="tp-level">STUFE I</div>
-      </div>
-      <button id="tp-close" class="btn icon" aria-label="Schließen">✕</button>
-    </div>
-    <div class="tp-stats" id="tp-stats"></div>
-    <div class="tp-modes" id="tp-modes">
-      <button data-mode="first">Erster</button>
-      <button data-mode="strong">Stärkster</button>
-      <button data-mode="near">Nächster</button>
-    </div>
-    <div class="tp-actions">
-      <button id="tp-upgrade" class="btn primary">UPGRADE</button>
-      <button id="tp-sell" class="btn danger">VERKAUFEN</button>
+  <!-- tower context menu -->
+  <div id="towermenu" class="hidden">
+    <div class="tm-head"><span id="tm-name">Gatling-MG</span><span id="tm-level">I</span></div>
+    <div class="tm-hp"><div id="tm-hpfill"></div></div>
+    <div class="tm-stats" id="tm-stats"></div>
+    <div class="tm-actions">
+      <button id="tm-upgrade" class="btn primary">▲ UPGRADE</button>
+      <button id="tm-repair" class="btn">🔧</button>
+      <button id="tm-mode" class="btn">🎯</button>
+      <button id="tm-sell" class="btn danger">VERKAUFEN</button>
     </div>
   </div>
 
   <div id="toasts"></div>
 
-  <!-- Screens -->
   <div id="screen-loading" class="screen">
     <div class="logo"><span>IRON</span> SENTINEL</div>
     <div class="loadbar"><div id="loadfill"></div></div>
@@ -86,7 +74,7 @@
     <div class="menu-inner">
       <div class="kicker">WIDERSTAND · JAHR 2049</div>
       <div class="logo big"><span>IRON</span> SENTINEL</div>
-      <div class="tagline">Die Maschinen haben die Welt genommen. Halte das letzte Hauptquartier.</div>
+      <div class="tagline">25 Einsätze. 5 Kriegsschauplätze. Halte die Maschinenarmee auf.</div>
       <div class="menu-buttons">
         <button class="btn primary large" id="btn-play">SPIELEN</button>
         <button class="btn large" id="btn-help">ANLEITUNG</button>
@@ -96,21 +84,24 @@
   </div>
 
   <div id="screen-levels" class="screen hidden title-bg dim">
-    <div class="panel-title">EINSATZGEBIET WÄHLEN</div>
+    <div class="levels-top">
+      <button class="btn icon" id="btn-levels-back">◀</button>
+      <div class="panel-title">EINSATZGEBIETE</div>
+      <div class="total-stars" id="total-stars"></div>
+    </div>
     <div id="level-list"></div>
-    <button class="btn" id="btn-levels-back">ZURÜCK</button>
   </div>
 
   <div id="screen-help" class="screen hidden title-bg dim">
     <div class="help-box">
       <div class="panel-title">EINSATZBESPRECHUNG</div>
       <ul>
-        <li><b>Ziel:</b> Maschinen laufen über die Straße zu deinem Hauptquartier. Lass keine durch – jede Einheit, die durchbricht, beschädigt die Basis.</li>
-        <li><b>Bauen:</b> Turm in der Leiste antippen, dann ein freies Feld antippen. Auf dem iPhone erscheint zuerst eine Vorschau mit Reichweite – nochmal tippen oder <i>BAUEN</i> bestätigen.</li>
-        <li><b>Turm antippen:</b> Upgrade (bis Stufe III), Zielmodus wählen oder verkaufen (70 % Rückerstattung).</li>
-        <li><b>Kamera:</b> Mit einem Finger verschieben, mit zwei Fingern zoomen.</li>
-        <li><b>Wellen:</b> Früh die nächste Welle rufen gibt Bonus-Credits.</li>
-        <li><b>Gatling-MG</b> – schnell, billig, schwach gegen Panzerung.<br><b>Raketenwerfer</b> – Flächenschaden, doppelt gegen Drohnen.<br><b>Plasmakanone</b> – ignoriert Panzerung, nur Bodenziele.<br><b>Railgun</b> – durchschlägt ganze Reihen, riesige Reichweite.<br><b>EMP-Turm</b> – Kettenblitz, verlangsamt Maschinen.</li>
+        <li><b>Ziel:</b> Die Maschinen marschieren über die Straße zu deinem Hauptquartier. Jede Einheit, die durchbricht, beschädigt die Basis.</li>
+        <li><b>Bauen:</b> Freies Feld antippen → Turm im Ring antippen (Vorschau mit Reichweite) → nochmal antippen zum Bauen.</li>
+        <li><b>Turm antippen:</b> Upgrade bis Stufe III, Reparieren, Zielmodus, Verkaufen. Direkt nach dem Bauen gibt es 100 % zurück.</li>
+        <li><b>Achtung:</b> Mechs, Panzer, Drohnen und Walker <b>beschießen deine Türme</b>. Türme reparieren sich langsam selbst und nach jeder Welle.</li>
+        <li><b>Kamera:</b> Ein Finger verschiebt, zwei Finger zoomen.</li>
+        <li><b>Türme:</b> Gatling (schnell) · Raketen (Fläche, Luft ×2) · Plasma (ignoriert Panzerung) · EMP (verlangsamt, bricht Schilde) · Flak (nur Luft) · Flammenwerfer (Kegel, Brand) · Railgun (durchschlägt Reihen) · Laser (heizt sich auf) · Mörser (Artillerie).</li>
       </ul>
       <button class="btn primary" id="btn-help-back">VERSTANDEN</button>
     </div>

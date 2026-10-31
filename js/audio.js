@@ -104,6 +104,41 @@ const SFX = {
     noise(t, big ? 1.4 : 0.6, { freq: big ? 900 : 1400, sweepTo: 60, type: 'lowpass', q: 0.3, gain: big ? 0.9 : 0.45 });
     tone(t, big ? 0.9 : 0.4, { type: 'sine', f0: big ? 90 : 120, f1: 30, gain: big ? 0.6 : 0.3 });
   },
+  laser() {
+    if (!throttle('las', 160)) return;
+    const t = ctx.currentTime;
+    tone(t, 0.18, { type: 'sawtooth', f0: 1400 + Math.random() * 200, f1: 1200, gain: 0.03 });
+  },
+  flame() {
+    if (!throttle('flm', 110)) return;
+    noise(ctx.currentTime, 0.2, { freq: 700, q: 0.4, type: 'lowpass', gain: 0.12, attack: 0.02 });
+  },
+  flak() {
+    if (!throttle('flk', 90)) return;
+    const t = ctx.currentTime;
+    noise(t, 0.08, { freq: 1500, q: 0.9, gain: 0.2 });
+    noise(t + 0.18, 0.12, { freq: 500, type: 'lowpass', gain: 0.15 });
+  },
+  mortar() {
+    if (!throttle('mor', 150)) return;
+    const t = ctx.currentTime;
+    tone(t, 0.35, { type: 'sine', f0: 70, f1: 35, gain: 0.5 });
+    noise(t, 0.3, { freq: 400, type: 'lowpass', gain: 0.35 });
+  },
+  dive() {
+    if (!throttle('dive', 300)) return;
+    tone(ctx.currentTime, 0.6, { type: 'sawtooth', f0: 900, f1: 300, gain: 0.05 });
+  },
+  enemyShot() {
+    if (!throttle('es', 70)) return;
+    tone(ctx.currentTime, 0.08, { type: 'square', f0: 1800, f1: 600, gain: 0.03 });
+  },
+  enemyCannon() {
+    if (!throttle('ec', 120)) return;
+    const t = ctx.currentTime;
+    noise(t, 0.12, { freq: 900, q: 0.7, gain: 0.16 });
+    tone(t, 0.15, { type: 'sine', f0: 140, f1: 70, gain: 0.15 });
+  },
   hit() {
     if (!throttle('hit', 45)) return;
     noise(ctx.currentTime, 0.04, { freq: 4500, q: 2, gain: 0.08 });

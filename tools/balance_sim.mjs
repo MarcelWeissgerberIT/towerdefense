@@ -1,9 +1,8 @@
-// Usage: node tools/balance_sim.mjs   (greedy bot plays every level headless)
-// Headless balance simulation with a greedy bot.
-const G = await import('../js/game.js');
+// Headless balance check: a greedy bot plays every level.
+//   node tools/balance_sim.mjs [levelFrom] [levelTo]
+const { Game, CELL } = await import('../js/game.js');
 const C = await import('../js/config.js');
-const { Game, CELL } = G;
-const ORDER = ['gatling', 'gatling', 'missile', 'plasma', 'emp', 'rail', 'missile', 'plasma'];
+
 function coverage(g, cx, cy, r) {
   let n = 0;
   for (let y = 0; y < g.N; y++) for (let x = 0; x < g.N; x++) {
@@ -15,32 +14,55 @@ function coverage(g, cx, cy, r) {
   }
   return n;
 }
-function run(levelIdx, skill) {
+
+function play(levelIdx, skill = 1) {
   const g = new Game(levelIdx);
+  const types = C.TOWER_ORDER.filter(k => g.unlocked(k));
+  // build order: mix of the unlocked towers, anti-air if drones show up
+  const weighted = ['gatling', 'missile', 'plasma', 'gatling', 'emp', 'flak', 'flame', 'missile', 'rail', 'plasma', 'laser', 'mortar', 'flame']
+    .filter(k => types.includes(k));
+  const order = [];
+  for (let i = 0; i < 80; i++) order.push(weighted[i % weighted.length]);
   let k = 0;
   const dt = 1 / 30;
   let t = 0;
-  while (g.state !== 'won' && g.state !== 'lost' && t < 3600) {
-    // build / upgrade
-    const type = ORDER[k % ORDER.length];
+  let lost = 0;
+  let lw = 0;
+  const trace = process.env.TRACE === String(levelIdx + 1);
+  if (trace) console.log(g.waves.map((w, i) => (i + 1) + ':' + w.groups.map(x => x.type + 'x' + x.count).join('+')).join('  '));
+  while (g.state !== 'won' && g.state !== 'lost' && t < 4000) {
+    const type = order[k % order.length];
     const cost = C.TOWERS[type].cost;
-    if (g.credits >= cost && g.towers.length < 40) {
+    if (g.credits >= cost && g.towers.length < 34) {
       let best = null, bv = -1;
       for (let y = 0; y < g.N; y++) for (let x = 0; x < g.N; x++) {
         if (!g.canBuild(x, y)) continue;
-        const v = coverage(g, x, y, C.TOWERS[type].range) * skill + Math.random() * (1 - skill) * 10;
+        const v = coverage(g, x, y, Math.min(C.TOWERS[type].range, 3.5)) * skill + Math.random() * (1 - skill) * 6;
         if (v > bv) { bv = v; best = [x, y]; }
       }
       if (best) { g.build(type, best[0], best[1]); k++; }
-    } else if (g.towers.length >= 8) {
-      const t2 = g.towers.filter(t => t.level < 3).sort((a, b) => a.level - b.level)[0];
-      if (t2 && g.credits >= C.upgradeCost(t2.type, t2.level) + 60) g.upgrade(t2);
+    } else if (g.towers.length >= 6) {
+      const cand = g.towers.filter(o => o.level < 3).sort((a, b) => a.level - b.level)[0];
+      if (cand && g.credits >= C.upgradeCost(cand.type, cand.level) + 80) g.upgrade(cand);
     }
+    for (const tw of g.towers) if (tw.hp < tw.stats.hp * 0.35 && g.credits > g.repairCost(tw) + 50) g.repair(tw);
     if (g.state === 'build') g.startWave();
+    const before = g.towers.length;
     g.update(dt);
+    lost += Math.max(0, before - g.towers.length);
     g.events.length = 0; g.decals.length = 0;
+    if (trace && g.wave !== lw) { lw = g.wave; console.log(`  w${g.wave} t=${Math.round(t)} credits ${g.credits} towers ${g.towers.length} (lvl ${g.towers.reduce((a, o) => a + o.level, 0)}) lives ${g.lives} lostTowers ${lost} alive ${g.enemies.length}`); }
     t += dt;
   }
-  return { level: levelIdx, state: g.state, wave: g.wave, lives: g.lives, towers: g.towers.length, credits: g.credits, time: Math.round(t), levels: g.towers.reduce((a, t) => a + t.level, 0) };
+  return { L: levelIdx + 1, state: g.state, wave: `${g.wave}/${g.waves.length}`, lives: g.lives, towers: g.towers.length, towersLost: lost, time: Math.round(t) };
 }
-for (let L = 0; L < 3; L++) for (const skill of [1, 0.5]) console.log(skill, JSON.stringify(run(L, skill)));
+
+const from = parseInt(process.argv[2] || '1', 10), to = parseInt(process.argv[3] || '25', 10);
+const skills = (process.argv[4] || '1').split(',').map(Number);
+for (let i = from - 1; i < to; i++) {
+  for (const s of skills) {
+    const r = play(i, s);
+    console.log(`L${String(r.L).padStart(2)} skill ${s}: ${r.state.padEnd(4)} wave ${r.wave.padEnd(5)} lives ${String(r.lives).padStart(2)} towers ${r.towers} lostTowers ${r.towersLost} t=${r.time}s`);
+  }
+}
+process.exit(0);

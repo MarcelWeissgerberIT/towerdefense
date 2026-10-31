@@ -1,114 +1,92 @@
-// Core simulation: grid, paths, towers, enemies, projectiles, waves.
+// Core simulation: grid, routes, towers (turret aiming), enemies (attack towers), projectiles, waves.
 import {
-  TOWERS, ENEMIES, LEVELS, PROPS, HW, HH, MAX_LEVEL, SELL_RATE, WAVE_COUNT, WAVE_TIPS,
-  towerStats, upgradeCost, totalInvested, buildWave, waveHpMul,
+  TOWERS, ENEMIES, MAX_LEVEL, TOWER_SCALE, SELL_RATE, FULL_REFUND_TIME, towerStats, upgradeCost, totalInvested,
 } from './config.js';
+import { getLevel, makeWaves, hpMultiplier, NEW_ENEMY_TIP } from './levels.js';
 import { toWorld, rand } from './iso.js';
 import { FX } from './fx.js';
 import { sfx } from './audio.js';
-import { Assets } from './assets.js';
+import { Models } from './assets.js';
 
 export const CELL = { FREE: 0, ROAD: 1, BLOCK: 2, SPAWN: 3, BASE: 4, TOWER: 5 };
-
+const TAU = Math.PI * 2;
 let uid = 1;
 
-function buildPath(spawn, cells, base) {
-  const pts = [{ x: spawn[0] + 1, y: spawn[1] + 1 }];
-  for (const [cx, cy] of cells) pts.push({ x: cx + 0.5, y: cy + 0.5 });
-  pts.push({ x: base[0] + 1, y: base[1] + 1 });
+function buildRoute(pts) {
   const seg = [];
   let total = 0;
   for (let i = 0; i < pts.length - 1; i++) {
-    const dx = pts[i + 1].x - pts[i].x, dy = pts[i + 1].y - pts[i].y;
-    const len = Math.hypot(dx, dy);
-    seg.push({ a: pts[i], dx: dx / len, dy: dy / len, len, start: total });
+    const [ax, ay] = pts[i], [bx, by] = pts[i + 1];
+    const len = Math.hypot(bx - ax, by - ay);
+    seg.push({ ax, ay, dx: (bx - ax) / len, dy: (by - ay) / len, len, start: total });
     total += len;
   }
   return { pts, seg, total };
 }
-
-function pathPos(path, d) {
-  const segs = path.seg;
+export function routePos(route, d) {
+  const segs = route.seg;
   let s = segs[segs.length - 1];
-  for (let i = 0; i < segs.length; i++) {
-    if (d < segs[i].start + segs[i].len) { s = segs[i]; break; }
-  }
+  for (let i = 0; i < segs.length; i++) if (d < segs[i].start + segs[i].len) { s = segs[i]; break; }
   const t = Math.min(s.len, Math.max(0, d - s.start));
-  return { x: s.a.x + s.dx * t, y: s.a.y + s.dy * t, dx: s.dx, dy: s.dy };
+  return { x: s.ax + s.dx * t, y: s.ay + s.dy * t, dx: s.dx, dy: s.dy };
 }
+const angDiff = (a, b) => { let d = (b - a) % TAU; if (d > Math.PI) d -= TAU; if (d < -Math.PI) d += TAU; return d; };
 
 export class Game {
   constructor(levelIdx) {
     this.levelIdx = levelIdx;
-    this.level = LEVELS[levelIdx];
+    this.level = getLevel(levelIdx);
     const L = this.level;
-    this.N = L.size;
+    this.N = L.N;
     this.grid = new Uint8Array(this.N * this.N);
-    this.credits = L.credits;
-    this.lives = L.lives;
-    this.maxLives = L.lives;
-    this.wave = 0;               // waves started
+    this.credits = L.credits + (L.paths.length - 1) * 150;
+    this.lives = 20;
+    this.maxLives = 20;
+    this.waves = makeWaves(L);
+    this.wave = 0;
     this.time = 0;
-    this.queue = [];             // pending spawns
+    this.queue = [];
     this.enemies = [];
     this.towers = [];
-    this.shots = [];             // projectiles
+    this.shots = [];
     this.fx = new FX();
-    this.events = [];            // UI events (toast etc.)
-    this.state = 'build';        // build | wave | won | lost
+    this.events = [];
+    this.state = 'build';
     this.breakTimer = -1;
     this.waveBonusPaid = true;
     this.kills = 0;
-    this.decals = [];            // pending ground decals for renderer
-    this.paths = L.paths.map(p => buildPath(p.spawn, p.cells, L.base));
+    this.lost = 0;
+    this.decals = [];
+    this.seen = new Set();
+    this.routes = L.paths.map(p => buildRoute(p.pts));
     this.props = [];
     this.setupGrid();
   }
 
   idx(x, y) { return y * this.N + x; }
-  cell(x, y) {
-    if (x < 0 || y < 0 || x >= this.N || y >= this.N) return CELL.BLOCK;
-    return this.grid[this.idx(x, y)];
-  }
-  setCell(x, y, v) {
-    if (x < 0 || y < 0 || x >= this.N || y >= this.N) return;
-    this.grid[this.idx(x, y)] = v;
-  }
+  cell(x, y) { return (x < 0 || y < 0 || x >= this.N || y >= this.N) ? CELL.BLOCK : this.grid[this.idx(x, y)]; }
+  setCell(x, y, v) { if (x >= 0 && y >= 0 && x < this.N && y < this.N) this.grid[this.idx(x, y)] = v; }
 
   setupGrid() {
     const L = this.level;
-    for (const p of L.paths) {
-      const [sx, sy] = p.spawn;
-      for (let dy = 0; dy < 2; dy++) for (let dx = 0; dx < 2; dx++) this.setCell(sx + dx, sy + dy, CELL.SPAWN);
-      let prev = null;
-      for (const c of p.cells) {
-        if (prev) {
-          const stepX = Math.sign(c[0] - prev[0]), stepY = Math.sign(c[1] - prev[1]);
-          let x = prev[0], y = prev[1];
-          while (x !== c[0] || y !== c[1]) {
-            this.setCell(x, y, CELL.ROAD);
-            x += stepX; y += stepY;
-          }
-        }
-        this.setCell(c[0], c[1], CELL.ROAD);
-        prev = c;
-      }
-    }
-    const [bx, by] = L.base;
-    for (let dy = 0; dy < 2; dy++) for (let dx = 0; dx < 2; dx++) this.setCell(bx + dx, by + dy, CELL.BASE);
-    for (const [kind, x, y] of L.props) {
+    for (const p of L.paths) for (const [x, y] of p.cells) this.setCell(x, y, CELL.ROAD);
+    for (const p of L.paths) for (let dy = 0; dy < 2; dy++) for (let dx = 0; dx < 2; dx++) this.setCell(p.spawn[0] + dx, p.spawn[1] + dy, CELL.SPAWN);
+    for (let dy = 0; dy < 2; dy++) for (let dx = 0; dx < 2; dx++) this.setCell(L.base[0] + dx, L.base[1] + dy, CELL.BASE);
+    for (const [sprite, x, y] of L.props) {
       if (this.cell(x, y) !== CELL.FREE) continue;
       this.setCell(x, y, CELL.BLOCK);
       const w = toWorld(x + 0.5, y + 0.5);
-      this.props.push({ kind, cx: x, cy: y, wx: w.x, wy: w.y, flip: ((x * 7 + y * 13) % 2) === 1 });
+      this.props.push({ sprite, cx: x, cy: y, wx: w.x, wy: w.y, flip: ((x * 7 + y * 13) % 2) === 1 });
     }
+    const b = toWorld(L.base[0] + 1, L.base[1] + 1);
+    this.baseW = b;
   }
 
   emit(type, data) { this.events.push({ type, ...data }); }
 
-  // ---------- building ----------
+  // ---------------- building ----------------
+  unlocked(type) { return TOWERS[type].unlock <= this.level.number; }
   canBuild(cx, cy) { return this.cell(cx, cy) === CELL.FREE; }
-
   towerAt(cx, cy) { return this.towers.find(t => t.cx === cx && t.cy === cy); }
 
   build(type, cx, cy) {
@@ -117,15 +95,16 @@ export class Game {
     if (this.credits < def.cost) { this.emit('toast', { text: 'Nicht genug Credits', bad: true }); sfx('error'); return null; }
     this.credits -= def.cost;
     const w = toWorld(cx + 0.5, cy + 0.5);
+    const stats = towerStats(type, 1);
     const t = {
-      id: uid++, type, level: 1, cx, cy, gx: cx + 0.5, gy: cy + 0.5, wx: w.x, wy: w.y,
-      cool: 0.2, flip: false, back: false, mode: 'first', recoil: 0, built: 0, kills: 0, spin: 0,
+      id: uid++, type, def, level: 1, cx, cy, gx: cx + 0.5, gy: cy + 0.5, wx: w.x, wy: w.y,
+      ang: Math.PI / 4 + rand(-0.4, 0.4), cool: 0.3, target: null, mode: 'first', recoil: 0, built: 0, kills: 0,
+      stats, hp: stats.hp, beamT: 0, beamTarget: null, firing: false, lastHit: -99, placedAt: this.time,
     };
-    t.stats = towerStats(type, 1);
     this.towers.push(t);
     this.setCell(cx, cy, CELL.TOWER);
-    this.fx.smoke(w.x, w.y + 10, 5, 34, 1.0);
-    this.fx.add({ k: 'ring', x: w.x, y: w.y + 14, r0: 20, r1: 80, life: 0.4, c: '200,220,255' });
+    this.fx.dust(w.x, w.y + 8, 1.2);
+    this.fx.add({ k: 'ring', x: w.x, y: w.y + 10, r0: 20, r1: 80, life: 0.4, c: '200,220,255' });
     sfx('build');
     return t;
   }
@@ -136,29 +115,61 @@ export class Game {
     if (this.credits < c) { this.emit('toast', { text: 'Nicht genug Credits', bad: true }); sfx('error'); return false; }
     this.credits -= c;
     t.level++;
+    const ratio = t.hp / t.stats.hp;
     t.stats = towerStats(t.type, t.level);
-    this.fx.add({ k: 'ring', x: t.wx, y: t.wy + 14, r0: 20, r1: 90, life: 0.5, c: '120,255,160' });
-    this.fx.sparks(t.wx, t.wy - 30, 12, '#9dffb5', 200);
+    t.hp = Math.min(t.stats.hp, Math.round(t.stats.hp * ratio) + Math.round(t.stats.hp * 0.25));
+    this.fx.add({ k: 'ring', x: t.wx, y: t.wy + 10, r0: 20, r1: 90, life: 0.5, c: '120,255,160' });
+    this.fx.sparks(t.wx, t.wy - 30, 14, '#9dffb5', 220);
     sfx('upgrade');
     return true;
   }
 
-  sellValue(t) { return Math.round(totalInvested(t.type, t.level) * SELL_RATE); }
-
+  sellValue(t) {
+    const inv = totalInvested(t.type, t.level);
+    return this.time - t.placedAt < FULL_REFUND_TIME && t.level === 1 ? inv : Math.round(inv * SELL_RATE * (0.5 + 0.5 * t.hp / t.stats.hp));
+  }
   sell(t) {
     const v = this.sellValue(t);
     this.credits += v;
-    this.towers = this.towers.filter(o => o !== t);
-    this.setCell(t.cx, t.cy, CELL.FREE);
-    this.fx.smoke(t.wx, t.wy, 6, 36, 1.2);
+    this.removeTower(t);
+    this.fx.dust(t.wx, t.wy, 1.4);
     this.fx.text(t.wx, t.wy - 60, `+${v}`);
     sfx('sell');
   }
-
-  // ---------- waves ----------
-  canCallWave() {
-    return this.wave < WAVE_COUNT && this.queue.length === 0 && (this.state === 'build' || this.state === 'wave');
+  repairCost(t) { return Math.ceil((1 - t.hp / t.stats.hp) * totalInvested(t.type, t.level) * 0.35); }
+  repair(t) {
+    const c = this.repairCost(t);
+    if (c <= 0) return false;
+    if (this.credits < c) { this.emit('toast', { text: 'Nicht genug Credits', bad: true }); sfx('error'); return false; }
+    this.credits -= c;
+    t.hp = t.stats.hp;
+    this.fx.sparks(t.wx, t.wy - 40, 12, '#8dff9a', 180);
+    sfx('upgrade');
+    return true;
   }
+  removeTower(t) {
+    this.towers = this.towers.filter(o => o !== t);
+    this.setCell(t.cx, t.cy, CELL.FREE);
+    for (const e of this.enemies) if (e.atkTarget === t) e.atkTarget = null;
+  }
+
+  damageTower(t, dmg) {
+    if (!this.towers.includes(t)) return;
+    t.hp -= dmg;
+    t.lastHit = this.time;
+    if (t.hp <= 0) {
+      this.removeTower(t);
+      this.fx.bigExplosion(t.wx, t.wy - 30, 1.6);
+      this.fx.debris(t.wx, t.wy - 20, 16, 300);
+      this.decals.push({ x: t.wx, y: t.wy, s: 150 });
+      this.emit('toast', { text: `${t.def.name} wurde zerstört!`, bad: true });
+      this.emit('towerLost', { t });
+      sfx('explosion', true);
+    }
+  }
+
+  // ---------------- waves ----------------
+  canCallWave() { return this.wave < this.waves.length && this.queue.length === 0 && (this.state === 'build' || this.state === 'wave'); }
 
   startWave() {
     if (!this.canCallWave()) return;
@@ -166,110 +177,192 @@ export class Game {
     if (this.wave > 0 && this.enemies.length > 0) bonus = 10 + this.wave * 2;
     else if (this.breakTimer > 0) bonus = Math.round(this.breakTimer * 2);
     if (bonus > 0) { this.credits += bonus; this.emit('toast', { text: `Früher Angriff: +${bonus} Credits` }); }
-    const list = buildWave(this.wave, this.level);
+    const wv = this.waves[this.wave];
     this.wave++;
-    const hpMul = waveHpMul(this.wave, this.level.hpMul);
-    for (const s of list) this.queue.push({ t: this.time + 1.2 + s.t, type: s.type, path: s.path, hpMul });
+    const hpMul = hpMultiplier(this.level.number, this.wave);
+    const rewardMul = (1 + 0.05 * (this.wave - 1)) * (1 + 0.025 * (this.level.number - 1));
+    const nR = this.routes.length;
+    let k = 0;
+    const tips = [];
+    for (const g of wv.groups) {
+      for (let i = 0; i < g.count; i++) {
+        this.queue.push({ t: this.time + 1.2 + g.delay + i * g.gap, type: g.type, route: (k++) % nR, hpMul: hpMul * (g.hpScale || 1), rewardMul });
+      }
+      if (!this.seen.has(g.type)) { this.seen.add(g.type); if (NEW_ENEMY_TIP[g.type] && this.level.number > 1) tips.push(NEW_ENEMY_TIP[g.type]); }
+    }
+    this.queue.sort((a, b) => a.t - b.t);
     this.state = 'wave';
     this.breakTimer = -1;
     this.waveBonusPaid = false;
     this.emit('wave', { n: this.wave });
-    const tip = WAVE_TIPS[this.wave];
+    const tip = tips[0] || wv.tip;
     if (tip) this.emit('toast', { text: tip, warn: true, long: true });
-    sfx(list.some(s => s.type === 'boss') ? 'alarm' : 'wave');
+    sfx(wv.boss ? 'alarm' : 'wave');
   }
 
-  spawn(type, pathIdx, hpMul) {
+  spawn(type, routeIdx, hpMul, rewardMul, startD = 0) {
     const def = ENEMIES[type];
-    const path = this.paths[pathIdx] || this.paths[0];
+    const route = this.routes[routeIdx] || this.routes[0];
     const hp = Math.round(def.hp * hpMul);
-    const p = pathPos(path, 0);
+    const p = routePos(route, startD);
     const w = toWorld(p.x, p.y);
     const e = {
-      id: uid++, type, def, path, d: 0, hp, maxHp: hp, armor: def.armor,
-      gx: p.x, gy: p.y, wx: w.x, wy: w.y, rx: w.x, ry: w.y,
-      off: rand(-0.17, 0.17), slowT: 0, slowF: 0, flash: 0, flashCd: 0, anim: Math.random() * 10,
-      back: false, flip: false, alive: true, air: !!def.air,
+      id: uid++, type, def, route, d: startD, hp, maxHp: hp, armor: def.armor,
+      shield: def.shield ? Math.round(def.shield * hpMul) : 0, maxShield: def.shield ? Math.round(def.shield * hpMul) : 0, shieldHit: -9,
+      gx: p.x, gy: p.y, wx: w.x, wy: w.y, rx: w.x, ry: w.y, ang: Math.atan2(p.dy, p.dx),
+      off: rand(-0.16, 0.16), slowT: 0, slowF: 0, burnT: 0, burnDps: 0, flash: 0, flashCd: 0, anim: Math.random() * 10,
+      alive: true, air: !!def.air, atkCool: rand(0.5, 1.5), atkTarget: null, reward: Math.round(def.reward * rewardMul),
+      spawnT: def.spawns ? def.spawns.every : 0, diving: null, healT: 0, hpMul,
     };
     this.enemies.push(e);
+    return e;
   }
 
-  // ---------- damage ----------
-  damage(e, raw, ignoreArmor = false) {
-    if (!e.alive) return;
-    const dmg = ignoreArmor ? raw : Math.max(raw * 0.2, raw - e.armor);
+  // ---------------- damage to enemies ----------------
+  damage(e, raw, opts = {}) {
+    if (!e.alive) return 0;
+    let dmg = raw;
+    if (e.shield > 0) {
+      const sMul = opts.shieldMul || 1;
+      const sd = Math.min(e.shield, dmg * sMul);
+      e.shield -= sd;
+      e.shieldHit = this.time;
+      dmg -= sd / sMul;
+      if (e.shield <= 0) { this.fx.shieldBreak(e.wx, this.bodyY(e)); sfx('hit'); }
+      if (dmg <= 0) return sd;
+    }
+    dmg = opts.ignoreArmor ? dmg : Math.max(dmg * 0.2, dmg - e.armor);
     e.hp -= dmg;
-    if (e.flashCd <= 0) { e.flash = 0.06; e.flashCd = 0.22; }
-    if (e.hp <= 0) this.kill(e);
+    if (e.flashCd <= 0) { e.flash = 0.06; e.flashCd = 0.2; }
+    if (e.hp <= 0) this.kill(e, opts.src);
+    return dmg;
   }
 
-  kill(e) {
+  kill(e, src) {
     e.alive = false;
     this.kills++;
-    const reward = e.def.reward;
-    this.credits += reward;
-    const y = e.wy - (e.air ? e.def.lift : 0);
-    const scale = e.def.boss ? 3 : e.type === 'tank' || e.type === 'mech' ? 1.5 : e.type === 'spider' ? 0.7 : 1;
-    this.fx.explosion(e.wx, y - e.def.size * 0.2, scale);
-    this.fx.text(e.wx, y - e.def.size * 0.6, `+${reward}`);
-    this.decals.push({ x: e.wx, y: e.wy, s: e.def.size * (e.air ? 0.7 : 1.1) });
-    sfx('explosion', scale > 1.4);
+    if (src) src.kills++;
+    this.credits += e.reward;
+    const y = this.bodyY(e);
+    const big = e.def.boss ? 3.2 : e.def.cost >= 10 ? 1.8 : e.def.cost >= 5 ? 1.35 : e.type === 'spider' ? 0.8 : 1;
+    if (big >= 1.3) this.fx.bigExplosion(e.wx, y, big); else this.fx.explosion(e.wx, y, big);
+    this.fx.text(e.wx, y - 30 * big, `+${e.reward}`);
+    if (!e.air) this.decals.push({ x: e.wx, y: e.wy, s: 70 * Math.min(big, 2.4) });
+    sfx('explosion', big >= 1.6);
+    if (e.def.boss) { this.emit('toast', { text: `${e.def.name} vernichtet! +${e.reward}`, warn: false }); this.fx.shake = Math.max(this.fx.shake, 14); }
   }
 
-  enemiesInRange(gx, gy, r, air, ground) {
-    const r2 = r * r;
-    const out = [];
+  bodyY(e) { return e.wy - (e.air ? e.def.lift : 0) - (Models.meta(e.def.model)?.centerPx ?? 30) * e.def.scale; }
+  aimPoint(e) { return { x: e.wx, y: this.bodyY(e) }; }
+
+  enemiesInRange(gx, gy, r, air, ground, minR = 0) {
+    const r2 = r * r, m2 = minR * minR, out = [];
     for (const e of this.enemies) {
       if (!e.alive) continue;
       if (e.air ? !air : !ground) continue;
-      const dx = e.gx - gx, dy = e.gy - gy;
-      if (dx * dx + dy * dy <= r2) out.push(e);
+      const d2 = (e.gx - gx) ** 2 + (e.gy - gy) ** 2;
+      if (d2 <= r2 && d2 >= m2) out.push(e);
     }
     return out;
   }
 
   pickTarget(t, list) {
-    if (!list.length) return null;
     let best = null, bv = -Infinity;
     for (const e of list) {
       let v;
-      if (t.mode === 'strong') v = e.hp;
+      if (t.mode === 'strong') v = e.hp + e.shield;
       else if (t.mode === 'near') v = -((e.gx - t.gx) ** 2 + (e.gy - t.gy) ** 2);
-      else v = e.d - e.path.total; // first: least remaining distance
+      else v = e.d - e.route.total;
+      if (e.def.boss && t.mode === 'first') v += 0.5;
       if (v > bv) { bv = v; best = e; }
     }
     return best;
   }
 
-  // body centre of an enemy in world px (for aiming / fx)
-  aimPoint(e) {
-    const lift = e.air ? e.def.lift : 0;
-    return { x: e.wx, y: e.wy - lift - e.def.size * (e.def.tall ? 0.55 : 0.32) };
-  }
-
+  // world position of the barrel tip for the current turret frame
   muzzle(t) {
-    const def = TOWERS[t.type];
-    const img = Assets.img[def.sprite];
-    const w = def.width, h = img ? w * img.h / img.w : w;
-    const side = t.flip ? -1 : 1;
-    const top = t.wy + 26 - h;
-    const m = {
-      gatling: [0.36, 0.42], missile: [0.2, 0.3], plasma: [0.36, 0.38], rail: [0.42, 0.62], emp: [0.0, 0.08],
-    }[t.type];
-    return { x: t.wx + side * w * m[0] * (t.back ? 0.6 : 1), y: top + h * m[1] - (t.back ? 10 : 0) };
+    const m = Models.meta(t.def.model);
+    if (!m || !m.muzzles) return { x: t.wx, y: t.wy - 60 };
+    const f = Models.frameFor(t.def.model, t.ang);
+    const [mx, my] = m.muzzles[f];
+    const s = m.scale * TOWER_SCALE;
+    return { x: t.wx + mx * s, y: t.wy + my * s };
   }
 
-  fire(t, target) {
+  // ---------------- towers ----------------
+  updateTower(t, dt) {
+    t.recoil = Math.max(0, t.recoil - dt * 7);
+    t.built += dt;
+    t.cool -= dt;
+    // passive regeneration when not under fire
+    if (this.time - t.lastHit > 3 && t.hp < t.stats.hp) t.hp = Math.min(t.stats.hp, t.hp + t.stats.hp * 0.035 * dt);
+    const def = t.def;
     const s = t.stats;
-    const def = TOWERS[t.type];
-    const aim = this.aimPoint(target);
-    t.flip = aim.x < t.wx;
-    t.back = aim.y < t.wy - 40;
+    // retarget
+    if (!t.target || !t.target.alive || ((t.target.gx - t.gx) ** 2 + (t.target.gy - t.gy) ** 2) > s.range * s.range || (def.minRange && ((t.target.gx - t.gx) ** 2 + (t.target.gy - t.gy) ** 2) < def.minRange ** 2)) {
+      t.target = null;
+    }
+    if (!t.target || t.retarget <= 0) {
+      const list = this.enemiesInRange(t.gx, t.gy, s.range, def.air, def.ground, def.minRange || 0);
+      const nt = this.pickTarget(t, list);
+      if (nt !== t.target) { t.target = nt; t.beamT = 0; }
+      t.retarget = 0.25;
+    }
+    t.retarget = (t.retarget || 0) - dt;
+    t.firing = false;
+    const target = t.target;
+    if (!target) {
+      if (!def.static) t.ang += Math.sin(this.time * 0.35 + t.id) * 0.35 * dt; // idle scan
+      t.beamT = 0;
+      return;
+    }
+    let aimOk = true;
+    if (!def.static) {
+      let want = Math.atan2(target.gy - t.gy, target.gx - t.gx);
+      if (def.kind === 'mortar') { /* lob: aim at target */ }
+      const d = angDiff(t.ang, want);
+      const step = def.turn * dt;
+      t.ang += Math.abs(d) <= step ? d : Math.sign(d) * step;
+      aimOk = Math.abs(angDiff(t.ang, want)) < (def.kind === 'flame' || def.kind === 'laser' ? 0.35 : 0.22);
+    }
+    if (!aimOk) { t.beamT = Math.max(0, t.beamT - dt); return; }
+
+    // continuous weapons
+    if (def.kind === 'laser') {
+      t.firing = true;
+      t.beamT = Math.min(def.rampTime, t.beamT + dt);
+      const mul = 1 + (def.ramp - 1) * (t.beamT / def.rampTime);
+      this.damage(target, s.dps * mul * dt, { src: t });
+      if (Math.random() < dt * 20) { const a = this.aimPoint(target); this.fx.sparks(a.x, a.y, 1, '#ff9a8a', 120); }
+      sfx('laser');
+      return;
+    }
+    if (def.kind === 'flame') {
+      t.firing = true;
+      const cone = def.cone;
+      for (const e of this.enemiesInRange(t.gx, t.gy, s.range, false, true)) {
+        const a = Math.atan2(e.gy - t.gy, e.gx - t.gx);
+        if (Math.abs(angDiff(t.ang, a)) <= cone / 2 + 0.12) {
+          this.damage(e, s.dps * dt, { src: t });
+          e.burnT = def.burnDur; e.burnDps = Math.max(e.burnDps, s.burn);
+        }
+      }
+      const m = this.muzzle(t);
+      const dir = toWorld(Math.cos(t.ang), Math.sin(t.ang));
+      const len = Math.hypot(dir.x, dir.y);
+      this.fx.flame(m.x, m.y, dir.x / len, dir.y / len, s.range * 64 * 1.25);
+      sfx('flame');
+      return;
+    }
+
+    if (t.cool > 0) return;
+    t.cool = 1 / s.rate;
     t.recoil = 1;
     const m = this.muzzle(t);
-    switch (t.type) {
-      case 'gatling': {
-        this.damage(target, s.dmg);
+    const aim = this.aimPoint(target);
+    switch (def.kind) {
+      case 'hitscan': {
+        this.damage(target, s.dmg, { src: t });
         const jx = rand(-6, 6), jy = rand(-6, 6);
         this.fx.tracer(m.x, m.y, aim.x + jx, aim.y + jy);
         this.fx.muzzle(m.x, m.y, 'yellow', 30);
@@ -278,27 +371,29 @@ export class Game {
         break;
       }
       case 'missile': {
-        const side = Math.random() < 0.5 ? -1 : 1;
-        this.shots.push({
-          k: 'missile', x: m.x + side * 10, y: m.y, vx: (t.flip ? -1 : 1) * 60, vy: -160, sp: 260,
-          target, tx: aim.x, ty: aim.y, tgx: target.gx, tgy: target.gy, dmg: s.dmg, splash: s.splash, airBonus: def.airBonus, trail: 0, life: 4,
-        });
-        this.fx.muzzle(m.x, m.y, 'orange', 34);
+        this.shots.push({ k: 'missile', x: m.x, y: m.y, vx: Math.cos(t.ang - Math.PI / 4) * 80, vy: -150, sp: 260, target, tx: aim.x, ty: aim.y, tgx: target.gx, tgy: target.gy, dmg: s.dmg, splash: s.splash, airBonus: def.airBonus, trail: 0, life: 4, src: t });
+        this.fx.muzzle(m.x, m.y, 'orange', 36);
         this.fx.smoke(m.x, m.y, 2, 16, 0.8);
         sfx('missile');
         break;
       }
       case 'plasma': {
-        this.shots.push({
-          k: 'plasma', x: m.x, y: m.y, sp: 560, target, tx: aim.x, ty: aim.y, tgx: target.gx, tgy: target.gy,
-          dmg: s.dmg, splash: s.splash, life: 3,
-        });
-        this.fx.muzzle(m.x, m.y, 'cyan', 60);
+        this.shots.push({ k: 'plasma', x: m.x, y: m.y, sp: 560, target, tx: aim.x, ty: aim.y, tgx: target.gx, tgy: target.gy, dmg: s.dmg, splash: s.splash, life: 3, src: t });
+        this.fx.muzzle(m.x, m.y, 'cyan', 64);
         sfx('plasma');
         break;
       }
+      case 'flak': {
+        // fast flak shell: burst at target after a short delay
+        const lead = 0.18;
+        const p = routePos(target.route, target.d + target.def.speed * lead);
+        const w = toWorld(p.x, p.y);
+        this.shots.push({ k: 'flak', x: m.x, y: m.y, t0: 0, dur: lead, sx: m.x, sy: m.y, tx: w.x + rand(-10, 10), ty: w.y - target.def.lift - 20 + rand(-10, 10), tgx: p.x, tgy: p.y, dmg: s.dmg, splash: s.splash, src: t });
+        this.fx.muzzle(m.x, m.y, 'yellow', 28);
+        sfx('flak');
+        break;
+      }
       case 'rail': {
-        // direction in grid space, pierce everything along the line up to range
         let dx = target.gx - t.gx, dy = target.gy - t.gy;
         const len = Math.hypot(dx, dy) || 1;
         dx /= len; dy /= len;
@@ -309,23 +404,17 @@ export class Game {
           const ex = e.gx - t.gx, ey = e.gy - t.gy;
           const along = ex * dx + ey * dy;
           if (along < 0 || along > R + 0.3) continue;
-          const perp = Math.abs(ex * dy - ey * dx);
-          if (perp <= 0.38 || e === target) {
-            this.damage(e, s.dmg * Math.pow(0.9, hits));
-            hits++;
-          }
+          if (Math.abs(ex * dy - ey * dx) <= 0.38 || e === target) { this.damage(e, s.dmg * Math.pow(0.9, hits), { src: t, shieldMul: 1.5 }); hits++; }
         }
         const end = toWorld(t.gx + dx * R, t.gy + dy * R);
-        const endY = end.y - 22;
-        this.fx.beam(m.x, m.y, end.x, endY);
+        this.fx.beam(m.x, m.y, end.x, end.y - 24);
         this.fx.sparks(aim.x, aim.y, 8, '#cfe9ff', 240);
         this.fx.shake = Math.max(this.fx.shake, 2);
         sfx('rail');
         break;
       }
       case 'emp': {
-        const chain = [target];
-        const used = new Set([target]);
+        const chain = [target], used = new Set([target]);
         let cur = target;
         for (let i = 1; i < s.chain; i++) {
           let best = null, bd = 1.7 * 1.7;
@@ -337,154 +426,303 @@ export class Game {
           if (!best) break;
           chain.push(best); used.add(best); cur = best;
         }
-        const pts = [[m.x, m.y]];
+        const top = { x: t.wx, y: t.wy - (Models.meta(def.model)?.topPx ?? 110) * TOWER_SCALE + 10 };
+        const pts = [[top.x, top.y]];
         for (const e of chain) {
           const a = this.aimPoint(e);
           pts.push([a.x, a.y]);
           e.slowF = Math.max(e.slowF, s.slow);
-          e.slowT = Math.max(e.slowT, s.slowDur);
-          this.damage(e, s.dmg, true);
+          e.slowT = Math.max(e.slowT, def.slowDur);
+          this.damage(e, s.dmg, { ignoreArmor: true, shieldMul: 4, src: t });
         }
         this.fx.bolt(pts);
         sfx('emp');
         break;
       }
+      case 'mortar': {
+        const flight = 1.25;
+        const p = routePos(target.route, target.d + target.def.speed * (1 - target.slowF) * flight);
+        const w = toWorld(p.x, p.y);
+        this.shots.push({ k: 'shell', sx: m.x, sy: m.y, x: m.x, y: m.y, tx: w.x, ty: w.y, tgx: p.x, tgy: p.y, t0: 0, dur: flight, arc: 170, dmg: s.dmg, splash: s.splash, src: t, friendly: true });
+        this.fx.muzzle(m.x, m.y, 'orange', 70);
+        this.fx.smoke(m.x, m.y, 4, 26, 1.2);
+        this.fx.shake = Math.max(this.fx.shake, 2.5);
+        sfx('mortar');
+        break;
+      }
     }
   }
 
-  explode(x, y, gx, gy, dmg, splash, opts = {}) {
-    const list = this.enemiesInRange(gx, gy, splash, opts.air !== false, true);
+  // splash damage at a grid position
+  explode(gx, gy, dmg, splash, opts = {}) {
+    const list = this.enemiesInRange(gx, gy, splash, opts.air !== false, opts.ground !== false);
     for (const e of list) {
       const d = Math.hypot(e.gx - gx, e.gy - gy);
       const fall = d < splash * 0.5 ? 1 : 1 - 0.5 * (d - splash * 0.5) / (splash * 0.5);
       let v = dmg * fall;
       if (e.air && opts.airBonus) v *= opts.airBonus;
-      this.damage(e, v, !!opts.ignoreArmor);
+      this.damage(e, v, opts);
+    }
+  }
+  damageTowersArea(gx, gy, dmg, splash) {
+    for (const t of [...this.towers]) {
+      const d = Math.hypot(t.gx - gx, t.gy - gy);
+      if (d <= splash) this.damageTower(t, dmg * (d < splash * 0.5 ? 1 : 0.6));
     }
   }
 
-  // ---------- update ----------
+  // ---------------- enemies ----------------
+  updateEnemy(e, dt) {
+    e.anim += dt;
+    if (e.flash > 0) e.flash -= dt;
+    if (e.flashCd > 0) e.flashCd -= dt;
+    const def = e.def;
+    if (e.burnT > 0) {
+      e.burnT -= dt;
+      this.damage(e, e.burnDps * dt, { ignoreArmor: true });
+      if (Math.random() < dt * 10) this.fx.burn(e.wx + rand(-10, 10), this.bodyY(e) + rand(-8, 8));
+      if (!e.alive) return;
+    }
+    if (e.shield < e.maxShield && this.time - e.shieldHit > 2.5) e.shield = Math.min(e.maxShield, e.shield + e.maxShield * 0.15 * dt);
+
+    // kamikaze dive
+    if (def.dive) {
+      if (!e.diving) {
+        let best = null, bd = def.dive.range * def.dive.range;
+        for (const t of this.towers) {
+          const d2 = (t.gx - e.gx) ** 2 + (t.gy - e.gy) ** 2;
+          if (d2 < bd) { bd = d2; best = t; }
+        }
+        if (best) { e.diving = best; sfx('dive'); }
+      }
+      if (e.diving) {
+        const t = e.diving;
+        if (!this.towers.includes(t)) { e.diving = null; }
+        else {
+          const dx = t.gx - e.gx, dy = t.gy - e.gy;
+          const d = Math.hypot(dx, dy);
+          const sp = 3.2 * dt;
+          e.ang = Math.atan2(dy, dx);
+          if (d <= sp + 0.05) {
+            e.alive = false;
+            const dmg = def.dive.dmg * Math.pow(e.hpMul, 0.3);
+            this.damageTowersArea(t.gx, t.gy, dmg, def.dive.splash);
+            this.fx.bigExplosion(t.wx, t.wy - 40, 1.2);
+            sfx('explosion', true);
+            return;
+          }
+          e.gx += dx / d * sp; e.gy += dy / d * sp;
+          const w = toWorld(e.gx, e.gy);
+          e.wx = e.rx = w.x; e.wy = e.ry = w.y;
+          e.liftMul = Math.max(0.15, Math.min(1, d / 1.2));
+          return;
+        }
+      }
+    }
+
+    let sp = def.speed;
+    if (e.slowT > 0) { e.slowT -= dt; sp *= 1 - e.slowF; if (e.slowT <= 0) e.slowF = 0; }
+    e.d += sp * dt;
+    if (e.d >= e.route.total) {
+      e.alive = false;
+      this.lives = Math.max(0, this.lives - def.leak);
+      this.lost += def.leak;
+      const b = this.baseW;
+      this.fx.bigExplosion(b.x + rand(-30, 30), b.y - 50 + rand(-20, 10), 1.3);
+      this.fx.shake = Math.max(this.fx.shake, 8);
+      this.emit('baseHit', { n: def.leak });
+      sfx('baseHit');
+      return;
+    }
+    const p = routePos(e.route, e.d);
+    const fade = Math.min(1, e.d / 1.2, (e.route.total - e.d) / 1.2);
+    e.gx = p.x - p.dy * e.off * fade; e.gy = p.y + p.dx * e.off * fade;
+    const w = toWorld(e.gx, e.gy);
+    const k = Math.min(1, dt * 14);
+    e.rx += (w.x - e.rx) * k; e.ry += (w.y - e.ry) * k;
+    e.wx = e.rx; e.wy = e.ry;
+    const want = Math.atan2(p.dy, p.dx);
+    const da = angDiff(e.ang, want);
+    e.ang += Math.abs(da) < 7 * dt ? da : Math.sign(da) * 7 * dt;
+
+    // healing aura
+    if (def.heal) {
+      e.healT -= dt;
+      if (e.healT <= 0) {
+        e.healT = 0.5;
+        for (const o of this.enemies) {
+          if (!o.alive || o.hp >= o.maxHp) continue;
+          if ((o.gx - e.gx) ** 2 + (o.gy - e.gy) ** 2 > def.healRange ** 2) continue;
+          o.hp = Math.min(o.maxHp, o.hp + def.heal * 0.5 * e.hpMul ** 0.5);
+          if (o !== e) this.fx.healBeam(e.wx, this.bodyY(e), o.wx, this.bodyY(o));
+        }
+      }
+    }
+    // carrier spawns
+    if (def.spawns) {
+      e.spawnT -= dt;
+      if (e.spawnT <= 0) {
+        e.spawnT = def.spawns.every;
+        for (let i = 0; i < def.spawns.count; i++) {
+          const c = this.spawn(def.spawns.type, this.routes.indexOf(e.route), e.hpMul * 0.8, 0.5, Math.max(0, e.d - 0.2 - i * 0.3));
+          c.off = rand(-0.3, 0.3);
+        }
+        this.fx.muzzle(e.wx, e.wy - def.lift, 'red', 80);
+      }
+    }
+    // attack towers
+    if (def.atk) {
+      e.atkCool -= dt;
+      if (e.atkCool <= 0) {
+        const a = def.atk;
+        let best = null, bd = a.range * a.range;
+        for (const t of this.towers) {
+          const d2 = (t.gx - e.gx) ** 2 + (t.gy - e.gy) ** 2;
+          if (d2 < bd) { bd = d2; best = t; }
+        }
+        if (best) {
+          e.atkCool = 1 / a.rate * rand(0.85, 1.15);
+          this.enemyFire(e, best, a);
+        } else e.atkCool = 0.3;
+      }
+    }
+  }
+
+  enemyFire(e, t, a) {
+    const from = { x: e.wx, y: this.bodyY(e) };
+    const to = { x: t.wx + rand(-12, 12), y: t.wy - 40 + rand(-12, 8) };
+    const dmg = a.dmg * Math.pow(e.hpMul, 0.3);
+    switch (a.kind) {
+      case 'laser':
+        this.damageTower(t, dmg);
+        this.fx.tracer(from.x, from.y, to.x, to.y, 'rgba(255,70,50,');
+        this.fx.muzzle(from.x, from.y, 'red', 22);
+        this.fx.sparks(to.x, to.y, 2, '#ff9070', 100);
+        sfx('enemyShot');
+        break;
+      case 'cannon':
+      case 'plasma':
+        this.shots.push({ k: a.kind === 'plasma' ? 'eplasma' : 'ebullet', x: from.x, y: from.y, tx: to.x, ty: to.y, sp: a.kind === 'plasma' ? 420 : 620, tower: t, dmg, life: 2 });
+        this.fx.muzzle(from.x, from.y, a.kind === 'plasma' ? 'red' : 'orange', 34);
+        sfx('enemyCannon');
+        break;
+      case 'missile':
+        this.shots.push({ k: 'emissile', x: from.x, y: from.y, vx: rand(-60, 60), vy: -120, sp: 220, tx: to.x, ty: to.y, tower: t, dmg, trail: 0, life: 3 });
+        sfx('missile');
+        break;
+      case 'shell':
+        this.shots.push({ k: 'shell', sx: from.x, sy: from.y, x: from.x, y: from.y, tx: t.wx, ty: t.wy, tgx: t.gx, tgy: t.gy, t0: 0, dur: 1.5, arc: 200, dmg, splash: a.splash, enemy: true });
+        this.fx.muzzle(from.x, from.y, 'orange', 60);
+        this.fx.smoke(from.x, from.y, 3, 22, 1);
+        sfx('mortar');
+        break;
+    }
+  }
+
+  // ---------------- update ----------------
   update(dt) {
     if (this.state === 'won' || this.state === 'lost') { this.fx.update(dt); return; }
     this.time += dt;
-
-    // spawn queue
     while (this.queue.length && this.queue[0].t <= this.time) {
       const s = this.queue.shift();
-      this.spawn(s.type, s.path, s.hpMul);
+      this.spawn(s.type, s.route, s.hpMul, s.rewardMul);
     }
-
-    // enemies
-    for (const e of this.enemies) {
-      if (!e.alive) continue;
-      e.anim += dt;
-      if (e.flash > 0) e.flash -= dt;
-      if (e.flashCd > 0) e.flashCd -= dt;
-      let sp = e.def.speed;
-      if (e.slowT > 0) { e.slowT -= dt; sp *= 1 - e.slowF; if (e.slowT <= 0) e.slowF = 0; }
-      e.d += sp * dt;
-      if (e.d >= e.path.total) {
-        e.alive = false;
-        this.lives = Math.max(0, this.lives - e.def.leak);
-        const b = toWorld(this.level.base[0] + 1, this.level.base[1] + 1);
-        this.fx.explosion(b.x + rand(-30, 30), b.y - 40 + rand(-20, 10), 1.2);
-        this.fx.shake = Math.max(this.fx.shake, 6);
-        this.emit('baseHit', { n: e.def.leak });
-        sfx('baseHit');
-        continue;
-      }
-      const p = pathPos(e.path, e.d);
-      // lateral offset for a natural column, faded out near start/end
-      const fade = Math.min(1, e.d / 1.2, (e.path.total - e.d) / 1.2);
-      const ox = -p.dy * e.off * fade, oy = p.dx * e.off * fade;
-      e.gx = p.x + ox; e.gy = p.y + oy;
-      const w = toWorld(e.gx, e.gy);
-      // smooth render position
-      const k = Math.min(1, dt * 14);
-      e.rx += (w.x - e.rx) * k; e.ry += (w.y - e.ry) * k;
-      e.wx = e.rx; e.wy = e.ry;
-      const sx = p.dx - p.dy, sy = p.dx + p.dy; // screen direction
-      e.back = sy < -0.01;
-      e.flip = sx < -0.01;
-    }
+    for (let i = 0; i < this.enemies.length; i++) { const e = this.enemies[i]; if (e.alive) this.updateEnemy(e, dt); }
     if (this.enemies.some(e => !e.alive)) this.enemies = this.enemies.filter(e => e.alive);
-
-    // towers
-    for (const t of this.towers) {
-      t.recoil = Math.max(0, t.recoil - dt * 8);
-      t.built += dt;
-      t.cool -= dt;
-      if (t.cool > 0) continue;
-      const def = TOWERS[t.type];
-      const list = this.enemiesInRange(t.gx, t.gy, t.stats.range, def.air, def.ground);
-      const target = this.pickTarget(t, list);
-      if (!target) { t.cool = 0.05; continue; }
-      t.cool = 1 / t.stats.rate;
-      this.fire(t, target);
-    }
-
-    // projectiles
-    for (const s of this.shots) {
-      s.life -= dt;
-      if (s.target && s.target.alive) {
-        const a = this.aimPoint(s.target);
-        s.tx = a.x; s.ty = a.y; s.tgx = s.target.gx; s.tgy = s.target.gy;
-      }
-      const dx = s.tx - s.x, dy = s.ty - s.y;
-      const d = Math.hypot(dx, dy);
-      if (s.k === 'missile') {
-        s.sp = Math.min(720, s.sp + 900 * dt);
-        const turn = Math.min(1, dt * 7);
-        s.vx += ((dx / (d || 1)) * s.sp - s.vx) * turn;
-        s.vy += ((dy / (d || 1)) * s.sp - s.vy) * turn;
-        s.x += s.vx * dt; s.y += s.vy * dt;
-        s.trail -= dt;
-        if (s.trail <= 0) { s.trail = 0.025; this.fx.trail(s.x, s.y); }
-        if (d < 16 || s.life <= 0) {
-          s.dead = true;
-          this.fx.explosion(s.tx, s.ty, 0.75);
-          this.explode(s.tx, s.ty, s.tgx, s.tgy, s.dmg, s.splash, { airBonus: s.airBonus });
-          sfx('explosion');
-        }
-      } else if (s.k === 'plasma') {
-        const step = s.sp * dt;
-        if (d <= step || s.life <= 0) {
-          s.dead = true;
-          this.fx.plasmaHit(s.tx, s.ty);
-          this.explode(s.tx, s.ty, s.tgx, s.tgy, s.dmg, s.splash, { ignoreArmor: true, air: false });
-          sfx('hit');
-        } else {
-          s.x += dx / d * step; s.y += dy / d * step;
-        }
-      }
-    }
-    if (this.shots.some(s => s.dead)) this.shots = this.shots.filter(s => !s.dead);
-
+    for (const t of [...this.towers]) this.updateTower(t, dt);
+    this.updateShots(dt);
     this.fx.update(dt);
 
-    // wave flow
     if (this.state === 'wave' && this.queue.length === 0 && this.enemies.length === 0) {
       if (!this.waveBonusPaid) {
         this.waveBonusPaid = true;
-        const bonus = 20 + this.wave * 4;
+        const bonus = 25 + this.wave * 6;
         this.credits += bonus;
-        if (this.wave < WAVE_COUNT) this.emit('toast', { text: `Welle ${this.wave} abgewehrt! +${bonus} Credits` });
+        // field repairs between waves
+        for (const t of this.towers) t.hp = Math.min(t.stats.hp, t.hp + t.stats.hp * 0.5);
+        if (this.wave < this.waves.length) this.emit('toast', { text: `Welle ${this.wave} abgewehrt! +${bonus} Credits` });
       }
-      if (this.wave >= WAVE_COUNT) {
-        this.state = 'won';
-        this.emit('won', {});
-      } else if (this.breakTimer < 0) {
-        this.breakTimer = 14;
-      }
+      if (this.wave >= this.waves.length) { this.state = 'won'; this.emit('won', {}); }
+      else if (this.breakTimer < 0) this.breakTimer = 12;
     }
     if (this.breakTimer > 0 && this.state === 'wave') {
       this.breakTimer -= dt;
       if (this.breakTimer <= 0) { this.breakTimer = -1; this.startWave(); }
     }
-    if (this.lives <= 0 && this.state !== 'lost') {
-      this.state = 'lost';
-      this.emit('lost', {});
+    if (this.lives <= 0 && this.state !== 'lost') { this.state = 'lost'; this.emit('lost', {}); }
+  }
+
+  updateShots(dt) {
+    for (const s of this.shots) {
+      switch (s.k) {
+        case 'missile': case 'emissile': {
+          s.life -= dt;
+          if (s.k === 'missile' && s.target && s.target.alive) { const a = this.aimPoint(s.target); s.tx = a.x; s.ty = a.y; s.tgx = s.target.gx; s.tgy = s.target.gy; }
+          const dx = s.tx - s.x, dy = s.ty - s.y, d = Math.hypot(dx, dy) || 1;
+          s.sp = Math.min(720, s.sp + 900 * dt);
+          const turn = Math.min(1, dt * 7);
+          s.vx += (dx / d * s.sp - s.vx) * turn; s.vy += (dy / d * s.sp - s.vy) * turn;
+          s.x += s.vx * dt; s.y += s.vy * dt;
+          s.trail -= dt;
+          if (s.trail <= 0) { s.trail = 0.025; this.fx.trail(s.x, s.y); }
+          if (d < 16 || s.life <= 0) {
+            s.dead = true;
+            this.fx.explosion(s.tx, s.ty, s.k === 'missile' ? 0.8 : 0.6);
+            if (s.k === 'missile') this.explode(s.tgx, s.tgy, s.dmg, s.splash, { airBonus: s.airBonus, src: s.src });
+            else this.damageTower(s.tower, s.dmg);
+            sfx('explosion');
+          }
+          break;
+        }
+        case 'plasma': case 'ebullet': case 'eplasma': {
+          s.life -= dt;
+          if (s.k === 'plasma' && s.target && s.target.alive) { const a = this.aimPoint(s.target); s.tx = a.x; s.ty = a.y; s.tgx = s.target.gx; s.tgy = s.target.gy; }
+          const dx = s.tx - s.x, dy = s.ty - s.y, d = Math.hypot(dx, dy);
+          const step = s.sp * dt;
+          if (d <= step || s.life <= 0) {
+            s.dead = true;
+            if (s.k === 'plasma') {
+              this.fx.plasmaHit(s.tx, s.ty);
+              this.explode(s.tgx, s.tgy, s.dmg, s.splash, { ignoreArmor: true, air: false, shieldMul: 2, src: s.src });
+              sfx('hit');
+            } else {
+              this.fx.explosion(s.tx, s.ty, 0.45);
+              this.damageTower(s.tower, s.dmg);
+            }
+          } else { s.x += dx / d * step; s.y += dy / d * step; }
+          break;
+        }
+        case 'flak': {
+          s.t0 += dt;
+          const k = Math.min(1, s.t0 / s.dur);
+          s.x = s.sx + (s.tx - s.sx) * k; s.y = s.sy + (s.ty - s.sy) * k;
+          if (k >= 1) {
+            s.dead = true;
+            this.fx.flakBurst(s.tx, s.ty);
+            this.explode(s.tgx, s.tgy, s.dmg, s.splash, { ground: false, src: s.src });
+          }
+          break;
+        }
+        case 'shell': {
+          s.t0 += dt;
+          const k = Math.min(1, s.t0 / s.dur);
+          s.x = s.sx + (s.tx - s.sx) * k;
+          s.y = s.sy + (s.ty - s.sy) * k - Math.sin(k * Math.PI) * s.arc;
+          s.trail = (s.trail || 0) - dt;
+          if (s.trail <= 0) { s.trail = 0.04; this.fx.trail(s.x, s.y); }
+          if (k >= 1) {
+            s.dead = true;
+            this.fx.bigExplosion(s.tx, s.ty - 20, s.enemy ? 1.0 : 1.15);
+            this.decals.push({ x: s.tx, y: s.ty, s: 90 });
+            if (s.enemy) this.damageTowersArea(s.tgx, s.tgy, s.dmg, s.splash);
+            else this.explode(s.tgx, s.tgy, s.dmg, s.splash, { air: false, src: s.src });
+            sfx('explosion', true);
+          }
+          break;
+        }
+      }
     }
+    if (this.shots.some(s => s.dead)) this.shots = this.shots.filter(s => !s.dead);
   }
 
   stars() {
@@ -492,5 +730,3 @@ export class Game {
     return r >= 0.9 ? 3 : r >= 0.5 ? 2 : 1;
   }
 }
-
-export { pathPos };

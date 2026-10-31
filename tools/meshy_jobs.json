@@ -1,0 +1,73 @@
+{
+ "tower_gatling": {
+  "image_url": "https://cdn.openart.ai/openart-ai/production/2026-10/create-image/wRD6PTxSzjxZwjWN69MC/gpt-image-2-1_1793439524353_48e753a9.png"
+ },
+ "tower_missile": {
+  "image_url": "https://cdn.openart.ai/openart-ai/production/2026-10/create-image/wRD6PTxSzjxZwjWN69MC/gpt-image-2-1_1793439524987_9b11547f.png"
+ },
+ "tower_plasma": {
+  "image_url": "https://cdn.openart.ai/openart-ai/production/2026-10/create-image/wRD6PTxSzjxZwjWN69MC/gpt-image-2-1_1793439528307_7b21c1b9.png"
+ },
+ "tower_rail": {
+  "image_url": "https://cdn.openart.ai/openart-ai/production/2026-10/create-image/wRD6PTxSzjxZwjWN69MC/gpt-image-2-1_1793439527990_77213b86.png"
+ },
+ "tower_emp": {
+  "image_url": "https://cdn.openart.ai/openart-ai/production/2026-10/create-image/wRD6PTxSzjxZwjWN69MC/gpt-image-2-1_1793439527111_5a8d3a49.png"
+ },
+ "enemy_spider": {
+  "image_url": "https://cdn.openart.ai/openart-ai/production/2026-10/create-image/wRD6PTxSzjxZwjWN69MC/gpt-image-2-1_1793439552605_e7032d1b.png",
+  "polycount": 40000
+ },
+ "enemy_android": {
+  "image_url": "https://cdn.openart.ai/openart-ai/production/2026-10/create-image/wRD6PTxSzjxZwjWN69MC/gpt-image-2-1_1793439547307_9d98c07b.png",
+  "polycount": 40000
+ },
+ "enemy_mech": {
+  "image_url": "https://cdn.openart.ai/openart-ai/production/2026-10/create-image/wRD6PTxSzjxZwjWN69MC/gpt-image-2-1_1793439555527_9513123c.png",
+  "polycount": 40000
+ },
+ "enemy_tank": {
+  "image_url": "https://cdn.openart.ai/openart-ai/production/2026-10/create-image/wRD6PTxSzjxZwjWN69MC/gpt-image-2-1_1793439708076_cd897b1d.png",
+  "polycount": 40000
+ },
+ "enemy_drone": {
+  "image_url": "https://cdn.openart.ai/openart-ai/production/2026-10/create-image/wRD6PTxSzjxZwjWN69MC/gpt-image-2-1_1793439703233_928c2cfe.png",
+  "polycount": 40000
+ },
+ "enemy_boss": {
+  "image_url": "https://cdn.openart.ai/openart-ai/production/2026-10/create-image/wRD6PTxSzjxZwjWN69MC/gpt-image-2-1_1793439708801_43124801.png",
+  "polycount": 60000
+ },
+ "tower_flame": {
+  "image_url": "https://cdn.openart.ai/openart-ai/production/2026-10/create-image/wRD6PTxSzjxZwjWN69MC/gpt-image-2-1_1793441469752_c5fd314f.png"
+ },
+ "tower_mortar": {
+  "image_url": "https://cdn.openart.ai/openart-ai/production/2026-10/create-image/wRD6PTxSzjxZwjWN69MC/gpt-image-2-1_1793441469827_a479a9cc.png"
+ },
+ "tower_laser": {
+  "image_url": "https://cdn.openart.ai/openart-ai/production/2026-10/create-image/wRD6PTxSzjxZwjWN69MC/gpt-image-2-1_1793441471970_bb4f8327.png"
+ },
+ "tower_flak": {
+  "image_url": "https://cdn.openart.ai/openart-ai/production/2026-10/create-image/wRD6PTxSzjxZwjWN69MC/gpt-image-2-1_1793441473460_0921c004.png"
+ },
+ "enemy_shield": {
+  "image_url": "https://cdn.openart.ai/openart-ai/production/2026-10/create-image/wRD6PTxSzjxZwjWN69MC/gpt-image-2-1_1793441472189_61e5e0ec.png",
+  "polycount": 40000
+ },
+ "enemy_kamikaze": {
+  "image_url": "https://cdn.openart.ai/openart-ai/production/2026-10/create-image/wRD6PTxSzjxZwjWN69MC/gpt-image-2-1_1793441473985_c7ad0e54.png",
+  "polycount": 30000
+ },
+ "enemy_repair": {
+  "image_url": "https://cdn.openart.ai/openart-ai/production/2026-10/create-image/wRD6PTxSzjxZwjWN69MC/gpt-image-2-1_1793441475945_d974519e.png",
+  "polycount": 40000
+ },
+ "enemy_siege": {
+  "image_url": "https://cdn.openart.ai/openart-ai/production/2026-10/create-image/wRD6PTxSzjxZwjWN69MC/gpt-image-2-1_1793441473771_849a5658.png",
+  "polycount": 40000
+ },
+ "enemy_mothership": {
+  "image_url": "https://cdn.openart.ai/openart-ai/production/2026-10/create-image/wRD6PTxSzjxZwjWN69MC/gpt-image-2-1_1793441790676_c850ec0f.png",
+  "polycount": 60000
+ }
+}

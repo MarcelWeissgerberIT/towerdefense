@@ -25,11 +25,12 @@ from PIL import Image, ImageDraw, ImageFilter
 HERE = Path(__file__).resolve().parent
 
 
-def remove_white_bg(img: Image.Image, thresh=26, hole_min=90, hole_d=7):
+def remove_white_bg(img: Image.Image, thresh=26, hole_min=90, hole_d=7, color=(255, 255, 255)):
     rgb = np.asarray(img.convert("RGB")).astype(np.int16)
     h, w, _ = rgb.shape
-    # "darkness": how far the darkest channel is from pure white
-    d = (255 - rgb.min(axis=2)).clip(0, 255)
+    bgc = np.array(color, dtype=np.int16)
+    # distance of each pixel from the flat background colour
+    d = np.abs(rgb - bgc).max(axis=2).clip(0, 255)
     work = Image.fromarray(np.minimum(d, 200).astype(np.uint8), "L")
 
     # flood fill background from the border
@@ -69,8 +70,13 @@ def remove_white_bg(img: Image.Image, thresh=26, hole_min=90, hole_d=7):
 
     # un-premultiply the white matte from edge pixels
     a3 = np.maximum(alpha, 1e-3)[..., None]
-    col = (rgb.astype(np.float32) - (1 - alpha[..., None]) * 255.0) / a3
+    col = (rgb.astype(np.float32) - (1 - alpha[..., None]) * bgc.astype(np.float32)) / a3
     col = np.clip(col, 0, 255)
+    if tuple(color) == (255, 0, 255):
+        # magenta despill: remove the part of R and B that exceeds G on both channels
+        m = np.clip(np.minimum(col[..., 0], col[..., 2]) - col[..., 1], 0, None)
+        col[..., 0] -= m
+        col[..., 2] -= m
     out = np.dstack([col, alpha[..., None] * 255]).astype(np.uint8)
     res = Image.fromarray(out, "RGBA")
     # light 1px erosion of the alpha to kill remaining fringe
