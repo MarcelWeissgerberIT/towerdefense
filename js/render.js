@@ -542,7 +542,9 @@ export class Renderer {
     for (const h of game.holes) this.drawHole(ctx, h);
     if (ui.aim) this.drawAimTop(ctx, game, ui);
     this.drawDrops(ctx, game);
-    game.fx.draw(ctx);
+    // X-ray moment of the nuclear flash: only the battlefield, no fireball/glow (it would be a black void in the negative)
+    const xray = game.fx.blind && game.fx.blindState().xray;
+    if (!xray) game.fx.draw(ctx);
     for (const e of game.enemies) this.drawHp(ctx, e);
     for (const t of game.towers) if (t.hp < t.stats.hp) this.drawTowerHp(ctx, t);
     if (game.lives < game.maxLives * 0.5 && Math.random() < dt * 8) game.fx.smoke(game.baseW.x + (Math.random() - 0.5) * 80, game.baseW.y - 60, 1, 30, 2, true);
@@ -568,12 +570,12 @@ export class Renderer {
       ctx.fillStyle = `rgba(90,170,255,${0.14 * a})`; ctx.fillRect(0, 0, this.vw, this.vh);
     }
     if (game.nukes.length) this.drawNukeAlarm(ctx, game);
-    if (game.fx.blind) this.drawBlind(ctx, game.fx.blind);
+    if (game.fx.blind) this.drawBlind(ctx, game.fx.blindState());
     if (game.fx.whiteout > 0) {
       ctx.fillStyle = `rgba(255,252,240,${Math.min(1, game.fx.whiteout)})`;
       ctx.fillRect(0, 0, this.vw, this.vh);
     }
-    if (game.fx.flash > 0) {
+    if (game.fx.flash > 0 && !xray) {
       ctx.globalCompositeOperation = 'lighter';
       ctx.fillStyle = `rgba(255,170,90,${game.fx.flash * 0.35})`;
       ctx.fillRect(0, 0, this.vw, this.vh);
@@ -603,17 +605,11 @@ export class Renderer {
     ctx.fillText(String(sec), W / 2, y + 62);
     ctx.restore();
   }
-  // nuclear flash: short double flash, solid white-out, then a burned-in glow around ground zero (real time)
-  drawBlind(ctx, b) {
-    const t = b.t, W = this.vw, H = this.vh;
-    let a;
-    if (t < 0.07) a = 1;
-    else if (t < 0.14) a = 0.55;
-    else if (t < 0.6) a = 1;
-    else a = Math.pow(Math.max(0, 1 - (t - 0.6) / 1.1), 1.6);
-    const sp = this.worldToScreen(b.x, b.y);
+  // nuclear flash: white flashes around an X-ray negative (CSS filter, see main.js), then a burned-in glow
+  drawBlind(ctx, st) {
+    const { t, white: a, glow: ga } = st, W = this.vw, H = this.vh;
+    const sp = this.worldToScreen(st.x, st.y);
     // glow first, so the white-out sits on top while it lasts
-    const ga = 0.95 * Math.pow(Math.max(0, 1 - t / 3.2), 1.3);
     if (ga > 0.01) {
       ctx.save();
       ctx.globalCompositeOperation = 'lighter';
@@ -627,7 +623,7 @@ export class Renderer {
       ctx.restore();
     }
     if (a > 0.003) {
-      const warm = Math.min(1, Math.max(0, (t - 0.6) / 1.1));
+      const warm = Math.min(1, Math.max(0, (t - 0.75) / 1.1));
       ctx.fillStyle = `rgba(255,${Math.round(255 - 30 * warm)},${Math.round(255 - 90 * warm)},${a})`;
       ctx.fillRect(0, 0, W, H);
     }

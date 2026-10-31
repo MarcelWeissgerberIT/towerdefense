@@ -30,7 +30,7 @@ function showScreen(id) { for (const s of document.querySelectorAll('.screen')) 
 function hideScreens() { for (const s of document.querySelectorAll('.screen')) s.classList.add('hidden'); }
 function setInGameUI(on) {
   for (const id of ['hud', 'btn-wave']) $(id).classList.toggle('hidden', !on);
-  if (!on) { closeBuildMenu(); closeTowerMenu(); endAim(); $('nuke-flash').style.opacity = 0; hudCache.nukeFlash = 0; }
+  if (!on) { closeBuildMenu(); closeTowerMenu(); endAim(); $('nuke-flash').style.opacity = 0; hudCache.nukeFlash = 0; setXray(false); }
 }
 function starsHTML(n) { let s = ''; for (let i = 0; i < 3; i++) s += i < n ? '★' : '<span class="off">★</span>'; return s; }
 
@@ -908,10 +908,11 @@ function frame(now) {
     game.advanceCinematic(dt);
     game.fx.realtimeScreen = true;
     game.fx.screen(dt);
-    // the nuclear flash also blinds the HUD: double flash, white-out, quick fade (the map keeps glowing longer)
-    const b = game.fx.blind, bt = b ? b.t : 9;
-    const ha = bt < 0.07 ? 1 : bt < 0.14 ? 0.5 : bt < 0.55 ? 1 : Math.max(0, 1 - (bt - 0.55) / 0.5);
+    // the nuclear flash also blinds the HUD; in between, the whole screen turns into an X-ray negative
+    const st = game.fx.blindState();
+    const ha = !st || st.xray ? 0 : st.t < 0.75 ? 1 : Math.max(0, 1 - (st.t - 0.75) / 0.5);
     if (hudCache.nukeFlash !== ha) { hudCache.nukeFlash = ha; $('nuke-flash').style.opacity = ha.toFixed(3); }
+    setXray(!!(st && st.xray));
     acc += dt * speed * ts;
     let n = 0;
     while (acc >= STEP && n < 12) { game.update(STEP); acc -= STEP; n++; }
@@ -919,8 +920,10 @@ function frame(now) {
     processEvents();
     updateHUD();
   }
+  else setXray(false);
   if (game) renderer.draw(paused ? 0 : dt * Math.min(speed, 2) * ts, ui);
 }
+function setXray(on) { if (hudCache.xray !== on) { hudCache.xray = on; document.body.classList.toggle('xray', on); } }
 
 async function boot() {
   setSound(save.data.sound !== false);

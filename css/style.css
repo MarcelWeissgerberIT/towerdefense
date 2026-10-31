@@ -619,3 +619,8 @@ body.aiming #btn-wave { display: none; }
 
 /* nuclear flash over the HUD as well (opacity driven by the game loop) */
 #nuke-flash { position: fixed; inset: 0; z-index: 12; pointer-events: none; background: #fffdf4; opacity: 0; }
+
+/* nuclear flash X-ray: a cyan negative of the battlefield - dark machines light up like bones */
+body.xray #game, body.xray #hud, body.xray #btn-wave, body.xray #btn-orbital, body.xray #btn-nuke, body.xray #btn-hole {
+  filter: grayscale(1) invert(1) brightness(0.7) contrast(2.8) sepia(0.8) hue-rotate(165deg) saturate(3.5) brightness(1.3);
+}

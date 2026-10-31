@@ -101,6 +101,7 @@ export class Game {
     // nuclear strike, charged by kills; power-up crates and active buffs
     this.nuke = { charge: 0, need: Math.round(NUKE.need(L.number) * (M.cd || 1)), on: (L.number >= NUKE.unlock || M.unlockAll) && !M.noAbilities };
     this.nukes = [];
+    this.nukeBlasts = [];
     this.hole = { cd: Math.round(HOLE.first * (M.cd || 1)), max: Math.round(HOLE.cd * (M.cd || 1)), on: (L.number >= HOLE.unlock || M.unlockAll) && !M.noAbilities };
     this.holes = [];
     this.radZones = [];
@@ -1001,6 +1002,18 @@ export class Game {
       if (n.t > 0) continue;
       n.done = true;
       const w = toWorld(n.gx, n.gy);
+      // flash and X-ray first - the blast wave hits a moment later, so the machines show up in the X-ray
+      this.fx.nuke(w.x, w.y);
+      this.startCinematic();
+      this.decals.push({ x: w.x, y: w.y, s: 420 });
+      this.emit('nukeHit', {});
+      sfx('nuke');
+      this.nukeBlasts.push({ gx: n.gx, gy: n.gy, t: 0.5 });
+    }
+    for (const n of this.nukeBlasts) {
+      n.t -= dt;
+      if (n.t > 0) continue;
+      n.done = true;
       const hpm = Math.pow(hpMultiplier(this.level.number, Math.max(1, this.wave)), 0.9);
       this._nuking = true;
       for (const e of this.enemiesInRange(n.gx, n.gy, NUKE.outer, true, true)) {
@@ -1015,12 +1028,8 @@ export class Game {
       }
       this._nuking = false;
       this.radZones.push({ gx: n.gx, gy: n.gy, r: NUKE.radR, r0: NUKE.radR, t: NUKE.radT, life: NUKE.radT });
-      this.fx.nuke(w.x, w.y);
-      this.startCinematic();
-      this.decals.push({ x: w.x, y: w.y, s: 420 });
-      this.emit('nukeHit', {});
-      sfx('nuke');
     }
+    if (this.nukeBlasts.some(n => n.done)) this.nukeBlasts = this.nukeBlasts.filter(n => !n.done);
     if (this.nukes.some(n => n.done)) this.nukes = this.nukes.filter(n => !n.done);
     for (const z of this.radZones) {
       z.t -= dt;
