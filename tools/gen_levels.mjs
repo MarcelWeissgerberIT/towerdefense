@@ -58,17 +58,17 @@ function endpoints(M, orient, r) {
   if (orient === 'TB') {
     const s = r() < 0.5 ? [0, ri(0, 2)] : [ri(0, 2), 0];
     const g = r() < 0.5 ? [m, ri(m - 2, m)] : [ri(m - 2, m), m];
-    return { s, g, s2: s[0] === 0 ? [ri(2, 4), 0] : [0, ri(2, 4)], s3: [ri(m - 1, m), 0] };
+    return { s, g, s2: s[0] === 0 ? [ri(2, 4), 0] : [0, ri(2, 4)], s3: [ri(m - 1, m), 0], s4: [0, ri(m - 1, m)] };
   }
   if (orient === 'LR') { // left corner (0,m) -> right corner (m,0)
     const s = r() < 0.5 ? [0, ri(m - 2, m)] : [ri(0, 2), m];
     const g = r() < 0.5 ? [m, ri(0, 2)] : [ri(m - 2, m), 0];
-    return { s, g, s2: [0, ri(1, 3)], s3: [ri(1, 3), 0] };
+    return { s, g, s2: [0, ri(1, 3)], s3: [ri(1, 3), 0], s4: [m, ri(m - 3, m - 1)] };
   }
   // RL: right corner -> left corner
   const s = r() < 0.5 ? [m, ri(0, 2)] : [ri(m - 2, m), 0];
   const g = r() < 0.5 ? [0, ri(m - 2, m)] : [ri(0, 2), m];
-  return { s, g, s2: [ri(1, 3), 0], s3: [0, ri(1, 3)] };
+  return { s, g, s2: [ri(1, 3), 0], s3: [0, ri(1, 3)], s4: [ri(m - 3, m - 1), m] };
 }
 
 const fineCenter = (c) => [2 * c[0] + 1.5, 2 * c[1] + 1.5];
@@ -99,32 +99,32 @@ function genLevel(spec) {
   for (let attempt = 0; attempt < 400; attempt++) {
     const r = rng(spec.seed * 1000 + attempt);
     const M = spec.M;
-    const { s, g, s2, s3 } = endpoints(M, spec.orient, r);
+    const { s, g, s2, s3, s4 } = endpoints(M, spec.orient, r);
     const [lo, hi] = spec.len;
     const main = walk(M, s, (c) => c[0] === g[0] && c[1] === g[1], lo, hi, [], r);
     if (!main) continue;
     const idx = new Map(main.map((c, i) => [K(...c), i]));
     const routes = [main];
     let ok = true;
-    const extra = [s2, s3].slice(0, spec.paths - 1);
+    const extra = [s2, s3, s4].slice(0, spec.paths - 1);
     const used = new Set(main.map(c => K(...c)));
-    for (const st of extra) {
+    // each extra route joins the main route in a different section; longer feeders on bigger maps
+    const JOIN = [[0.3, 0.75], [0.4, 0.85], [0.2, 0.6]];
+    for (const [ei, st] of extra.entries()) {
       if (used.has(K(...st))) { ok = false; break; }
-      // join an existing route somewhere in its middle part
+      const [j0, j1] = JOIN[ei];
+      const inJoin = (j) => j !== undefined && j >= main.length * j0 && j <= main.length * j1;
       const isGoal = (c) => {
-        for (const [dx, dy] of DIRS) {
-          const j = idx.get(K(c[0] + dx, c[1] + dy));
-          if (j !== undefined && j >= main.length * 0.3 && j <= main.length * 0.75) return true;
-        }
+        for (const [dx, dy] of DIRS) if (inJoin(idx.get(K(c[0] + dx, c[1] + dy)))) return true;
         return false;
       };
-      const p = walk(M, st, isGoal, 6, 13, [...used], r, { maxRun: 3 });
+      const p = walk(M, st, isGoal, 6, M + 7, [...used], r, { maxRun: 3 });
       if (!p) { ok = false; break; }
       const last = p[p.length - 1];
       let j = -1;
       for (const [dx, dy] of DIRS) {
         const v = idx.get(K(last[0] + dx, last[1] + dy));
-        if (v !== undefined && v >= main.length * 0.3 && v <= main.length * 0.75) { j = v; break; }
+        if (inJoin(v)) { j = v; break; }
       }
       const full = [...p, ...main.slice(j)];
       routes.push(full);

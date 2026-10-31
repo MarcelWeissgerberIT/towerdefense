@@ -8,7 +8,10 @@ export const LEVEL_COUNT = LEVEL_SPECS.length;
 
 export function getLevel(i) {
   const spec = LEVEL_SPECS[i];
-  return { ...spec, ...LEVEL_MAPS[i], credits: Math.max(spec.credits, 360 + 30 * i), index: i, number: i + 1 };
+  // every extra attack route needs its own defence line: more starting credits
+  // (and bigger maps need more towers)
+  const credits = Math.max(spec.credits, 360 + 30 * i) + 70 * (spec.paths - 1) + 80 * Math.max(0, spec.M - 7);
+  return { ...spec, ...LEVEL_MAPS[i], credits, index: i, number: i + 1 };
 }
 
 // --- waves -----------------------------------------------------------------
@@ -41,7 +44,7 @@ export function makeWaves(level) {
   const waves = [];
   const W = level.waves;
   for (let w = 1; w <= W; w++) {
-    const routeMul = level.paths.length === 1 ? 1 : level.paths.length === 2 ? 0.84 : 0.74;
+    const routeMul = [1, 1, 0.84, 0.74, 0.68][level.paths.length] || 0.68;
     const budget = (5 + 2.0 * w + 0.06 * w * w) * (1 + 0.045 * (lv - 1)) * routeMul;
     // only units that are cheap relative to the wave budget (no tanks in wave 1)
     const fits = (arr, share) => { const ok = arr.filter(k => ENEMIES[k].cost <= Math.max(2, budget * share * 0.34)); return ok.length ? ok : arr.filter(k => ENEMIES[k].cost <= 2); };

@@ -52,7 +52,9 @@ function renderLevels() {
       const locked = !levelUnlocked(i);
       const btn = document.createElement('button');
       btn.className = 'ltile' + (locked ? ' locked' : '') + (stars ? ' done' : '');
-      btn.innerHTML = `<div class="lnum">${locked ? '🔒' : i + 1}</div><div class="lname">${L.name}</div><div class="stars small">${starsHTML(stars)}</div>`;
+      const n = 2 * L.M + 1;
+      btn.innerHTML = `<div class="lnum">${locked ? '🔒' : i + 1}</div><div class="lname">${L.name}</div>`
+        + `<div class="lmeta">${n}×${n} · ${L.paths} ${L.paths === 1 ? 'Pfad' : 'Pfade'}</div><div class="stars small">${starsHTML(stars)}</div>`;
       btn.onclick = () => {
         if (locked) { sfx('error'); toast('Schließe zuerst den vorherigen Einsatz ab', 'bad'); return; }
         sfx('click'); startLevel(i);
@@ -411,6 +413,10 @@ async function startLevel(i) {
   const newTower = TOWER_ORDER.find(k => TOWERS[k].unlock === i + 1 && i > 0);
   if (newTower) setTimeout(() => toast(`Neuer Turm verfügbar: ${TOWERS[newTower].name}`, 'warn', 3500), 900);
   if (i === 0) setTimeout(() => toast('Tippe ein freies Feld an, um einen Turm zu bauen', '', 4000), 1200);
+  else if (game.N > 15 && !save.data.bigMapHint) {
+    save.data.bigMapHint = true; save.write();
+    setTimeout(() => toast('Große Karte: mit zwei Fingern zoomen und verschieben – rote Pfeile zeigen Gegner außerhalb', '', 5000), 1200);
+  } else if (game.routes.length > 1) setTimeout(() => toast(`${game.routes.length} Angriffspfade – verteidige alle Zugänge!`, '', 3200), 1400);
   maybeRotateHint();
 }
 function toMenu() { game = null; setInGameUI(false); showScreen('screen-menu'); }

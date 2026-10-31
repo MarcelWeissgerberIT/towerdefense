@@ -4,7 +4,7 @@ import { toWorld, toGrid, mulberry32, clamp } from './iso.js';
 import { Assets, Models } from './assets.js';
 import { CELL } from './game.js';
 
-const T = 128;          // top-down px per tile for ground composition
+const T0 = 128;         // top-down px per tile for ground composition (small maps)
 const DEPTH = 70;       // slab thickness in world px
 
 function makeCanvas(w, h) {
@@ -65,13 +65,17 @@ export class Renderer {
       const availH = this.vh - this.insets.top - this.insets.bottom;
       z = Math.min(fit * 1.45, availH / (b.y1 - b.y0 + 160));
     }
+    // big maps don't fit a phone screen at a tappable size: start closer (pinch out for the overview)
+    const playable = Math.min(this.vw, this.vh) < 500 ? 0.34 : 0.3;
+    z = Math.max(z, Math.min(playable, 1));
     this.cam.zoom = clamp(z, 0.16, 1.4);
-    this.minZoom = Math.min(fit, 0.9) * 0.85;
+    this.minZoom = Math.min(fit, 0.9) * 0.9;
     this.maxZoom = 1.7;
     const offX = (this.insets.left - this.insets.right) / 2 / this.cam.zoom;
     const offY = (this.insets.top - this.insets.bottom) / 2 / this.cam.zoom;
     this.cam.x = (b.x0 + b.x1) / 2 - offX;
     this.cam.y = (b.y0 + b.y1) / 2 - offY;
+    this.clampCam();
   }
   clampCam() {
     const b = this.mapBounds();
@@ -111,9 +115,11 @@ export class Renderer {
   buildGround() {
     const game = this.game, N = game.N, L = game.level, B = this.biome;
     const rng = mulberry32(N * 977 + game.levelIdx * 131 + 7);
+    // big maps use a lower composition resolution to stay inside mobile canvas memory limits
+    const T = N >= 19 ? 96 : T0;
     const td = makeCanvas(N * T, N * T);
     const g = td.getContext('2d');
-    const TS = 512;
+    const TS = 512 * T / T0;
     const tex = Assets.tex[B.ground], rtex = Assets.tex[B.road];
     for (let y = 0; y < N * T; y += TS) for (let x = 0; x < N * T; x += TS) {
       if (tex) g.drawImage(tex, x, y, TS, TS); else { g.fillStyle = '#4a4036'; g.fillRect(x, y, TS, TS); }
@@ -206,7 +212,7 @@ export class Renderer {
       grd.addColorStop(0, 'rgba(0,0,0,0)'); grd.addColorStop(1, 'rgba(0,0,0,0.5)');
       g.fillStyle = grd; g.fillRect(0, 0, N * T, N * T);
     }
-    const s = 1.2, pad = 10;
+    const s = N >= 19 ? 1.0 : 1.2, pad = 10;
     const W = 2 * N * HW + pad * 2, H = 2 * N * HH + DEPTH + pad * 2;
     const iso = makeCanvas(W * s, H * s), ig = iso.getContext('2d');
     const ox = N * HW + pad, oy = pad;
@@ -243,7 +249,8 @@ export class Renderer {
     };
     face(Lp, Bp, true);
     face(Bp, Rp, false);
-    ig.setTransform(s * 0.5, s * 0.25, -s * 0.5, s * 0.25, s * ox, s * oy);
+    const k = T0 / T;
+    ig.setTransform(s * 0.5 * k, s * 0.25 * k, -s * 0.5 * k, s * 0.25 * k, s * ox, s * oy);
     ig.drawImage(td, 0, 0);
     ig.setTransform(s, 0, 0, s, s * ox, s * oy);
     ig.strokeStyle = 'rgba(255,230,200,0.18)'; ig.lineWidth = 2;
@@ -334,12 +341,43 @@ export class Renderer {
 
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     this.drawAmbient(ctx, dt);
+    this.drawOffscreen(ctx, game);
     if (game.fx.flash > 0) {
       ctx.globalCompositeOperation = 'lighter';
       ctx.fillStyle = `rgba(255,170,90,${game.fx.flash * 0.35})`;
       ctx.fillRect(0, 0, this.vw, this.vh);
       ctx.globalCompositeOperation = 'source-over';
     }
+  }
+
+  // red edge markers pointing at enemies outside the view (big maps)
+  drawOffscreen(ctx, game) {
+    const ins = this.insets, x0 = ins.left + 18, x1 = this.vw - ins.right - 18, y0 = ins.top + 18, y1 = this.vh - Math.max(ins.bottom, 0) - 18;
+    const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+    const bins = new Map();
+    for (const e of game.enemies) {
+      const p = this.worldToScreen(e.wx, e.wy - 30);
+      if (p.x > x0 - 10 && p.x < x1 + 10 && p.y > y0 - 10 && p.y < y1 + 10) continue;
+      const a = Math.atan2(p.y - cy, p.x - cx);
+      const k = Math.round(a / (Math.PI / 12));
+      const b = bins.get(k);
+      if (b) { b.n++; if (e.def.boss) b.boss = true; } else bins.set(k, { a, n: 1, boss: !!e.def.boss });
+    }
+    if (!bins.size) return;
+    const pul = 0.65 + 0.35 * Math.sin(this.time * 6);
+    ctx.save();
+    for (const b of bins.values()) {
+      const dx = Math.cos(b.a), dy = Math.sin(b.a);
+      const t = Math.min(dx ? (dx > 0 ? x1 - cx : x0 - cx) / dx : 1e9, dy ? (dy > 0 ? y1 - cy : y0 - cy) / dy : 1e9);
+      const x = cx + dx * t, y = cy + dy * t, sz = b.boss ? 15 : 9 + Math.min(5, b.n);
+      ctx.translate(x, y); ctx.rotate(b.a);
+      ctx.globalAlpha = pul;
+      ctx.beginPath(); ctx.moveTo(sz, 0); ctx.lineTo(-sz * 0.7, -sz * 0.75); ctx.lineTo(-sz * 0.35, 0); ctx.lineTo(-sz * 0.7, sz * 0.75); ctx.closePath();
+      ctx.fillStyle = b.boss ? '#ffb020' : '#ff3b30'; ctx.fill();
+      ctx.lineWidth = 1.5; ctx.strokeStyle = 'rgba(0,0,0,0.7)'; ctx.stroke();
+      ctx.setTransform(this.dpr || 1, 0, 0, this.dpr || 1, 0, 0);
+    }
+    ctx.restore();
   }
 
   drawAmbient(ctx, dt) {

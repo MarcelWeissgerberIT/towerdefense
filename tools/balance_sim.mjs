@@ -31,7 +31,9 @@ function play(levelIdx, skill = 1) {
   const trace = process.env.TRACE === String(levelIdx + 1);
   if (trace) console.log(g.waves.map((w, i) => (i + 1) + ':' + w.groups.map(x => x.type + 'x' + x.count).join('+')).join('  '));
   while (g.state !== 'won' && g.state !== 'lost' && t < 4000) {
-    const type = order[k % order.length];
+    let type = order[k % order.length];
+    // don't stall saving for an expensive tower while upgrades eat the credits: take the next affordable one
+    if (C.TOWERS[type].cost > g.credits && C.TOWERS[type].cost >= 280 && g.credits >= 180) { k++; type = order[k % order.length]; }
     const cost = C.TOWERS[type].cost;
     if (g.credits >= cost && g.towers.length < 34) {
       let best = null, bv = -1;

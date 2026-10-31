@@ -83,6 +83,9 @@ export class Game {
     this.decals = [];
     this.seen = new Set();
     this.routes = L.paths.map(p => buildRoute(p.pts));
+    // longer routes keep enemies on the field longer: leave more time between automatic waves
+    const avgLen = L.paths.reduce((a, p) => a + p.cells.length, 0) / L.paths.length;
+    this.waveGap = WAVE_GAP + Math.max(0, avgLen - 40) * 0.12;
     this.props = [];
     this.setupGrid();
   }
@@ -774,7 +777,7 @@ export class Game {
     if (this.state === 'wave') {
       // automatic waves: once everything of the current wave has spawned, count down to the next one
       if (this.wave < this.waves.length && this.queue.length === 0) {
-        if (this.nextWaveIn < 0) this.nextWaveIn = WAVE_GAP;
+        if (this.nextWaveIn < 0) this.nextWaveIn = this.waveGap;
         this.nextWaveIn -= dt;
         if (this.nextWaveIn <= 0) { this.nextWaveIn = -1; this.startWave(); }
       }
