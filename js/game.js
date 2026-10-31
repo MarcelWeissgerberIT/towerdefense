@@ -1,6 +1,6 @@
 // Core simulation: grid, routes, towers (turret aiming), enemies (attack towers), projectiles, waves.
 import {
-  TOWERS, ENEMIES, BIOMES, MAX_LEVEL, TOWER_SCALE, UPGRADE_TIME, WAVE_GAP, SELL_RATE, FULL_REFUND_TIME, towerStats, upgradeCost, totalInvested,
+  TOWERS, ENEMIES, BIOMES, ELEV_PX, ELEV_RANGE, MAX_LEVEL, TOWER_SCALE, UPGRADE_TIME, WAVE_GAP, SELL_RATE, FULL_REFUND_TIME, towerStats, upgradeCost, totalInvested,
 } from './config.js';
 import { getLevel, makeWaves, hpMultiplier, NEW_ENEMY_TIP } from './levels.js';
 import { toWorld, rand, mulberry32 } from './iso.js';
@@ -96,6 +96,8 @@ export class Game {
 
   setupGrid() {
     const L = this.level;
+    this.height = new Uint8Array(this.N * this.N);
+    for (const [x, y, h] of L.elev || []) this.height[this.idx(x, y)] = h;
     for (const p of L.paths) for (const [x, y] of p.cells) this.setCell(x, y, CELL.ROAD);
     for (const p of L.paths) for (let dy = 0; dy < 2; dy++) for (let dx = 0; dx < 2; dx++) this.setCell(p.spawn[0] + dx, p.spawn[1] + dy, CELL.SPAWN);
     for (let dy = 0; dy < 2; dy++) for (let dx = 0; dx < 2; dx++) this.setCell(L.base[0] + dx, L.base[1] + dy, CELL.BASE);
@@ -105,7 +107,8 @@ export class Game {
       const w = toWorld(x + 0.5, y + 0.5);
       // 3D prop: one of 4 baked rotations and a little size variation
       const h = (x * 73856093) ^ (y * 19349663);
-      this.props.push({ model: 'p3d_' + sprite, cx: x, cy: y, wx: w.x, wy: w.y, rot: (h >>> 3) & 3, s: 0.9 + ((h >>> 7) % 9) / 40 });
+      const z = this.heightAt(x, y) * ELEV_PX;
+      this.props.push({ model: 'p3d_' + sprite, cx: x, cy: y, wx: w.x, wy: w.y - z, z, rot: (h >>> 3) & 3, s: 0.9 + ((h >>> 7) % 9) / 40 });
     }
     // small non-blocking decoration (bushes, rocks, debris) clustered around props and the map edge;
     // building on a cell clears it
@@ -127,7 +130,8 @@ export class Game {
       // tall decoration would hide units on the road: only low items next to it
       if (road && TALL_DECOR.has(d[0])) d = B.decor.find(it => !TALL_DECOR.has(it[0])) || d;
       const w = toWorld(x + 0.5 + (r() - 0.5) * 0.36, y + 0.5 + (r() - 0.5) * 0.36);
-      this.decor.push({ model: 'p3d_' + d[0], cx: x, cy: y, wx: w.x, wy: w.y, rot: Math.floor(r() * 4), s: d[1] + r() * (d[2] - d[1]) });
+      const z = this.heightAt(x, y) * ELEV_PX;
+      this.decor.push({ model: 'p3d_' + d[0], cx: x, cy: y, wx: w.x, wy: w.y - z, z, rot: Math.floor(r() * 4), s: d[1] + r() * (d[2] - d[1]) });
     }
     const b = toWorld(L.base[0] + 1, L.base[1] + 1);
     this.baseW = b;
@@ -149,23 +153,35 @@ export class Game {
   canBuild(cx, cy) { return this.cell(cx, cy) === CELL.FREE; }
   towerAt(cx, cy) { return this.towers.find(t => t.cx === cx && t.cy === cy); }
 
+  // terrain height of a cell (0 = ground, 1-2 = plateau)
+  heightAt(x, y) { return (x < 0 || y < 0 || x >= this.N || y >= this.N) ? 0 : this.height[this.idx(x, y)]; }
+  // tower stats incl. the high-ground range bonus
+  statsFor(type, level, cx, cy) {
+    const s = towerStats(type, level);
+    const h = this.heightAt(cx, cy);
+    if (h) s.range *= 1 + ELEV_RANGE * h;
+    return s;
+  }
+
   build(type, cx, cy) {
     const def = TOWERS[type];
     if (!this.canBuild(cx, cy)) { this.emit('toast', { text: 'Hier kann nicht gebaut werden', bad: true }); sfx('error'); return null; }
     if (this.credits < def.cost) { this.emit('toast', { text: 'Nicht genug Credits', bad: true }); sfx('error'); return null; }
     this.credits -= def.cost;
     const w = toWorld(cx + 0.5, cy + 0.5);
-    const stats = towerStats(type, 1);
+    const stats = this.statsFor(type, 1, cx, cy);
+    const z = this.heightAt(cx, cy) * ELEV_PX;
     const t = {
-      id: uid++, type, def, level: 1, cx, cy, gx: cx + 0.5, gy: cy + 0.5, wx: w.x, wy: w.y,
+      id: uid++, type, def, level: 1, cx, cy, gx: cx + 0.5, gy: cy + 0.5, wx: w.x, wy: w.y - z, z,
       ang: Math.PI / 4 + rand(-0.4, 0.4), cool: 0.3, target: null, mode: 'first', recoil: 0, built: 0, kills: 0,
       stats, hp: stats.hp, beamT: 0, beamTarget: null, firing: false, lastHit: -99, placedAt: this.time,
     };
     this.towers.push(t);
     this.setCell(cx, cy, CELL.TOWER);
     this.decor = this.decor.filter(d => d.cx !== cx || d.cy !== cy);
-    this.fx.dust(w.x, w.y + 8, 1.2);
-    this.fx.add({ k: 'ring', x: w.x, y: w.y + 10, r0: 20, r1: 80, life: 0.4, c: '200,220,255' });
+    this.fx.dust(w.x, w.y - z + 8, 1.2);
+    this.fx.add({ k: 'ring', x: w.x, y: w.y - z + 10, r0: 20, r1: 80, life: 0.4, c: '200,220,255' });
+    if (z && !this._elevHint) { this._elevHint = true; this.emit('toast', { text: `Höhenvorteil: +${Math.round(ELEV_RANGE * 100 * this.heightAt(cx, cy))} % Reichweite` }); }
     sfx('build');
     return t;
   }
@@ -186,7 +202,7 @@ export class Game {
     t.upgrading = null;
     t.level++;
     const ratio = t.hp / t.stats.hp;
-    t.stats = towerStats(t.type, t.level);
+    t.stats = this.statsFor(t.type, t.level, t.cx, t.cy);
     t.hp = Math.min(t.stats.hp, Math.round(t.stats.hp * ratio) + Math.round(t.stats.hp * 0.3));
     t.powerUp = 1;
     const col = t.level === 3 ? '255,210,90' : '120,255,170';
@@ -646,11 +662,13 @@ export class Game {
     let sp = def.speed;
     if (e.slowT > 0) { e.slowT -= dt; sp *= 1 - e.slowF; if (e.slowT <= 0) e.slowF = 0; }
     e.d += sp * dt;
-    const prevStep = Math.floor(e.walk / (def.stride || 0.6));
+    // footfalls: two per animation cycle (or per configured stride for unanimated gaits)
+    const stepLen = Models.meta(def.model)?.af ? Models.cycleOf(def) / 2 : (def.stride || 0.6);
+    const prevStep = Math.floor(e.walk / stepLen);
     e.walk += sp * dt;
     e.turnRate = 0;
     if (!e.air) {
-      if ((def.motion === 'walker' || def.motion === 'biped') && Math.floor(e.walk / (def.stride || 0.6)) !== prevStep) {
+      if ((def.motion === 'walker' || def.motion === 'biped') && Math.floor(e.walk / stepLen) !== prevStep) {
         const heavy = def.motion === 'walker';
         if (heavy || Math.random() < 0.25) this.fx.footDust(e.wx, e.wy, heavy ? (def.boss ? 1.8 : 1) : 0.5);
         if (def.boss) this.fx.shake = Math.max(this.fx.shake, 2.2);

@@ -34,7 +34,9 @@ for d in sorted(glob.glob(os.path.join(src, '*'))):
     if not os.path.exists(mp):
         continue
     meta = json.load(open(mp))
-    frames = [Image.open(f).convert('RGBA') for f in sorted(glob.glob(os.path.join(d, 'f*.png')))]
+    # numeric order: f99 < f100 (a plain sort puts f100 between f10 and f11)
+    files = sorted(glob.glob(os.path.join(d, 'f*.png')), key=lambda p: int(os.path.basename(p)[1:-4]))
+    frames = [Image.open(f).convert('RGBA') for f in files]
     base = Image.open(os.path.join(d, 'base.png')).convert('RGBA') if os.path.exists(os.path.join(d, 'base.png')) else None
     shadows = []
     for i in range(len(frames)):
@@ -56,12 +58,27 @@ for d in sorted(glob.glob(os.path.join(src, '*'))):
     x1, y1 = min(frames[0].width, x1 + 2), min(frames[0].height, y1 + 2)
     w, h = x1 - x0, y1 - y0
     n = len(frames)
-    cols = meta.get('af') or (8 if n >= 8 else n)
-    rows = (n + cols - 1) // cols
-    sheet = Image.new('RGBA', (cols * w, rows * h), (0, 0, 0, 0))
-    for i, im in enumerate(frames):
-        sheet.paste(im.crop((x0, y0, x1, y1)), ((i % cols) * w, (i // cols) * h))
-    sheet.save(os.path.join(dst, f'{name}.webp'), 'WEBP', quality=88, method=6)
+    base_cols = meta.get('af') or (8 if n >= 8 else n)
+    # keep sheets within 4096 px (iOS texture limit): several directions per row, else shrink the frames
+    f = 1.0
+    while True:
+        fw, fh = max(1, round(w * f)), max(1, round(h * f))
+        k = 1
+        while ((n + base_cols * k - 1) // (base_cols * k)) * fh > 4096 and base_cols * (k + 1) * fw <= 4096:
+            k += 1
+        cols = base_cols * k
+        rows = (n + cols - 1) // cols
+        if rows * fh <= 4096 and cols * fw <= 4096:
+            break
+        f *= 0.95
+    cells = [im.crop((x0, y0, x1, y1)) for im in frames]
+    if f < 1:
+        cells = [c.resize((fw, fh), Image.LANCZOS) for c in cells]
+        print(f'  {name}: frames scaled by {f:.3f} to stay within 4096 px')
+    sheet = Image.new('RGBA', (cols * fw, rows * fh), (0, 0, 0, 0))
+    for i, c in enumerate(cells):
+        sheet.paste(c, ((i % cols) * fw, (i // cols) * fh))
+    sheet.save(os.path.join(dst, f'{name}.webp'), 'WEBP', quality=82 if n > 64 else 88, method=6)
     shadow_meta = None
     if shadows:
         # shadows get their own trimmed box (they extend away from the light)
@@ -78,12 +95,14 @@ for d in sorted(glob.glob(os.path.join(src, '*'))):
         ss.save(os.path.join(dst, f'{name}_shadow.webp'), 'WEBP', quality=80, method=6)
         shadow_meta = {'w': sw, 'h': shh, 'ax': round(meta['anchor'][0] - sx0, 2), 'ay': round(meta['anchor'][1] - sy0, 2)}
     out = {
-        'w': w, 'h': h, 'n': n, 'cols': cols,
-        'ax': round(meta['anchor'][0] - x0, 2), 'ay': round(meta['anchor'][1] - y0, 2),
-        'P': meta.get('P'),
+        'w': fw, 'h': fh, 'n': n, 'cols': cols,
+        'ax': round((meta['anchor'][0] - x0) * f, 2), 'ay': round((meta['anchor'][1] - y0) * f, 2),
+        'P': round(meta.get('P') * f, 3) if f < 1 else meta.get('P'),
     }
     if meta.get('af'):
         out['af'] = meta['af']
+    if meta.get('rootDist'):
+        out['rootDist'] = round(meta['rootDist'], 4)
     if shadow_meta:
         out['shadow'] = shadow_meta
     if base:
@@ -92,8 +111,8 @@ for d in sorted(glob.glob(os.path.join(src, '*'))):
         out['muzzles'] = [[round(m[0], 1), round(m[1], 1)] for m in meta['muzzles']]
         out['cut'] = round(meta['cutPx'], 1)
     if 'center' in meta:
-        out['center'] = [round(v, 1) for v in meta['center']]
-        out['top'] = [round(v, 1) for v in meta['top']]
+        out['center'] = [round(v * f, 1) for v in meta['center']]
+        out['top'] = [round(v * f, 1) for v in meta['top']]
     allmeta[name] = out
     kb = os.path.getsize(os.path.join(dst, f'{name}.webp')) // 1024
     print(f'{name}: {n} frames {w}x{h} sheet {sheet.width}x{sheet.height} {kb} KB')

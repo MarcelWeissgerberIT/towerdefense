@@ -157,27 +157,76 @@ function genLevel(spec) {
       for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if (grid[y + dy]?.[x + dx] === 1) n = true;
       if (n) near++;
     }
-    // props
-    const biome = BIOMES[spec.biome];
-    const props = [];
-    const free = [];
-    for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
-      if (grid[y][x] !== 0) continue;
-      let d = 9;
-      for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) {
-        const v = grid[y + dy]?.[x + dx];
-        if (v === 1 || v === 3 || v === 4) d = Math.min(d, Math.max(Math.abs(dx), Math.abs(dy)));
+    // ---- terrain: plateaus (height 1, interior height 2) on free ground, never on roads/gates/HQ ----
+    const biome = BIOMES[spec.biome], TH = biome.theme;
+    const cheb = (x, y, vals, R) => { let d = 99; for (let dy = -R; dy <= R; dy++) for (let dx = -R; dx <= R; dx++) if (vals.includes(grid[y + dy]?.[x + dx])) d = Math.min(d, Math.max(Math.abs(dx), Math.abs(dy))); return d; };
+    const H = Array.from({ length: N }, () => new Array(N).fill(0));
+    const elig = (x, y) => x >= 0 && y >= 0 && x < N && y < N && grid[y][x] === 0 && cheb(x, y, [3, 4], 1) > 1;
+    const nPlat = Math.round(N * N * 0.014 * TH.plateau);
+    for (let k = 0; k < nPlat * 6 && H.flat().filter(Boolean).length < N * N * 0.16 * TH.plateau; k++) {
+      const sx = Math.floor(r() * N), sy = Math.floor(r() * N);
+      if (!elig(sx, sy) || H[sy][sx] || cheb(sx, sy, [1], 1) < 2) continue;
+      const size = 4 + Math.floor(r() * (4 + N / 3));
+      const cells = [[sx, sy]]; H[sy][sx] = 1;
+      for (let it = 0; it < 80 && cells.length < size; it++) {
+        const [cx, cy] = cells[Math.floor(r() * cells.length)];
+        const [dx, dy] = DIRS[Math.floor(r() * 4)];
+        const nx = cx + dx, ny = cy + dy;
+        if (!elig(nx, ny) || H[ny][nx]) continue;
+        H[ny][nx] = 1; cells.push([nx, ny]);
       }
-      free.push({ x, y, d, edge: x === 0 || y === 0 || x === N - 1 || y === N - 1 });
+      if (cells.length >= 8) for (const [x, y] of cells) {
+        let all = true;
+        for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if (!H[y + dy]?.[x + dx]) all = false;
+        if (all && cheb(x, y, [1], 2) >= 2 && r() < 0.75) H[y][x] = 2;
+      }
     }
-    const want = Math.round(N * 0.85);
-    const cand = free.filter(f => f.d >= 2 || f.edge).sort(() => r() - 0.5);
-    for (const f of cand) {
+    // ---- props with meaning: HQ camp, wrecks at the enemy gates, one landmark, natural clusters ----
+    const props = [];
+    const roadD = (x, y) => cheb(x, y, [1, 3, 4], 2);
+    const free = (x, y) => x >= 0 && y >= 0 && x < N && y < N && grid[y][x] === 0;
+    const put = (name, x, y) => { props.push([name, x, y]); grid[y][x] = 2; };
+    const pick = (arr) => arr[Math.floor(r() * arr.length)];
+    const around = (cx, cy, R, ok) => {
+      const c = [];
+      for (let dy = -R; dy <= R; dy++) for (let dx = -R; dx <= R; dx++) { const x = cx + dx, y = cy + dy; if (free(x, y) && ok(x, y)) c.push([x, y]); }
+      return c.sort(() => r() - 0.5);
+    };
+    // supply crates / barricades beside the HQ (not on cells next to the road)
+    const bx = 2 * g[0] + 1, by = 2 * g[1] + 1;
+    for (const [x, y] of around(bx + 0.5 | 0, by + 0.5 | 0, 3, (x, y) => cheb(x, y, [4], 2) <= 2 && cheb(x, y, [1], 1) > 1 && !H[y][x]).slice(0, 2)) put(pick(TH.camp), x, y);
+    // destroyed vehicles near the enemy gates
+    for (const sp of spawns) {
+      const gx = 2 * sp[0] + 1, gy = 2 * sp[1] + 1;
+      for (const [x, y] of around(gx, gy, 3, (x, y) => cheb(x, y, [3], 3) <= 3 && cheb(x, y, [1], 1) > 1).slice(0, spawns.length > 2 ? 1 : 2)) put(pick(TH.spawn), x, y);
+    }
+    // landmark on the highest ground away from the road, with its satellites
+    let lm = null, lv = -1;
+    for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+      if (!free(x, y) || roadD(x, y) < 2) continue;
+      const v = H[y][x] * 3 + Math.min(roadD(x, y), 4) + r();
+      if (v > lv) { lv = v; lm = [x, y]; }
+    }
+    if (lm) {
+      put(TH.landmark[0], ...lm);
+      for (const [x, y] of around(lm[0], lm[1], 1, (x, y) => roadD(x, y) >= 2).slice(0, 1 + (N > 15 ? 1 : 0))) put(pick(TH.landmark[1]), x, y);
+    }
+    // natural clusters (forests, rock fields), preferring high ground and the map edge
+    const want = Math.round(N * 0.8);
+    const seeds = [];
+    for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) if (free(x, y) && (roadD(x, y) >= 2 || x === 0 || y === 0 || x === N - 1 || y === N - 1)) seeds.push([x, y, H[y][x] * 2 + (x === 0 || y === 0 || x === N - 1 || y === N - 1 ? 1.5 : 0) + r() * 3]);
+    seeds.sort((a, b) => b[2] - a[2]);
+    for (const [sx, sy] of seeds) {
       if (props.length >= want) break;
-      if (props.some(p => Math.abs(p[1] - f.x) + Math.abs(p[2] - f.y) < 2)) continue;
-      props.push([biome.props[Math.floor(r() * biome.props.length)], f.x, f.y]);
-      grid[f.y][f.x] = 2;
+      if (!free(sx, sy) || props.some(p => Math.max(Math.abs(p[1] - sx), Math.abs(p[2] - sy)) < 2)) continue;
+      const kind = pick(TH.nature);
+      put(kind, sx, sy);
+      // grow the cluster by 1-2 neighbours of the same kind
+      const n = 1 + Math.floor(r() * 2);
+      for (const [x, y] of around(sx, sy, 1, (x, y) => roadD(x, y) >= 2 && Math.abs(x - sx) + Math.abs(y - sy) === 1).slice(0, n)) put(r() < 0.75 ? kind : pick(TH.nature), x, y);
     }
+    const elev = [];
+    for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) if (H[y][x]) elev.push([x, y, H[y][x]]);
     return {
       N,
       base: [2 * g[0] + 1, 2 * g[1] + 1],
@@ -187,6 +236,7 @@ function genLevel(spec) {
         cells: roadCells(rt),
       })),
       props,
+      elev,
       near,
       attempt,
     };

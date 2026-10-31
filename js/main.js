@@ -1,6 +1,6 @@
 // Iron Sentinel – app controller: screens, HUD, build drawer, tower menu, game loop.
-import { TOWERS, TOWER_ORDER, MAX_LEVEL, BIOMES, BIOME_ORDER, UPGRADE_TIME, upgradeCost, towerStats } from './config.js';
-import { LEVEL_SPECS, LEVEL_COUNT } from './levels.js';
+import { TOWERS, ENEMIES, TOWER_ORDER, MAX_LEVEL, BIOMES, BIOME_ORDER, UPGRADE_TIME, ELEV_RANGE, upgradeCost, towerStats } from './config.js';
+import { LEVEL_SPECS, LEVEL_COUNT, getLevel, makeWaves } from './levels.js';
 import { Assets, Models } from './assets.js';
 import { Renderer } from './render.js';
 import { Input } from './input.js';
@@ -133,10 +133,11 @@ function chooseTower(k) {
   if (ui.previewType === k) { buildChosen(); return; }   // second tap on the same card builds
   ui.previewType = k;
   bmButtons.forEach(o => o.el.classList.toggle('sel', o.k === k));
-  const s = towerStats(k, 1);
+  const s = game.statsFor(k, 1, ui.buildCell.x, ui.buildCell.y);
+  const hgt = game.heightAt(ui.buildCell.x, ui.buildCell.y);
   const dmg = def.dps ? `${Math.round(s.dps)}/s` : def.kind === 'hitscan' || def.kind === 'flak' ? `${Math.round(s.dmg * s.rate)}/s` : Math.round(s.dmg);
   $('bd-info').innerHTML = `<b>${def.name}</b> <span class="bd-role">${ROLE[k]}</span><br><small>${def.desc}</small>` +
-    `<div class="bd-chips"><span>💥 ${dmg}</span><span>📡 ${s.range.toFixed(1)}</span><span>🛡 ${s.hp}</span></div>`;
+    `<div class="bd-chips"><span>💥 ${dmg}</span><span>📡 ${s.range.toFixed(1)}${hgt ? ` <em class="hg">▲+${Math.round(hgt * ELEV_RANGE * 100)}%</em>` : ''}</span><span>🛡 ${s.hp}</span></div>`;
   const bb = $('bd-build');
   bb.textContent = `BAUEN · ⚡${def.cost}`;
   bb.disabled = game.credits < def.cost;
@@ -196,7 +197,7 @@ function updateTowerMenu(force) {
   $('tm-name').textContent = def.name;
   $('tm-level').textContent = ['I', 'II', 'III'][t.level - 1];
   $('tm-hpfill').style.width = `${Math.max(0, t.hp / s.hp) * 100}%`;
-  const next = maxed ? null : towerStats(t.type, t.level + 1);
+  const next = maxed ? null : game.statsFor(t.type, t.level + 1, t.cx, t.cy);
   const dmg = def.dps ? `${Math.round(s.dps)}/s` : def.kind === 'hitscan' || def.kind === 'flak' ? `${Math.round(s.dmg)}×${s.rate.toFixed(1)}` : Math.round(s.dmg);
   const ndmg = next ? (def.dps ? Math.round(next.dps) : Math.round(next.dmg)) : null;
   $('tm-stats').innerHTML = `<span>💥 ${dmg}${ndmg ? `<em>→${ndmg}</em>` : ''}</span><span>📡 ${s.range.toFixed(1)}</span><span>☠ ${t.kills}</span>`;
@@ -394,7 +395,13 @@ function updateInsets() {
 async function startLevel(i) {
   unlockAudio();
   const spec = LEVEL_SPECS[i];
-  await Assets.loadBiome(spec.biome);
+  // only the enemy types of this level (incl. units launched by carriers)
+  const types = new Set();
+  for (const w of makeWaves(getLevel(i))) for (const g of w.groups) { types.add(g.type); if (ENEMIES[g.type].spawns) types.add(ENEMIES[g.type].spawns.type); }
+  const models = [...types].map(t => ENEMIES[t].model);
+  const slow = setTimeout(() => toast('Lade Einsatzdaten …', '', 1500), 400);
+  await Promise.all([Assets.loadBiome(spec.biome), Assets.loadModels(models)]);
+  clearTimeout(slow);
   game = new Game(i);
   window.__game = game;
   window.__renderer = renderer;

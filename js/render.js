@@ -1,5 +1,5 @@
 // Isometric canvas renderer
-import { HW, HH, TOWERS, BIOMES, TOWER_SCALE } from './config.js';
+import { HW, HH, TOWERS, BIOMES, TOWER_SCALE, ELEV_PX } from './config.js';
 import { toWorld, toGrid, mulberry32, clamp } from './iso.js';
 import { Assets, Models } from './assets.js';
 import { CELL } from './game.js';
@@ -89,7 +89,16 @@ export class Renderer {
   }
   screenToWorld(sx, sy) { const z = this.cam.zoom; return { x: (sx - this.vw / 2) / z + this.cam.x, y: (sy - this.vh / 2) / z + this.cam.y }; }
   worldToScreen(wx, wy) { const z = this.cam.zoom; return { x: (wx - this.cam.x) * z + this.vw / 2, y: (wy - this.cam.y) * z + this.vh / 2 }; }
-  screenToCell(sx, sy) { const w = this.screenToWorld(sx, sy); const g = toGrid(w.x, w.y); return { x: Math.floor(g.x), y: Math.floor(g.y) }; }
+  screenToCell(sx, sy) {
+    const w = this.screenToWorld(sx, sy);
+    // highest plateau first: a tap on a raised top face belongs to that cell
+    if (this.game) for (let h = 2; h >= 1; h--) {
+      const g = toGrid(w.x, w.y + h * ELEV_PX), x = Math.floor(g.x), y = Math.floor(g.y);
+      if (this.game.heightAt(x, y) === h) return { x, y };
+    }
+    const g = toGrid(w.x, w.y);
+    return { x: Math.floor(g.x), y: Math.floor(g.y) };
+  }
   zoomAt(sx, sy, f) {
     const before = this.screenToWorld(sx, sy);
     this.cam.zoom = clamp(this.cam.zoom * f, this.minZoom || 0.2, this.maxZoom || 1.7);
@@ -106,10 +115,90 @@ export class Renderer {
     this.makeBg();
     if (this.ground) { this.ground.canvas.width = 0; this.ground.canvas.height = 0; this.ground = null; }
     this.buildGround();
+    this.buildBlocks();
     this.resetCamera();
     this.amb = [];
     const n = this.biome.ambient === 'snow' ? 90 : this.biome.ambient === 'fireflies' ? 34 : 50;
     for (let i = 0; i < n; i++) this.amb.push({ x: Math.random(), y: Math.random(), s: 0.6 + Math.random() * 1.8, v: 0.2 + Math.random() * 0.8, ph: Math.random() * 6 });
+  }
+
+  // plateaus: per elevated cell a lifted top face (cut from the ground composition) and its visible cliffs
+  buildBlocks() {
+    const game = this.game, N = game.N, B = this.biome, gr = this.ground, E = ELEV_PX;
+    if (this.blocks) for (const b of this.blocks) { b.top.width = 0; if (b.side) b.side.width = 0; }
+    this.blocks = [];
+    const rng = mulberry32(N * 31 + game.levelIdx * 7 + 3);
+    const s = gr.s;
+    for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+      const h = game.heightAt(x, y);
+      if (!h) continue;
+      const c = toWorld(x + 0.5, y + 0.5), z = h * E;
+      const nb = [game.heightAt(x, y - 1), game.heightAt(x + 1, y), game.heightAt(x, y + 1), game.heightAt(x - 1, y)];
+      // top face
+      const top = makeCanvas(2 * HW * s, 2 * HH * s), tg = top.getContext('2d');
+      tg.scale(s, s);
+      tg.beginPath(); tg.moveTo(HW, 0); tg.lineTo(2 * HW, HH); tg.lineTo(HW, 2 * HH); tg.lineTo(0, HH); tg.closePath();
+      tg.save(); tg.clip();
+      tg.drawImage(gr.canvas, (c.x - HW + gr.ox) * s, (c.y - HH + gr.oy) * s, 2 * HW * s, 2 * HH * s, 0, 0, 2 * HW, 2 * HH);
+      tg.fillStyle = `rgba(255,248,230,${0.045 * h})`; tg.fillRect(0, 0, 2 * HW, 2 * HH);
+      tg.restore();
+      // lit rim where the ground drops away
+      const corners = [[HW, 0], [2 * HW, HH], [HW, 2 * HH], [0, HH]];
+      tg.lineCap = 'round';
+      for (let k = 0; k < 4; k++) {
+        if (nb[k] >= h) continue;
+        const [a, b] = [corners[k], corners[(k + 1) % 4]];
+        tg.strokeStyle = k === 1 || k === 2 ? 'rgba(255,240,215,0.42)' : 'rgba(255,240,215,0.22)';
+        tg.lineWidth = k === 1 || k === 2 ? 2 : 1.4;
+        tg.beginPath(); tg.moveTo(a[0], a[1]); tg.lineTo(b[0], b[1]); tg.stroke();
+      }
+      // cliffs on the two camera-facing sides (+x: right-down, +y: left-down)
+      let side = null;
+      if (nb[1] < h || nb[2] < h) {
+        side = makeCanvas(2 * HW * s, (HH + z + 2) * s);
+        const g = side.getContext('2d');
+        g.scale(s, s);
+        const oy = z;  // canvas y of the ground-level centre row
+        const face = (pts, light, zLow) => {
+          g.save();
+          g.beginPath(); g.moveTo(pts[0][0], pts[0][1]); for (const p of pts.slice(1)) g.lineTo(p[0], p[1]); g.closePath();
+          const y0 = Math.min(...pts.map(p => p[1])), y1 = Math.max(...pts.map(p => p[1]));
+          const grd = g.createLinearGradient(0, y0, 0, y1);
+          grd.addColorStop(0, light ? B.slab[0] : B.slab[2]); grd.addColorStop(1, light ? B.slab[1] : B.slab[3]);
+          g.fillStyle = grd; g.fill();
+          g.clip();
+          // rock strata and grit
+          for (let i = 0; i < 5; i++) {
+            const t = 0.15 + rng() * 0.75;
+            g.strokeStyle = `rgba(${rng() < 0.5 ? '255,240,220' : '0,0,0'},${0.08 + rng() * 0.12})`;
+            g.lineWidth = 1 + rng() * 1.5;
+            g.beginPath();
+            g.moveTo(pts[0][0], pts[0][1] + (pts[3][1] - pts[0][1]) * t);
+            g.lineTo(pts[1][0], pts[1][1] + (pts[2][1] - pts[1][1]) * t + (rng() - 0.5) * 3);
+            g.stroke();
+          }
+          for (let i = 0; i < 26; i++) {
+            g.fillStyle = `rgba(${rng() < 0.5 ? '230,220,200' : '0,0,0'},${0.1 + rng() * 0.2})`;
+            g.fillRect(Math.min(pts[0][0], pts[1][0]) + rng() * HW, y0 + rng() * (y1 - y0), 1 + rng() * 2, 1 + rng() * 1.5);
+          }
+          // contact shadow at the foot of the cliff
+          const ao = g.createLinearGradient(0, y1 - 10, 0, y1);
+          ao.addColorStop(0, 'rgba(0,0,0,0)'); ao.addColorStop(1, 'rgba(0,0,0,0.35)');
+          g.fillStyle = ao; g.fillRect(0, y1 - 10, 2 * HW, 10);
+          g.restore();
+        };
+        // canvas coords: left corner x=0, bottom corner x=HW, right corner x=2HW; ground centre row at y=oy
+        if (nb[2] < h) {   // +y side: L -> B
+          const zl = nb[2] * E;
+          face([[0, oy - z + HH * 0 + 0], [HW, oy - z + HH], [HW, oy - zl + HH], [0, oy - zl]], true, zl);
+        }
+        if (nb[1] < h) {   // +x side: B -> R
+          const zl = nb[1] * E;
+          face([[HW, oy - z + HH], [2 * HW, oy - z], [2 * HW, oy - zl], [HW, oy - zl + HH]], false, zl);
+        }
+      }
+      this.blocks.push({ x, y, h, z, top, side, cx: c.x, cy: c.y });
+    }
   }
 
   buildGround() {
@@ -288,17 +377,19 @@ export class Renderer {
     const gr = this.ground;
     ctx.drawImage(gr.canvas, -gr.ox, -gr.oy, gr.W, gr.H);
 
-    if (ui.buildCell) this.drawBuildPreview(ctx, ui);
-    if (ui.selected) this.drawRange(ctx, ui.selected.gx, ui.selected.gy, ui.selected.stats.range, TOWERS[ui.selected.type].color, true, TOWERS[ui.selected.type].minRange);
+    const bz = ui.buildCell ? game.heightAt(ui.buildCell.x, ui.buildCell.y) * ELEV_PX : 0;
+    if (ui.buildCell && !bz) this.drawBuildPreview(ctx, ui, 0);
+    if (ui.selected && !ui.selected.z) this.drawRange(ctx, ui.selected.gx, ui.selected.gy, ui.selected.stats.range, TOWERS[ui.selected.type].color, true, TOWERS[ui.selected.type].minRange);
 
     const fx = Assets.fx;
     // ground pass: baked 3D shadows (key light from the upper left) for static objects and towers
     ctx.globalAlpha = 0.9;
-    for (const p of game.props) Models.drawShadow(ctx, p.model, p.rot, p.wx, p.wy, p.s);
-    for (const p of game.decor) Models.drawShadow(ctx, p.model, p.rot, p.wx, p.wy, p.s);
+    for (const p of game.props) if (!p.z) Models.drawShadow(ctx, p.model, p.rot, p.wx, p.wy, p.s);
+    for (const p of game.decor) if (!p.z) Models.drawShadow(ctx, p.model, p.rot, p.wx, p.wy, p.s);
     Models.drawShadow(ctx, 'p3d_base_hq', 0, game.baseW.x, game.baseW.y);
     for (const g of game.gates) Models.drawShadow(ctx, 'p3d_spawn_gate', g.rot, g.x, g.y);
     for (const t of game.towers) {
+      if (t.z) continue;
       const TS = TOWER_SCALE * (1 + 0.08 * ((t.level || 1) - 1));
       const pop = t.built < 0.3 ? 1 - Math.pow(1 - t.built / 0.3, 3) : 1;
       ctx.globalAlpha = 0.9 * pop;
@@ -315,20 +406,29 @@ export class Renderer {
 
     const list = this._list || (this._list = []);
     list.length = 0;
-    for (const p of game.props) list.push({ y: p.wy, o: p, k: 0 });
-    for (const p of game.decor) list.push({ y: p.wy, o: p, k: 0 });
-    for (const t of game.towers) list.push({ y: t.wy, o: t, k: 1 });
+    for (const p of game.props) list.push({ y: p.wy + (p.z || 0), o: p, k: 0 });
+    for (const p of game.decor) list.push({ y: p.wy + (p.z || 0), o: p, k: 0 });
+    for (const t of game.towers) list.push({ y: t.wy + (t.z || 0), o: t, k: 1 });
+    for (const b of this.blocks) {
+      list.push({ y: b.cy - HH - 0.6, o: b, k: 5 });
+      if (b.side) list.push({ y: b.cy - 0.5, o: b, k: 6 });
+    }
     for (const e of game.enemies) if (!e.air) list.push({ y: e.wy, o: e, k: 2 });
     list.push({ y: game.baseW.y + HH, o: game.baseW, k: 3 });
     for (const g of game.gates) list.push({ y: g.y + HH, o: g, k: 4 });
     list.sort((a, b) => a.y - b.y);
+    const gs = this.ground.s;
     for (const it of list) {
       if (it.k === 0) this.drawProp(ctx, it.o);
+      else if (it.k === 5) ctx.drawImage(it.o.top, it.o.cx - HW, it.o.cy - HH - it.o.z, 2 * HW, 2 * HH);
+      else if (it.k === 6) ctx.drawImage(it.o.side, it.o.cx - HW, it.o.cy - it.o.z, it.o.side.width / gs, it.o.side.height / gs);
       else if (it.k === 1) this.drawTower(ctx, it.o, ui);
       else if (it.k === 2) this.drawEnemy(ctx, it.o);
       else if (it.k === 3) Models.draw(ctx, 'p3d_base_hq', 0, it.o.x, it.o.y);
       else if (it.k === 4) this.drawGate(ctx, it.o);
     }
+    if (ui.buildCell && bz) this.drawBuildPreview(ctx, ui, bz);
+    if (ui.selected && ui.selected.z) this.drawRange(ctx, ui.selected.gx, ui.selected.gy, ui.selected.stats.range, TOWERS[ui.selected.type].color, true, TOWERS[ui.selected.type].minRange, ui.selected.z);
     const air = game.enemies.filter(e => e.air).sort((a, b) => a.wy - b.wy);
     for (const e of air) this.drawEnemy(ctx, e);
 
@@ -413,27 +513,28 @@ export class Renderer {
     }
   }
 
-  cellPath(ctx, cx, cy, inset = 0) {
+  cellPath(ctx, cx, cy, inset = 0, z = 0) {
     const a = toWorld(cx + inset, cy + inset), b = toWorld(cx + 1 - inset, cy + inset), c = toWorld(cx + 1 - inset, cy + 1 - inset), d = toWorld(cx + inset, cy + 1 - inset);
-    ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.lineTo(c.x, c.y); ctx.lineTo(d.x, d.y); ctx.closePath();
+    ctx.moveTo(a.x, a.y - z); ctx.lineTo(b.x, b.y - z); ctx.lineTo(c.x, c.y - z); ctx.lineTo(d.x, d.y - z); ctx.closePath();
   }
-  drawBuildPreview(ctx, ui) {
+  drawBuildPreview(ctx, ui, z = 0) {
     const { x, y } = ui.buildCell;
     const pulse = 0.25 + 0.1 * Math.sin(this.time * 6);
-    ctx.beginPath(); this.cellPath(ctx, x, y, 0.04);
+    ctx.beginPath(); this.cellPath(ctx, x, y, 0.04, z);
     ctx.fillStyle = `rgba(90,255,150,${pulse})`; ctx.fill();
     ctx.strokeStyle = '#6dff9d'; ctx.lineWidth = 2.5; ctx.stroke();
     if (ui.previewType) {
       const def = TOWERS[ui.previewType];
-      this.drawRange(ctx, x + 0.5, y + 0.5, def.range, def.color, false, def.minRange);
+      this.drawRange(ctx, x + 0.5, y + 0.5, this.game.statsFor(ui.previewType, 1, x, y).range, def.color, false, def.minRange, z);
       const w = toWorld(x + 0.5, y + 0.5);
       ctx.globalAlpha = 0.7;
-      this.drawTower(ctx, { def, type: ui.previewType, wx: w.x, wy: w.y, ang: Math.PI / 4, recoil: 0, built: 1, level: 1, ghost: true }, ui);
+      this.drawTower(ctx, { def, type: ui.previewType, wx: w.x, wy: w.y - z, ang: Math.PI / 4, recoil: 0, built: 1, level: 1, ghost: true }, ui);
       ctx.globalAlpha = 1;
     }
   }
-  drawRange(ctx, gx, gy, r, color, strong, minR) {
+  drawRange(ctx, gx, gy, r, color, strong, minR, z = 0) {
     const c = toWorld(gx, gy);
+    c.y -= z;
     ctx.beginPath();
     ctx.ellipse(c.x, c.y, r * HW * Math.SQRT2, r * HH * Math.SQRT2, 0, 0, Math.PI * 2);
     ctx.fillStyle = strong ? 'rgba(120,200,255,0.10)' : 'rgba(120,255,170,0.09)';
@@ -445,6 +546,7 @@ export class Renderer {
   }
 
   drawProp(ctx, p) {
+    if (p.z) { ctx.globalAlpha = 0.9; Models.drawShadow(ctx, p.model, p.rot, p.wx, p.wy, p.s); ctx.globalAlpha = 1; }
     Models.draw(ctx, p.model, p.rot, p.wx, p.wy, p.s);
   }
   // spawn gate: 3D bunker with a pulsing red glow in its opening (towards the road)
@@ -487,6 +589,7 @@ export class Renderer {
     const y = t.wy + (1 - pop) * 30;
     // towers visibly grow with every upgrade
     const TS = TOWER_SCALE * (1 + 0.08 * ((t.level || 1) - 1));
+    if (t.z && !t.ghost) { ctx.globalAlpha = 0.9 * pop; Models.drawShadow(ctx, name, Models.frameFor(name, t.ang), t.wx, t.wy, TS); ctx.globalAlpha = 1; }
     this.drawLevelRing(ctx, t);
     if (m.baseImg) Models.drawBase(ctx, name, t.wx, y, TS);
     const f = Models.frameFor(name, t.ang);
@@ -538,6 +641,7 @@ export class Renderer {
     // scaffold
     const H = 92;
     const corners = [toWorld(t.cx + 0.1, t.cy + 0.1), toWorld(t.cx + 0.9, t.cy + 0.1), toWorld(t.cx + 0.9, t.cy + 0.9), toWorld(t.cx + 0.1, t.cy + 0.9)];
+    if (t.z) for (const c of corners) c.y -= t.z;
     ctx.lineWidth = 2.2;
     ctx.strokeStyle = 'rgba(230,180,40,0.9)';
     ctx.beginPath();
@@ -578,13 +682,20 @@ export class Renderer {
         break;
       }
       case 'walker': {
-        // heavy stomp: body rises during the swing and drops hard on footfall, rolls from leg to leg
-        const s = Math.sin(ph * Math.PI);
-        bob = Math.pow(Math.abs(s), 0.7) * (def.boss ? 5 : 3.2);
-        roll = s * (def.boss ? 0.025 : 0.04);
+        // heavy stomp; with animated legs only a slight sway in sync with the footfalls (2 per cycle)
+        if (m.af) {
+          const s = Math.sin((e.walk / Models.cycleOf(def)) * Math.PI * 2);
+          bob = Math.abs(s) * (def.boss ? 2.2 : 1.4);
+          roll = s * 0.012;
+        } else {
+          const s = Math.sin(ph * Math.PI);
+          bob = Math.pow(Math.abs(s), 0.7) * (def.boss ? 5 : 3.2);
+          roll = s * (def.boss ? 0.025 : 0.04);
+        }
         break;
       }
       case 'spider': {
+        if (m.af) { bob = 0; roll = 0; break; }
         bob = Math.abs(Math.sin(ph * Math.PI * 2)) * 1.8;
         roll = Math.sin(ph * Math.PI * 2) * 0.05;
         dx = Math.sin(ph * Math.PI * 4) * 0.8;
@@ -608,8 +719,7 @@ export class Renderer {
     const def = e.def, name = def.model;
     const m = Models.meta(name);
     if (!m) return;
-    let f = Models.frameFor(name, e.ang);
-    if (m.af) f = f * m.af + (Math.floor((e.walk / (def.cycle || 1.1)) * m.af) % m.af);
+    const f = Models.unitFrame(e);
     const pose = this.enemyPose(e, m);
     const lift = e.air ? def.lift * (e.liftMul ?? 1) + pose.bob : pose.bob;
     const y = e.wy - lift;

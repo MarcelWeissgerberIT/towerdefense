@@ -111,7 +111,7 @@ window.renderModel = async function (opt) {
   scene.add(pivot);
   current = { pivot };
   // optional walk cycle (rigged Meshy GLB): sample the first clip, keep the hips in place
-  let mixer = null, clip = null, hips = null, hips0 = null, animYaw = null;
+  let mixer = null, clip = null, hips = null, hips0 = null, animYaw = null, rootVec = null;
   if (opt.anim && gltf.animations.length) {
     clip = gltf.animations[0];
     mixer = new THREE.AnimationMixer(model);
@@ -133,9 +133,125 @@ window.renderModel = async function (opt) {
     }
     const footYaw = (fx || fz) ? Math.atan2(fz, fx) : null;
     if (opt.autoFacing && footYaw !== null) animYaw = footYaw;
+    // root motion over one clip = walking direction and stride length (normalised units = map cells)
+    mixer.setTime(clip.duration * 0.999);
+    pivot.updateMatrixWorld(true);
+    const hEnd = hips.getWorldPosition(new THREE.Vector3());
+    mixer.setTime(0);
+    pivot.updateMatrixWorld(true);
+    rootVec = [hEnd.x - hips0.x, hEnd.z - hips0.z];
+    if (opt.anim.rootFacing && Math.hypot(...rootVec) > 0.05) animYaw = Math.atan2(rootVec[1], rootVec[0]);
+    else if (opt.anim.rootFacing) {
+      // in-place cycle: the feet swing along the walking axis (principal axis of their path);
+      // a planted foot slides back by half the distance covered per cycle
+      const fb = [bone(/LeftFoot$/i), bone(/RightFoot$/i)].filter(Boolean);
+      const tr = fb.map(() => []);
+      for (let k = 0; k < 48; k++) {
+        mixer.setTime(clip.duration * k / 48); pivot.updateMatrixWorld(true);
+        fb.forEach((b, j) => { const p = b.getWorldPosition(new THREE.Vector3()); tr[j].push([p.x, p.z]); });
+      }
+      let sxx = 0, szz = 0, sxz = 0, n = 0;
+      for (const t of tr) {
+        const mx = t.reduce((a, p) => a + p[0], 0) / t.length, mz = t.reduce((a, p) => a + p[1], 0) / t.length;
+        for (const p of t) { sxx += (p[0] - mx) ** 2; szz += (p[1] - mz) ** 2; sxz += (p[0] - mx) * (p[1] - mz); n++; }
+      }
+      let ax = 0.5 * Math.atan2(2 * sxz, sxx - szz);           // principal axis (undirected)
+      const base = THREE.MathUtils.degToRad(opt.yaw0 ?? 90);
+      if (Math.cos(ax - base) < 0) ax += Math.PI;               // pick the end closest to the known forward
+      animYaw = ax;
+      const ranges = tr.map(t => { const pr = t.map(p => p[0] * Math.cos(ax) + p[1] * Math.sin(ax)); return Math.max(...pr) - Math.min(...pr); });
+      const d = ranges.reduce((a, b) => a + b, 0) / ranges.length;
+      rootVec = [Math.cos(ax) * 2 * d, Math.sin(ax) * 2 * d];
+      mixer.setTime(0); pivot.updateMatrixWorld(true);
+      console.log('walk axis', (ax * 180 / Math.PI).toFixed(1), 'foot range', d.toFixed(3));
+    }
+    console.log('root motion', rootVec.map(v => v.toFixed(3)).join(','), 'yaw', (Math.atan2(rootVec[1], rootVec[0]) * 180 / Math.PI).toFixed(1));
     console.log('feet point to (deg)', footYaw === null ? 'n/a' : (footYaw * 180 / Math.PI).toFixed(0));
   }
+  let legs = null;
+  if (opt.legs) {
+    pivot.updateMatrixWorld(true);
+    const L = opt.legs, fwdA = THREE.MathUtils.degToRad(opt.yaw0 ?? 90);
+    const fwd = new THREE.Vector3(Math.cos(fwdA), 0, Math.sin(fwdA)), up = new THREE.Vector3(0, 1, 0);
+    let rMax = 0;
+    const meshes = [];
+    model.traverse((o) => { if (o.isMesh) meshes.push(o); });
+    const v = new THREE.Vector3();
+    for (const o of meshes) { const pa = o.geometry.attributes.position; for (let i = 0; i < pa.count; i += 7) { v.fromBufferAttribute(pa, i).applyMatrix4(o.matrixWorld); rMax = Math.max(rMax, Math.hypot(v.x, v.z)); } }
+    const r0 = rMax * (L.r0 ?? 0.42);
+    // leg directions: k-means on the angle of the outer vertices
+    let yMax = 0;
+    for (const o of meshes) { const pa = o.geometry.attributes.position; for (let i = 0; i < pa.count; i += 7) { v.fromBufferAttribute(pa, i).applyMatrix4(o.matrixWorld); yMax = Math.max(yMax, v.y); } }
+    const outer = [];   // feet: outer vertices close to the ground
+    for (const o of meshes) { const pa = o.geometry.attributes.position; for (let i = 0; i < pa.count; i += 3) { v.fromBufferAttribute(pa, i).applyMatrix4(o.matrixWorld); if (Math.hypot(v.x, v.z) > r0 && v.y < yMax * (L.footH ?? 0.22)) outer.push(Math.atan2(v.z, v.x)); } }
+    // init: histogram peaks of the foot angles
+    const H = new Array(72).fill(0);
+    for (const a of outer) H[((Math.floor((a + Math.PI) / (2 * Math.PI) * 72) % 72) + 72) % 72]++;
+    const sm = H.map((_, i) => H[(i + 71) % 72] + 2 * H[i] + H[(i + 1) % 72]);
+    const peaks = [];
+    const used = new Array(72).fill(false);
+    for (let k = 0; k < L.n; k++) {
+      let bi = -1, bv = -1;
+      for (let i = 0; i < 72; i++) if (!used[i] && sm[i] > bv) { bv = sm[i]; bi = i; }
+      peaks.push((bi + 0.5) / 72 * 2 * Math.PI - Math.PI);
+      for (let d = -5; d <= 5; d++) used[(bi + d + 72) % 72] = true;   // suppress ±25°
+    }
+    let cent = peaks;
+    for (let it = 0; it < 12; it++) {
+      const sx = new Array(L.n).fill(0), sz = new Array(L.n).fill(0);
+      for (const a of outer) {
+        let b = 0, bd = 9;
+        for (let k = 0; k < L.n; k++) { const d = Math.abs(Math.atan2(Math.sin(a - cent[k]), Math.cos(a - cent[k]))); if (d < bd) { bd = d; b = k; } }
+        sx[b] += Math.cos(a); sz[b] += Math.sin(a);
+      }
+      cent = cent.map((c, k) => (sx[k] || sz[k]) ? Math.atan2(sz[k], sx[k]) : c);
+    }
+    // gait groups: alternate around the circle (diagonal pairs for 4 legs, tripods for 6)
+    const order = cent.map((c, k) => [Math.atan2(Math.sin(c - fwdA), Math.cos(c - fwdA)), k]).sort((a, b) => a[0] - b[0]);
+    const group = new Array(L.n); order.forEach(([, k], i) => { group[k] = i % 2; });
+    const S = (L.stride ?? 0.1) * rMax, Hl = (L.lift ?? 0.07) * rMax;
+    legs = { meshes: [], S, Hl, bob: (L.bob ?? 0.012) * rMax };
+    const inv = new THREE.Matrix3();
+    for (const o of meshes) {
+      const pa = o.geometry.attributes.position;
+      const orig = pa.array.slice();
+      inv.setFromMatrix4(o.matrixWorld).invert();
+      const fl = fwd.clone().applyMatrix3(inv), ul = up.clone().applyMatrix3(inv);
+      const w = new Float32Array(pa.count), g = new Uint8Array(pa.count);
+      for (let i = 0; i < pa.count; i++) {
+        v.fromBufferAttribute(pa, i).applyMatrix4(o.matrixWorld);
+        const r = Math.hypot(v.x, v.z);
+        w[i] = Math.min(1, Math.max(0, (r - r0) / (rMax - r0)));
+        w[i] = w[i] * w[i] * (3 - 2 * w[i]);
+        const a = Math.atan2(v.z, v.x);
+        let b = 0, bd = 9;
+        for (let k = 0; k < L.n; k++) { const d = Math.abs(Math.atan2(Math.sin(a - cent[k]), Math.cos(a - cent[k]))); if (d < bd) { bd = d; b = k; } }
+        g[i] = group[b];
+      }
+      legs.meshes.push({ o, orig, fl, ul, w, g });
+    }
+    rootVec = [Math.cos(fwdA) * 4 * S, Math.sin(fwdA) * 4 * S];   // planted feet: body moves 4·S per cycle
+    console.log('legs', L.n, 'centres', cent.map(c => (c * 180 / Math.PI).toFixed(0)).join(','), 'groups', group.join(''));
+  }
+  const legPose = (ph) => {
+    for (const m of legs.meshes) {
+      const pa = m.o.geometry.attributes.position, a = pa.array;
+      const bob = legs.bob * Math.abs(Math.sin(ph * 4 * Math.PI));
+      for (let i = 0; i < pa.count; i++) {
+        const p = (ph + m.g[i] * 0.5) % 1;
+        const st = legs.S * Math.cos(2 * Math.PI * p);                // stance p<0.5: front -> back
+        const li = p >= 0.5 ? legs.Hl * Math.sin(2 * Math.PI * (p - 0.5)) : 0;
+        const w = m.w[i], k = w * st, h = w * li + (1 - w) * bob;
+        a[3 * i] = m.orig[3 * i] + m.fl.x * k + m.ul.x * h;
+        a[3 * i + 1] = m.orig[3 * i + 1] + m.fl.y * k + m.ul.y * h;
+        a[3 * i + 2] = m.orig[3 * i + 2] + m.fl.z * k + m.ul.z * h;
+      }
+      pa.needsUpdate = true;
+      m.o.geometry.computeBoundingSphere();
+    }
+  };
   const pose = (t) => {
+    if (legs) { legPose(t); return; }
     if (!mixer) return;
     mixer.setTime(t);
     inner.position.set(0, 0, 0);
@@ -279,12 +395,14 @@ window.renderModel = async function (opt) {
       const a = 2 * Math.PI * i / N;
       pivot.rotation.y = yaw0 - a;
       for (let k = 0; k < af; k++) {
-        if (mixer) pose((k / af) * clip.duration);
+        if (legs) pose(k / af);
+        else if (mixer) pose((k / af) * clip.duration);
         pivot.updateMatrixWorld(true);
         out.frames.push(shot());
       }
     }
-    if (opt.anim) { out.af = af; out.clip = clip ? clip.duration : 0; if (mixer) pose(0); }
+    if (opt.anim) { out.af = af; out.clip = clip ? clip.duration : 0; if (mixer || legs) pose(0); }
+    if (rootVec) out.rootDist = Math.hypot(rootVec[0], rootVec[1]);
     // body centre (for aiming) in px relative to anchor
     out.center = toPx(new THREE.Vector3(0, H * 0.5, 0)).map((v, k) => v - anchor[k]);
     out.top = toPx(new THREE.Vector3(0, H, 0)).map((v, k) => v - anchor[k]);

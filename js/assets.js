@@ -66,11 +66,20 @@ export const Models = {
     if (alpha !== 1) ctx.globalAlpha = 1;
     return { x: dx, y: dy, w: m.w * k, h: m.h * k };
   },
+  // distance (map cells) a unit covers per animation cycle: measured stride of the rendered gait,
+  // capped at 5 cycles/s so fast units don't strobe
+  cycleOf(def) {
+    if (def._cycle) return def._cycle;
+    const m = this.data[def.model];
+    const c = m && m.rootDist ? m.rootDist * def.scale : (def.cycle || 1.1);
+    def._cycle = Math.max(c, def.speed / 5);
+    return def._cycle;
+  },
   // current sprite frame of a unit (direction + walk phase for animated sheets)
   unitFrame(e) {
     const m = this.data[e.def.model];
     let f = this.frameFor(e.def.model, e.ang);
-    if (m && m.af) f = f * m.af + (Math.floor((e.walk / (e.def.cycle || 1.1)) * m.af) % m.af);
+    if (m && m.af) f = f * m.af + (Math.floor((e.walk / this.cycleOf(e.def)) * m.af) % m.af);
     return f;
   },
   _cut: new Map(),
@@ -147,30 +156,42 @@ export const Assets = {
   vfx: {},
   ready: false,
 
+  _meta: null,
+  _pending: new Map(),
+  // load one model sheet (+ base / shadow layers) into Models.data
+  loadModel(name) {
+    if (Models.data[name]) return Promise.resolve();
+    if (this._pending.has(name)) return this._pending.get(name);
+    const m = this._meta[name];
+    if (!m) return Promise.resolve();
+    const job = (async () => {
+      const [img, baseImg, shadowImg] = await Promise.all([
+        loadImage(`assets/models/${name}.webp`),
+        m.base ? loadImage(`assets/models/${name}_base.webp`) : Promise.resolve(null),
+        m.shadow ? loadImage(`assets/models/${name}_shadow.webp`) : Promise.resolve(null),
+      ]);
+      const scale = UNIT_PX / m.P;
+      Models.data[name] = {
+        ...m, img, baseImg, shadowImg, scale,
+        centerPx: m.center ? -m.center[1] * scale : 40,
+        topPx: m.top ? -m.top[1] * scale : 80,
+      };
+    })();
+    this._pending.set(name, job);
+    return job;
+  },
+  // enemy sheets are big: they are loaded per level, only for the types that appear
+  loadModels(names) { return Promise.all(names.map(n => this.loadModel(n))); },
+
   async load(onProgress) {
     const meta = await fetch('assets/models/models.json').then(r => r.json());
-    const names = Object.keys(meta);
+    this._meta = meta;
+    const names = Object.keys(meta).filter(n => !n.startsWith('enemy_'));
     const total = names.length + 1;
     let done = 0;
     const tick = () => onProgress && onProgress(++done / total);
     const jobs = [];
-    for (const name of names) {
-      const m = meta[name];
-      jobs.push((async () => {
-        const [img, baseImg, shadowImg] = await Promise.all([
-          loadImage(`assets/models/${name}.webp`),
-          m.base ? loadImage(`assets/models/${name}_base.webp`) : Promise.resolve(null),
-          m.shadow ? loadImage(`assets/models/${name}_shadow.webp`) : Promise.resolve(null),
-        ]);
-        const scale = UNIT_PX / m.P;
-        Models.data[name] = {
-          ...m, img, baseImg, shadowImg, scale,
-          centerPx: m.center ? -m.center[1] * scale : 40,
-          topPx: m.top ? -m.top[1] * scale : 80,
-        };
-        tick();
-      })());
-    }
+    for (const name of names) jobs.push(this.loadModel(name).then(tick));
     const VFX = {
       fire: ['explosion', 5, 20, 160, 0.5], plasma: ['explosion_plasma', 5, 20, 160, 0.5],
       heavy: ['explosion_heavy', 6, 24, 192, 0.7], ground: ['explosion_ground', 5, 20, 160, 0.56],
