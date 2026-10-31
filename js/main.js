@@ -1,4 +1,4 @@
-// Iron Sentinel – app controller: screens, HUD, radial build menu, tower menu, game loop.
+// Iron Sentinel – app controller: screens, HUD, build drawer, tower menu, game loop.
 import { TOWERS, TOWER_ORDER, MAX_LEVEL, BIOMES, BIOME_ORDER, UPGRADE_TIME, upgradeCost, towerStats } from './config.js';
 import { LEVEL_SPECS, LEVEL_COUNT } from './levels.js';
 import { Assets, Models } from './assets.js';
@@ -86,7 +86,7 @@ function makeIcons() {
     const c = document.createElement('canvas');
     c.width = 96; c.height = 96;
     const g = c.getContext('2d');
-    const s = 70 / Math.max(m.w, m.h) / m.scale;
+    const s = Math.min(78 / m.h, 92 / m.w) / m.scale;
     const sc = m.scale * s;
     const x = 48, y = 48 + (m.ay - m.h / 2) * sc;
     if (m.baseImg) g.drawImage(m.baseImg, x - m.ax * sc, y - m.ay * sc, m.w * sc, m.h * sc);
@@ -96,53 +96,75 @@ function makeIcons() {
   }
 }
 
-// ---------------- radial build menu ----------------
+// ---------------- build drawer (bottom sheet) ----------------
 let bmButtons = [];
+const ROLE = {
+  gatling: 'Boden + Luft · Schnellfeuer', missile: 'Boden + Luft · Fläche', plasma: 'Boden · ignoriert Panzer', emp: 'Boden + Luft · verlangsamt',
+  flak: 'nur Luft · Fläche', flame: 'Boden · Kegel + Brand', rail: 'Boden + Luft · Durchschlag', laser: 'Boden + Luft · heizt auf', mortar: 'Boden · Artillerie',
+};
 function openBuildMenu(cx, cy) {
   closeTowerMenu();
   ui.buildCell = { x: cx, y: cy };
   ui.previewType = null;
-  const menu = $('buildmenu');
-  menu.querySelectorAll('.bm-btn').forEach(b => b.remove());
+  const box = $('bd-cards');
+  box.innerHTML = '';
   bmButtons = [];
-  const types = TOWER_ORDER.filter(k => game.unlocked(k));
-  const n = types.length;
-  const R = n <= 4 ? 70 : n <= 6 ? 82 : 96;
-  types.forEach((k, i) => {
+  for (const k of TOWER_ORDER.filter(k => game.unlocked(k))) {
     const def = TOWERS[k];
-    const a = -Math.PI / 2 + (i / n) * Math.PI * 2;
     const b = document.createElement('button');
-    b.className = 'bm-btn';
-    b.style.left = `${Math.cos(a) * R}px`;
-    b.style.top = `${Math.sin(a) * R}px`;
-    b.innerHTML = `<img src="${icons[k] || ''}" alt=""><span class="bm-cost">${def.cost}</span><span class="bm-ok">✓</span>`;
-    b.onclick = (e) => {
-      e.stopPropagation();
-      if (!game) return;
-      if (game.credits < def.cost) { sfx('error'); toast('Nicht genug Credits', 'bad', 1200); return; }
-      if (ui.previewType === k) {
-        const t = game.build(k, cx, cy);
-        if (t) { closeBuildMenu(); }
-        return;
-      }
-      ui.previewType = k;
-      bmButtons.forEach(o => o.el.classList.toggle('armed', o.k === k));
-      $('bm-info').innerHTML = `<b>${def.name}</b> · ⚡${def.cost} — ${def.desc} <em>Nochmal tippen zum Bauen ✓</em>`;
-      $('bm-info').classList.remove('hidden');
-      sfx('click');
-    };
-    menu.appendChild(b);
+    b.className = 'bd-card';
+    b.innerHTML = `<img src="${icons[k] || ''}" alt=""><span class="bd-name">${def.name}</span><span class="bd-cost">⚡${def.cost}</span>`;
+    b.onclick = (e) => { e.stopPropagation(); chooseTower(k); };
+    box.appendChild(b);
     bmButtons.push({ el: b, k });
-  });
-  $('bm-info').classList.add('hidden');
-  menu.classList.remove('hidden');
-  positionMenus();
+  }
+  $('bd-info').innerHTML = '<span class="bd-hint">Turm wählen – die Reichweite wird auf der Karte angezeigt</span>';
+  $('bd-build').classList.add('hidden');
+  $('builddrawer').classList.remove('hidden');
+  $('btn-wave').classList.add('under-drawer');
+  requestAnimationFrame(() => ensureCellVisible(cx, cy));
   sfx('click');
+}
+function chooseTower(k) {
+  if (!game || !ui.buildCell) return;
+  const def = TOWERS[k];
+  if (ui.previewType === k) { buildChosen(); return; }   // second tap on the same card builds
+  ui.previewType = k;
+  bmButtons.forEach(o => o.el.classList.toggle('sel', o.k === k));
+  const s = towerStats(k, 1);
+  const dmg = def.dps ? `${Math.round(s.dps)}/s` : def.kind === 'hitscan' || def.kind === 'flak' ? `${Math.round(s.dmg * s.rate)}/s` : Math.round(s.dmg);
+  $('bd-info').innerHTML = `<b>${def.name}</b> <span class="bd-role">${ROLE[k]}</span><br><small>${def.desc}</small>` +
+    `<div class="bd-chips"><span>💥 ${dmg}</span><span>📡 ${s.range.toFixed(1)}</span><span>🛡 ${s.hp}</span></div>`;
+  const bb = $('bd-build');
+  bb.textContent = `BAUEN · ⚡${def.cost}`;
+  bb.disabled = game.credits < def.cost;
+  bb.classList.remove('hidden');
+  requestAnimationFrame(() => ui.buildCell && ensureCellVisible(ui.buildCell.x, ui.buildCell.y));
+  sfx('click');
+}
+function buildChosen() {
+  if (!game || !ui.buildCell || !ui.previewType) return;
+  const k = ui.previewType;
+  if (game.credits < TOWERS[k].cost) { sfx('error'); toast('Nicht genug Credits', 'bad', 1200); return; }
+  const t = game.build(k, ui.buildCell.x, ui.buildCell.y);
+  if (t) closeBuildMenu();
 }
 function closeBuildMenu() {
   ui.buildCell = null; ui.previewType = null;
-  $('buildmenu').classList.add('hidden');
-  $('bm-info').classList.add('hidden');
+  $('builddrawer').classList.add('hidden');
+  $('btn-wave').classList.remove('under-drawer');
+}
+$('bd-build').onclick = (e) => { e.stopPropagation(); buildChosen(); };
+$('bd-close').onclick = (e) => { e.stopPropagation(); closeBuildMenu(); sfx('click'); };
+// keep the chosen tile visible above the drawer
+function ensureCellVisible(cx, cy) {
+  const w = toWorld(cx + 0.5, cy + 0.5);
+  const p = renderer.worldToScreen(w.x, w.y);
+  // the tower preview reaches ~80 px above the tile centre and the tile ~30 px below
+  const drawerTop = window.innerHeight - ($('builddrawer').offsetHeight || 170) - 12;
+  const bottom = p.y + 34 * renderer.cam.zoom;
+  if (bottom > drawerTop) renderer.pan(0, drawerTop - bottom);
+  if (p.y < 70) renderer.pan(0, 70 - p.y);
 }
 
 // ---------------- tower menu ----------------
@@ -202,15 +224,6 @@ $('tm-sell').onclick = (e) => { e.stopPropagation(); if (ui.selected) { game.sel
 function positionMenus() {
   if (!game) return;
   const pad = 8;
-  if (ui.buildCell) {
-    const w = toWorld(ui.buildCell.x + 0.5, ui.buildCell.y + 0.5);
-    const p = renderer.worldToScreen(w.x, w.y);
-    const n = bmButtons.length, R = (n <= 4 ? 70 : n <= 6 ? 82 : 96) + 30;
-    const x = Math.max(R + pad, Math.min(window.innerWidth - R - pad, p.x));
-    const y = Math.max(R + 50, Math.min(window.innerHeight - R - pad, p.y));
-    const m = $('buildmenu');
-    m.style.transform = `translate(${x}px, ${y}px)`;
-  }
   if (ui.selected) {
     const t = ui.selected;
     const p = renderer.worldToScreen(t.wx, t.wy - 40);
@@ -235,6 +248,12 @@ function onTap(p) {
   const inMap = c.x >= 0 && c.y >= 0 && c.x < game.N && c.y < game.N;
   const t = inMap ? game.towerAt(c.x, c.y) : null;
   if (t) { if (ui.selected === t) closeTowerMenu(); else openTowerMenu(t); return; }
+  if (ui.buildCell && inMap && game.canBuild(c.x, c.y) && (c.x !== ui.buildCell.x || c.y !== ui.buildCell.y)) {
+    const keep = ui.previewType;
+    openBuildMenu(c.x, c.y);
+    if (keep) chooseTower(keep);
+    return;
+  }
   if (ui.buildCell || ui.selected) { closeBuildMenu(); closeTowerMenu(); return; }
   if (inMap && game.canBuild(c.x, c.y)) openBuildMenu(c.x, c.y);
 }
@@ -265,6 +284,7 @@ function updateHUD() {
       const poor = game.credits < TOWERS[o.k].cost;
       if (o.el._poor !== poor) { o.el._poor = poor; o.el.classList.toggle('poor', poor); }
     }
+    if (ui.previewType) { const bb = $('bd-build'); const poor = game.credits < TOWERS[ui.previewType].cost; if (bb.disabled !== poor) bb.disabled = poor; }
     if (!game.canBuild(ui.buildCell.x, ui.buildCell.y)) closeBuildMenu();
   }
   if (ui.selected) {

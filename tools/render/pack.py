@@ -8,7 +8,17 @@ import json
 import os
 import sys
 
-from PIL import Image
+from PIL import Image, ImageChops, ImageFilter
+
+
+def soft_shadow(d_path, a_path, scale):
+    """Key-light shadow (lightly blurred) combined with a wide contact shadow, as an alpha mask."""
+    d = Image.open(d_path).getchannel('A').filter(ImageFilter.GaussianBlur(2.2 * scale))
+    a = Image.open(a_path).getchannel('A').filter(ImageFilter.GaussianBlur(7 * scale))
+    d = d.point(lambda v: int(v * 0.62))
+    a = a.point(lambda v: int(v * 0.55))
+    # screen-combine: 1 - (1-d)(1-a)
+    return ImageChops.screen(d, a)
 
 src, dst = sys.argv[1], sys.argv[2]
 only = set(sys.argv[3:])
@@ -26,6 +36,14 @@ for d in sorted(glob.glob(os.path.join(src, '*'))):
     meta = json.load(open(mp))
     frames = [Image.open(f).convert('RGBA') for f in sorted(glob.glob(os.path.join(d, 'f*.png')))]
     base = Image.open(os.path.join(d, 'base.png')).convert('RGBA') if os.path.exists(os.path.join(d, 'base.png')) else None
+    shadows = []
+    for i in range(len(frames)):
+        sd, sa = os.path.join(d, f's{i:02d}_d.png'), os.path.join(d, f's{i:02d}_a.png')
+        if os.path.exists(sd):
+            m = soft_shadow(sd, sa, (meta.get('P') or 128) / 128)
+            sh = Image.new('RGBA', m.size, (8, 6, 4, 0))
+            sh.putalpha(m)
+            shadows.append(sh)
     # union bbox of all frames (+ base) to trim empty margins uniformly
     box = None
     for im in frames + ([base] if base else []):
@@ -44,6 +62,21 @@ for d in sorted(glob.glob(os.path.join(src, '*'))):
     for i, im in enumerate(frames):
         sheet.paste(im.crop((x0, y0, x1, y1)), ((i % cols) * w, (i // cols) * h))
     sheet.save(os.path.join(dst, f'{name}.webp'), 'WEBP', quality=88, method=6)
+    shadow_meta = None
+    if shadows:
+        # shadows get their own trimmed box (they extend away from the light)
+        sb = None
+        for im in shadows:
+            b = im.getchannel('A').point(lambda v: 255 if v > 3 else 0).getbbox()
+            if b:
+                sb = b if sb is None else (min(sb[0], b[0]), min(sb[1], b[1]), max(sb[2], b[2]), max(sb[3], b[3]))
+        sx0, sy0, sx1, sy1 = sb
+        sw, shh = sx1 - sx0, sy1 - sy0
+        ss = Image.new('RGBA', (cols * sw, rows * shh), (0, 0, 0, 0))
+        for i, im in enumerate(shadows):
+            ss.paste(im.crop((sx0, sy0, sx1, sy1)), ((i % cols) * sw, (i // cols) * shh))
+        ss.save(os.path.join(dst, f'{name}_shadow.webp'), 'WEBP', quality=80, method=6)
+        shadow_meta = {'w': sw, 'h': shh, 'ax': round(meta['anchor'][0] - sx0, 2), 'ay': round(meta['anchor'][1] - sy0, 2)}
     out = {
         'w': w, 'h': h, 'n': n, 'cols': cols,
         'ax': round(meta['anchor'][0] - x0, 2), 'ay': round(meta['anchor'][1] - y0, 2),
@@ -51,6 +84,8 @@ for d in sorted(glob.glob(os.path.join(src, '*'))):
     }
     if meta.get('af'):
         out['af'] = meta['af']
+    if shadow_meta:
+        out['shadow'] = shadow_meta
     if base:
         base.crop((x0, y0, x1, y1)).save(os.path.join(dst, f'{name}_base.webp'), 'WEBP', quality=88, method=6)
         out['base'] = True

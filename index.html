@@ -46,8 +46,15 @@
   <button id="btn-wave" class="hidden"><span id="wave-label">ANGRIFF STARTEN</span><small id="wave-sub"></small></button>
 
   <!-- radial build menu (positioned at the tapped tile) -->
-  <div id="buildmenu" class="hidden"></div>
-  <div id="bm-info" class="hidden"></div>
+  <!-- build drawer (bottom sheet) -->
+  <div id="builddrawer" class="hidden">
+    <div class="bd-top">
+      <div id="bd-info"></div>
+      <button id="bd-build" class="btn primary hidden">BAUEN</button>
+      <button id="bd-close" class="btn icon" aria-label="Schließen">✕</button>
+    </div>
+    <div id="bd-cards"></div>
+  </div>
 
   <!-- tower context menu -->
   <div id="towermenu" class="hidden">

@@ -180,6 +180,12 @@ window.renderModel = async function (opt) {
   const view = camera.matrixWorldInverse;
   let minX = 1e9, maxX = -1e9, minY = 1e9, maxY = -1e9;
   const allV = collectVerts(pivot);
+  // static props also bake a ground shadow: include the projection of every vertex along the key light
+  const Ld = key.position.clone().normalize();
+  if (opt.shadow) {
+    const n0 = allV.length;
+    for (let i = 0; i < n0; i += 2) { const v = allV[i]; allV.push(new THREE.Vector3(v.x - Ld.x * v.y / Ld.y, 0, v.z - Ld.z * v.y / Ld.y)); }
+  }
   for (let i = 0; i < N; i++) {
     const rot = new THREE.Matrix4().makeRotationY(-(2 * Math.PI * i / N));
     for (const v of allV) {
@@ -210,6 +216,23 @@ window.renderModel = async function (opt) {
   };
   const shot = () => { renderer.render(scene, camera); return renderer.domElement.toDataURL('image/png'); };
 
+  // shadow-only passes: ground catcher + invisible model; key-light shadow and a contact shadow from above
+  const plane = new THREE.Mesh(new THREE.PlaneGeometry(30, 30), new THREE.ShadowMaterial({ opacity: 1 }));
+  plane.rotation.x = -Math.PI / 2; plane.position.y = 0.001; plane.receiveShadow = true;
+  const setColor = (on) => model.traverse((o) => {
+    if (!o.isMesh) return;
+    for (const m of (Array.isArray(o.material) ? o.material : [o.material])) { m.colorWrite = on; m.depthWrite = on; }
+  });
+  const shadowShots = () => {
+    const kp = key.position.clone();
+    scene.add(plane); setColor(false);
+    const sd = shot();
+    key.position.set(0.4, 10, 0.25); key.updateMatrixWorld();
+    const sa = shot();
+    key.position.copy(kp); key.updateMatrixWorld();
+    scene.remove(plane); setColor(true);
+    return [sd, sa];
+  };
   const out = { W, H: Hh, anchor, N, autoInfo, scale: s, height: H };
   if (opt.mode === 'tower') {
     // base (static) with a dark turret-ring cap over the cut
@@ -222,19 +245,33 @@ window.renderModel = async function (opt) {
     out.base = shot();
     scene.remove(cap);
     // turret frames
-    setClip([new THREE.Plane(new THREE.Vector3(0, 1, 0), -cutY)]);
+    const turretClip = [new THREE.Plane(new THREE.Vector3(0, 1, 0), -cutY)];
+    setClip(turretClip);
     out.frames = []; out.muzzles = [];
+    if (opt.shadow) out.shadows = [];
     for (let i = 0; i < N; i++) {
       const a = 2 * Math.PI * i / N;      // desired forward angle (atan2(z,x)) == grid angle atan2(dy,dx)
       pivot.rotation.y = yaw0 - a;
       pivot.updateMatrixWorld(true);
       out.frames.push(shot());
+      if (opt.shadow) { setClip([]); out.shadows.push(shadowShots()); setClip(turretClip); }
       const mw = muzzle.clone().applyMatrix4(pivot.matrixWorld);
       const px = toPx(mw);
       out.muzzles.push([px[0] - anchor[0], px[1] - anchor[1]]);
     }
     setClip([]);
     out.cutPx = toPx(new THREE.Vector3(0, cutY, 0))[1] - anchor[1];
+  } else if (opt.shadow) {
+    // prop: model frames + separate shadow passes (key-light shadow, contact shadow from straight above)
+    out.frames = []; out.shadows = [];
+    for (let i = 0; i < N; i++) {
+      pivot.rotation.y = yaw0 - 2 * Math.PI * i / N;
+      pivot.updateMatrixWorld(true);
+      out.frames.push(shot());
+      out.shadows.push(shadowShots());
+    }
+    out.center = toPx(new THREE.Vector3(0, H * 0.5, 0)).map((v, k) => v - anchor[k]);
+    out.top = toPx(new THREE.Vector3(0, H, 0)).map((v, k) => v - anchor[k]);
   } else {
     out.frames = [];
     const af = opt.anim ? opt.anim.frames : 1;

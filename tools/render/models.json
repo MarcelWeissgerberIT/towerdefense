@@ -5,7 +5,8 @@
   "size": 0.8,
   "cut": 0.42,
   "P": 136,
-  "capR": 0.3
+  "capR": 0.3,
+  "shadow": true
  },
  "tower_missile": {
   "mode": "tower",
@@ -13,7 +14,8 @@
   "size": 0.8,
   "cut": 0.45,
   "P": 136,
-  "capR": 0.3
+  "capR": 0.3,
+  "shadow": true
  },
  "tower_plasma": {
   "mode": "tower",
@@ -21,7 +23,8 @@
   "size": 0.8,
   "cut": 0.45,
   "P": 136,
-  "capR": 0.3
+  "capR": 0.3,
+  "shadow": true
  },
  "tower_rail": {
   "mode": "tower",
@@ -29,14 +32,16 @@
   "size": 0.74,
   "cut": 0.4,
   "P": 136,
-  "capR": 0.28
+  "capR": 0.28,
+  "shadow": true
  },
  "tower_emp": {
   "mode": "unit",
   "frames": 1,
   "size": 0.78,
   "yaw0": 0,
-  "P": 136
+  "P": 136,
+  "shadow": true
  },
  "enemy_spider": {
   "mode": "unit",
@@ -97,7 +102,8 @@
   "size": 0.8,
   "cut": 0.42,
   "P": 136,
-  "capR": 0.3
+  "capR": 0.3,
+  "shadow": true
  },
  "tower_mortar": {
   "mode": "tower",
@@ -105,7 +111,8 @@
   "size": 0.8,
   "cut": 0.4,
   "P": 136,
-  "capR": 0.3
+  "capR": 0.3,
+  "shadow": true
  },
  "tower_laser": {
   "mode": "tower",
@@ -113,7 +120,8 @@
   "size": 0.78,
   "cut": 0.42,
   "P": 136,
-  "capR": 0.3
+  "capR": 0.3,
+  "shadow": true
  },
  "tower_flak": {
   "mode": "tower",
@@ -121,7 +129,8 @@
   "size": 0.8,
   "cut": 0.35,
   "P": 136,
-  "capR": 0.3
+  "capR": 0.3,
+  "shadow": true
  },
  "enemy_shield": {
   "url": "glb/enemy_shield_walk.glb",

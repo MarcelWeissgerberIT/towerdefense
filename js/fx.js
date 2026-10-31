@@ -1,5 +1,5 @@
 // Particle / effect system (world space). Video-based explosions + procedural particles.
-import { Assets } from './assets.js';
+import { Assets, Models } from './assets.js';
 import { rand } from './iso.js';
 
 const MAX_PARTICLES = 900;
@@ -42,20 +42,26 @@ export class FX {
     }
   }
   // video fireball (sprite sheet) + procedural layers
-  boom(x, y, size, life = 0.95) { this.add({ k: 'boom', x, y, s: size, life, rot: rand(-0.3, 0.3), flip: Math.random() < 0.5 }); }
-  explosion(x, y, scale = 1) {
-    this.boom(x, y - 10 * scale, 120 * scale, 0.7 + 0.15 * scale);
+  // video explosion; kind = fire | plasma | heavy | ground, randomly varied in size, speed, rotation and mirroring
+  boom(x, y, size, life = 0.95, kind = 'fire') {
+    const v = rand(0.85, 1.2);
+    this.add({ k: 'boom', x, y, s: size * v, life: life * rand(0.85, 1.15), rot: kind === 'heavy' ? rand(-0.08, 0.08) : rand(-0.35, 0.35), flip: Math.random() < 0.5, kind });
+  }
+  later(ms, fn) { setTimeout(fn, ms); }
+  explosion(x, y, scale = 1, kind = 'fire') {
+    this.boom(x, y - 10 * scale, 120 * scale, 0.7 + 0.15 * scale, kind);
     this.add({ k: 'glow', x, y, s: 110 * scale, life: 0.18, spr: 'orange' });
     this.sparks(x, y, Math.round(6 * scale), '#ffcf6a', 230 * scale);
     this.debris(x, y, Math.round(4 * scale), 180 * Math.sqrt(scale));
     this.smoke(x, y - 8 * scale, Math.round(2 * scale), 24 * scale, 1.3, true);
     this.shake = Math.max(this.shake, 2 * scale);
   }
-  bigExplosion(x, y, scale = 1.5) {
-    // the "fat" one: several video fireballs, shockwave, flash, burning debris, smoke column
-    this.boom(x, y - 20 * scale, 170 * scale, 1.05);
+  bigExplosion(x, y, scale = 1.5, kind = 'heavy') {
+    // the "fat" one: big video blast, secondary fireballs, shockwave, flash, burning debris, smoke column
+    if (kind === 'heavy') this.boom(x, y + 10 * scale, 190 * scale, 1.5, 'heavy');
+    else this.boom(x, y - 20 * scale, 170 * scale, 1.05, kind);
     for (let i = 0; i < Math.round(1 + scale); i++) {
-      setTimeout(() => this.boom(x + rand(-40, 40) * scale, y - rand(0, 40) * scale, rand(90, 130) * scale, 0.9), 70 + i * 90);
+      this.later(70 + i * 110 + rand(0, 80), () => this.boom(x + rand(-45, 45) * scale, y - rand(0, 45) * scale, rand(80, 125) * scale, 0.9, Math.random() < 0.7 ? 'fire' : kind));
     }
     this.add({ k: 'glow', x, y, s: 260 * scale, life: 0.3, spr: 'orange' });
     this.add({ k: 'glow', x, y, s: 120 * scale, life: 0.14, spr: 'white' });
@@ -75,6 +81,58 @@ export class FX {
     for (let i = 0; i < n; i++) {
       const a = Math.random() * Math.PI * 2, v = rand(0.3, 1) * speed;
       this.add({ k: 'debris', x, y, z: 4, vx: Math.cos(a) * v, vy: Math.sin(a) * v * 0.5, vz: rand(140, 340), life: rand(0.8, 1.4), s: rand(2, 6), c: Math.random() < 0.5 ? '#2a2a2a' : '#7c7c80' });
+    }
+  }
+  // machine destroyed: kind-specific blast, the sprite splinters into burning pieces, heavy units leave a wreck
+  death(e, info) {
+    const { x, y, ground, kind, scale, frame } = info;
+    const name = e.def.model;
+    const m = Models.meta(name);
+    const heavy = e.def.cost >= 7 || e.def.boss;
+    const s0 = (m ? m.scale : 0.7) * e.def.scale;
+    if (kind === 'plasma') {
+      this.boom(x, y, 130 * scale, 0.75, 'plasma');
+      this.add({ k: 'glow', x, y, s: 150 * scale, life: 0.25, spr: 'cyan' });
+      this.sparks(x, y, Math.round(12 * scale), '#aef0ff', 300 * scale);
+      if (heavy) this.later(120, () => this.boom(x + rand(-20, 20), y - 10, 150 * scale, 1.1, 'fire'));
+    } else if (kind === 'burn') {
+      this.boom(x, y - 10, 110 * scale, 0.9, 'fire');
+      for (let i = 0; i < 8 * scale; i++) this.burn(x + rand(-20, 20) * scale, y + rand(-15, 10) * scale);
+    } else if (heavy) {
+      this.bigExplosion(x, y, scale, 'heavy');
+    } else {
+      this.explosion(x, y, scale, Math.random() < 0.25 ? 'heavy' : 'fire');
+    }
+    // splinters of the machine itself
+    if (m && m.img) {
+      const shards = Models.shards(name, frame);
+      const lift = e.air ? e.def.lift : 0;
+      for (const sh of shards) {
+        const a = Math.atan2(sh.oy, sh.ox) + rand(-0.5, 0.5);
+        const v = rand(80, 220) * (heavy ? 0.8 : 1.1);
+        this.add({
+          k: 'shard', c: sh.c, w: sh.w * s0, h: sh.h * s0,
+          x: e.wx + sh.ox * s0, y: e.wy + sh.oy * s0 - lift, z: 0, base: e.wy + rand(-8, 10),
+          vx: Math.cos(a) * v, vy: Math.sin(a) * v * 0.5, vz: rand(160, 380), rot: 0, vr: rand(-9, 9),
+          life: rand(1.1, 1.9), burn: Math.random() < 0.45, trail: 0,
+        });
+      }
+    }
+    // charred wreck for heavy ground machines
+    if (ground && heavy && m && m.img) {
+      this.add({ k: 'wreck', c: Models.wreck(name, frame), x: e.wx, y: e.wy, w: m.w * s0, h: m.h * s0, ax: m.ax * s0, ay: m.ay * s0, life: e.def.boss ? 14 : 8, fire: 0 });
+    }
+    if (heavy) {
+      // chain of secondary detonations
+      const n = e.def.boss ? 7 : 2 + Math.floor(Math.random() * 3);
+      for (let i = 0; i < n; i++) {
+        this.later(180 + i * rand(120, 260), () => {
+          const ox = rand(-40, 40) * scale, oy = rand(-30, 10) * scale;
+          this.boom(x + ox, y + oy, rand(60, 110) * Math.sqrt(scale), 0.8, Math.random() < 0.3 ? 'ground' : 'fire');
+          this.sparks(x + ox, y + oy, 6, '#ffd27a', 220);
+          this.shake = Math.max(this.shake, 2.5);
+        });
+      }
     }
   }
   plasmaHit(x, y, k = 1) {
@@ -144,6 +202,22 @@ export class FX {
           if (o.trail <= 0) { o.trail = 0.04; spawned.push({ k: 'smoke', x: o.x, y: o.y, vx: 0, vy: -8, s: 8, grow: 18, life: 0.7, a: 0.5, dark: true, t: 0 }); }
           break;
         case 'text': o.y -= 34 * dt; break;
+        case 'shard':
+          o.x += o.vx * dt; o.y += o.vy * dt;
+          if (o.z > 0 || o.vz > 0) {
+            o.z += o.vz * dt; o.vz -= 900 * dt; o.rot += o.vr * dt;
+            if (o.z < 0) { o.z = 0; o.vz = o.vz < -120 ? -o.vz * 0.3 : 0; o.vx *= 0.4; o.vy *= 0.4; o.vr *= 0.4; }
+          } else { o.vx *= 1 - dt * 6; o.vy *= 1 - dt * 6; }
+          if (o.burn) { o.trail -= dt; if (o.trail <= 0 && o.t < o.life * 0.7) { o.trail = 0.05; spawned.push({ k: 'smoke', x: o.x, y: o.y - o.z, vx: 0, vy: -12, s: 8, grow: 20, life: 0.7, a: 0.45, dark: true, t: 0 }); } }
+          break;
+        case 'wreck':
+          o.fire -= dt;
+          if (o.fire <= 0 && o.t < o.life * 0.75) {
+            o.fire = 0.12;
+            spawned.push({ k: 'smoke', x: o.x + rand(-o.w * 0.25, o.w * 0.25), y: o.y - o.h * 0.25, vx: rand(-6, 6), vy: -26, s: 16, grow: 40, life: 1.8, a: 0.5, dark: true, t: 0 });
+            if (Math.random() < 0.5) spawned.push({ k: 'fire', x: o.x + rand(-o.w * 0.2, o.w * 0.2), y: o.y - rand(5, o.h * 0.35), vx: rand(-6, 6), vy: rand(-40, -20), s: rand(10, 18), life: rand(0.3, 0.5), t: 0 });
+          }
+          break;
       }
       p[w++] = o;
     }
@@ -157,11 +231,26 @@ export class FX {
 
   draw(ctx) {
     const fx = Assets.fx;
-    const ex = Assets.vfx.explosion;
-    // pass 1: normal blending (smoke, debris, video fireballs, text)
+    // pass 0: wrecks lie on the ground
+    for (const o of this.p) {
+      if (o.k !== 'wreck') continue;
+      const k = o.t / o.life;
+      ctx.globalAlpha = k > 0.75 ? (1 - k) / 0.25 : 1;
+      ctx.drawImage(o.c, o.x - o.ax, o.y - o.ay, o.w, o.h);
+    }
+    // pass 1: normal blending (smoke, debris, shards, video explosions, text)
     for (const o of this.p) {
       const k = o.t / o.life;
       switch (o.k) {
+        case 'shard': {
+          ctx.globalAlpha = k > 0.7 ? (1 - k) / 0.3 : 1;
+          ctx.save();
+          ctx.translate(o.x, o.y - o.z);
+          ctx.rotate(o.rot);
+          ctx.drawImage(o.c, -o.w / 2, -o.h / 2, o.w, o.h);
+          ctx.restore();
+          break;
+        }
         case 'smoke': {
           const s = o.s + o.grow * k;
           ctx.globalAlpha = o.a * (1 - k) * (o.dark ? 1 : 0.9);
@@ -174,6 +263,7 @@ export class FX {
           ctx.fillRect(o.x - o.s / 2, o.y - o.z - o.s / 2, o.s, o.s);
           break;
         case 'boom': {
+          const ex = Assets.vfx[o.kind || 'fire'];
           if (!ex || !ex.img) break;
           const f = Math.min(ex.n - 1, Math.floor(k * ex.n));
           const sx = (f % ex.cols) * ex.size, sy = Math.floor(f / ex.cols) * ex.size;
@@ -182,7 +272,7 @@ export class FX {
           ctx.translate(o.x, o.y);
           ctx.rotate(o.rot);
           if (o.flip) ctx.scale(-1, 1);
-          ctx.drawImage(ex.img, sx, sy, ex.size, ex.size, -o.s / 2, -o.s / 2, o.s, o.s);
+          ctx.drawImage(ex.img, sx, sy, ex.size, ex.size, -o.s / 2, -o.s * ex.ay, o.s, o.s);
           ctx.restore();
           break;
         }
@@ -224,7 +314,15 @@ export class FX {
           if (k < 0.35) {
             ctx.globalAlpha = (0.35 - k) * 1.4;
             const s = o.s * 1.3;
-            ctx.drawImage(fx.orange, o.x - s / 2, o.y - s / 2, s, s);
+            ctx.drawImage(o.kind === 'plasma' ? fx.cyan : fx.orange, o.x - s / 2, o.y - s / 2, s, s);
+          }
+          break;
+        }
+        case 'shard': {
+          if (o.burn && k < 0.75) {
+            ctx.globalAlpha = (0.75 - k) * 0.9;
+            const s = Math.max(o.w, o.h) * 0.9;
+            ctx.drawImage(fx.orange, o.x - s / 2, o.y - o.z - s / 2, s, s);
           }
           break;
         }

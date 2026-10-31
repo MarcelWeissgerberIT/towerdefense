@@ -27,7 +27,8 @@ for (const [name, opt] of Object.entries(cfg)) {
   const save = (file, dataUrl) => fs.writeFileSync(path.join(dir, file), Buffer.from(dataUrl.split(',')[1], 'base64'));
   if (res.base) save('base.png', res.base);
   res.frames.forEach((f, i) => save(`f${String(i).padStart(2, '0')}.png`, f));
-  delete res.base; delete res.frames;
+  if (res.shadows) res.shadows.forEach(([d, a], i) => { save(`s${String(i).padStart(2, '0')}_d.png`, d); save(`s${String(i).padStart(2, '0')}_a.png`, a); });
+  delete res.base; delete res.frames; delete res.shadows;
   res.P = opt.P;
   fs.writeFileSync(path.join(dir, 'meta.json'), JSON.stringify(res, null, 1));
   console.log(`${name}: ${res.N} frames ${res.W}x${res.H} in ${((Date.now() - t0) / 1000).toFixed(1)}s`, res.autoInfo ? `auto yaw ${res.autoInfo.yaw.toFixed(0)}°` : '');

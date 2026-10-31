@@ -1,0 +1,222 @@
+{
+ "p3d_base_hq": {
+  "url": "glb/p3d_base_hq.glb",
+  "mode": "prop",
+  "frames": 4,
+  "size": 1.85,
+  "yaw0": 0,
+  "P": 128,
+  "pad": 0.04,
+  "shadow": true
+ },
+ "p3d_spawn_gate": {
+  "url": "glb/p3d_spawn_gate.glb",
+  "mode": "prop",
+  "frames": 4,
+  "size": 1.85,
+  "yaw0": 0,
+  "P": 128,
+  "pad": 0.04,
+  "shadow": true
+ },
+ "p3d_prop_ruin": {
+  "url": "glb/p3d_prop_ruin.glb",
+  "mode": "prop",
+  "frames": 4,
+  "size": 1.0,
+  "yaw0": 0,
+  "P": 128,
+  "pad": 0.04,
+  "shadow": true
+ },
+ "p3d_prop_wreck": {
+  "url": "glb/p3d_prop_wreck.glb",
+  "mode": "prop",
+  "frames": 4,
+  "size": 1.3,
+  "yaw0": 0,
+  "P": 128,
+  "pad": 0.04,
+  "shadow": true
+ },
+ "p3d_prop_barrier": {
+  "url": "glb/p3d_prop_barrier.glb",
+  "mode": "prop",
+  "frames": 4,
+  "size": 1.05,
+  "yaw0": 0,
+  "P": 128,
+  "pad": 0.04,
+  "shadow": true
+ },
+ "p3d_prop_tree": {
+  "url": "glb/p3d_prop_tree.glb",
+  "mode": "prop",
+  "frames": 4,
+  "size": 1.1,
+  "yaw0": 0,
+  "P": 128,
+  "pad": 0.04,
+  "shadow": true
+ },
+ "p3d_prop_crates": {
+  "url": "glb/p3d_prop_crates.glb",
+  "mode": "prop",
+  "frames": 4,
+  "size": 0.9,
+  "yaw0": 0,
+  "P": 128,
+  "pad": 0.04,
+  "shadow": true
+ },
+ "p3d_prop_scrap": {
+  "url": "glb/p3d_prop_scrap.glb",
+  "mode": "prop",
+  "frames": 4,
+  "size": 1.05,
+  "yaw0": 0,
+  "P": 128,
+  "pad": 0.04,
+  "shadow": true
+ },
+ "p3d_prop_j_tree": {
+  "url": "glb/p3d_prop_j_tree.glb",
+  "mode": "prop",
+  "frames": 4,
+  "size": 1.25,
+  "yaw0": 0,
+  "P": 128,
+  "pad": 0.04,
+  "shadow": true
+ },
+ "p3d_prop_j_heli": {
+  "url": "glb/p3d_prop_j_heli.glb",
+  "mode": "prop",
+  "frames": 4,
+  "size": 1.55,
+  "yaw0": 0,
+  "P": 128,
+  "pad": 0.04,
+  "shadow": true
+ },
+ "p3d_prop_j_temple": {
+  "url": "glb/p3d_prop_j_temple.glb",
+  "mode": "prop",
+  "frames": 4,
+  "size": 1.0,
+  "yaw0": 0,
+  "P": 128,
+  "pad": 0.04,
+  "shadow": true
+ },
+ "p3d_prop_j_bush": {
+  "url": "glb/p3d_prop_j_bush.glb",
+  "mode": "prop",
+  "frames": 4,
+  "size": 0.95,
+  "yaw0": 0,
+  "P": 128,
+  "pad": 0.04,
+  "shadow": true
+ },
+ "p3d_prop_i_pine": {
+  "url": "glb/p3d_prop_i_pine.glb",
+  "mode": "prop",
+  "frames": 4,
+  "size": 1.1,
+  "yaw0": 0,
+  "P": 128,
+  "pad": 0.04,
+  "shadow": true
+ },
+ "p3d_prop_i_ice": {
+  "url": "glb/p3d_prop_i_ice.glb",
+  "mode": "prop",
+  "frames": 4,
+  "size": 1.0,
+  "yaw0": 0,
+  "P": 128,
+  "pad": 0.04,
+  "shadow": true
+ },
+ "p3d_prop_i_station": {
+  "url": "glb/p3d_prop_i_station.glb",
+  "mode": "prop",
+  "frames": 4,
+  "size": 1.0,
+  "yaw0": 0,
+  "P": 128,
+  "pad": 0.04,
+  "shadow": true
+ },
+ "p3d_prop_i_wreck": {
+  "url": "glb/p3d_prop_i_wreck.glb",
+  "mode": "prop",
+  "frames": 4,
+  "size": 1.25,
+  "yaw0": 0,
+  "P": 128,
+  "pad": 0.04,
+  "shadow": true
+ },
+ "p3d_prop_d_rock": {
+  "url": "glb/p3d_prop_d_rock.glb",
+  "mode": "prop",
+  "frames": 4,
+  "size": 1.05,
+  "yaw0": 0,
+  "P": 128,
+  "pad": 0.04,
+  "shadow": true
+ },
+ "p3d_prop_d_tank": {
+  "url": "glb/p3d_prop_d_tank.glb",
+  "mode": "prop",
+  "frames": 4,
+  "size": 1.25,
+  "yaw0": 0,
+  "P": 128,
+  "pad": 0.04,
+  "shadow": true
+ },
+ "p3d_prop_d_pump": {
+  "url": "glb/p3d_prop_d_pump.glb",
+  "mode": "prop",
+  "frames": 4,
+  "size": 0.95,
+  "yaw0": 0,
+  "P": 128,
+  "pad": 0.04,
+  "shadow": true
+ },
+ "p3d_prop_v_spire": {
+  "url": "glb/p3d_prop_v_spire.glb",
+  "mode": "prop",
+  "frames": 4,
+  "size": 0.85,
+  "yaw0": 0,
+  "P": 128,
+  "pad": 0.04,
+  "shadow": true
+ },
+ "p3d_prop_v_rocks": {
+  "url": "glb/p3d_prop_v_rocks.glb",
+  "mode": "prop",
+  "frames": 4,
+  "size": 1.05,
+  "yaw0": 0,
+  "P": 128,
+  "pad": 0.04,
+  "shadow": true
+ },
+ "p3d_prop_v_factory": {
+  "url": "glb/p3d_prop_v_factory.glb",
+  "mode": "prop",
+  "frames": 4,
+  "size": 1.0,
+  "yaw0": 0,
+  "P": 128,
+  "pad": 0.04,
+  "shadow": true
+ }
+}

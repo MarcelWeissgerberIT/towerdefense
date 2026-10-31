@@ -1,5 +1,5 @@
 // Isometric canvas renderer
-import { HW, HH, TOWERS, BIOMES, PROP_W, TOWER_SCALE } from './config.js';
+import { HW, HH, TOWERS, BIOMES, TOWER_SCALE } from './config.js';
 import { toWorld, toGrid, mulberry32, clamp } from './iso.js';
 import { Assets, Models } from './assets.js';
 import { CELL } from './game.js';
@@ -285,35 +285,42 @@ export class Renderer {
     if (ui.selected) this.drawRange(ctx, ui.selected.gx, ui.selected.gy, ui.selected.stats.range, TOWERS[ui.selected.type].color, true, TOWERS[ui.selected.type].minRange);
 
     const fx = Assets.fx;
-    ctx.globalAlpha = 0.5;
-    for (const t of game.towers) ctx.drawImage(fx.shadow, t.wx - 66, t.wy - 22, 132, 58);
-    for (const p of game.props) { const w = PROP_W[p.sprite] || 130; ctx.drawImage(fx.shadow, p.wx - w * 0.48, p.wy - w * 0.14, w * 0.96, w * 0.4); }
+    // ground pass: baked 3D shadows (key light from the upper left) for static objects and towers
+    ctx.globalAlpha = 0.9;
+    for (const p of game.props) Models.drawShadow(ctx, p.model, p.rot, p.wx, p.wy, p.s);
+    for (const p of game.decor) Models.drawShadow(ctx, p.model, p.rot, p.wx, p.wy, p.s);
+    Models.drawShadow(ctx, 'p3d_base_hq', 0, game.baseW.x, game.baseW.y);
+    for (const g of game.gates) Models.drawShadow(ctx, 'p3d_spawn_gate', g.rot, g.x, g.y);
+    for (const t of game.towers) {
+      const TS = TOWER_SCALE * (1 + 0.08 * ((t.level || 1) - 1));
+      const pop = t.built < 0.3 ? 1 - Math.pow(1 - t.built / 0.3, 3) : 1;
+      ctx.globalAlpha = 0.9 * pop;
+      if (!Models.drawShadow(ctx, t.def.model, Models.frameFor(t.def.model, t.ang), t.wx, t.wy, TS)) ctx.drawImage(fx.shadow, t.wx - 66, t.wy - 22, 132, 58);
+    }
     for (const e of game.enemies) {
       const m = Models.meta(e.def.model);
       const s = (m ? m.w * m.scale * 0.6 : 60) * e.def.scale;
       ctx.globalAlpha = e.air ? 0.3 : 0.55;
-      ctx.drawImage(fx.shadow, e.wx - s / 2, e.wy - s * 0.18, s, s * 0.4);
+      const off = e.air ? s * 0.35 : s * 0.08;
+      ctx.drawImage(fx.shadow, e.wx - s / 2 + off, e.wy - s * 0.18 + off * 0.4, s, s * 0.4);
     }
     ctx.globalAlpha = 1;
 
     const list = this._list || (this._list = []);
     list.length = 0;
     for (const p of game.props) list.push({ y: p.wy, o: p, k: 0 });
+    for (const p of game.decor) list.push({ y: p.wy, o: p, k: 0 });
     for (const t of game.towers) list.push({ y: t.wy, o: t, k: 1 });
     for (const e of game.enemies) if (!e.air) list.push({ y: e.wy, o: e, k: 2 });
     list.push({ y: game.baseW.y + HH, o: game.baseW, k: 3 });
-    for (const p of game.level.paths) {
-      const w = toWorld(p.spawn[0] + 1, p.spawn[1] + 1);
-      const r0 = p.pts[0], r1 = p.pts[1];
-      list.push({ y: w.y + HH, o: { x: w.x, y: w.y, flip: (r1[0] - r0[0]) > (r1[1] - r0[1]) }, k: 4 });
-    }
+    for (const g of game.gates) list.push({ y: g.y + HH, o: g, k: 4 });
     list.sort((a, b) => a.y - b.y);
     for (const it of list) {
       if (it.k === 0) this.drawProp(ctx, it.o);
       else if (it.k === 1) this.drawTower(ctx, it.o, ui);
       else if (it.k === 2) this.drawEnemy(ctx, it.o);
-      else if (it.k === 3) this.drawStructure(ctx, 'base_hq', it.o.x, it.o.y, 236, 70, false);
-      else if (it.k === 4) this.drawStructure(ctx, 'spawn_gate', it.o.x, it.o.y, 220, 62, it.o.flip);
+      else if (it.k === 3) Models.draw(ctx, 'p3d_base_hq', 0, it.o.x, it.o.y);
+      else if (it.k === 4) this.drawGate(ctx, it.o);
     }
     const air = game.enemies.filter(e => e.air).sort((a, b) => a.wy - b.wy);
     for (const e of air) this.drawEnemy(ctx, e);
@@ -400,24 +407,17 @@ export class Renderer {
   }
 
   drawProp(ctx, p) {
-    const img = Assets.img[p.sprite];
-    if (!img) return;
-    const w = PROP_W[p.sprite] || 130, h = w * img.h / img.w;
-    if (p.flip) { ctx.save(); ctx.translate(p.wx, 0); ctx.scale(-1, 1); ctx.drawImage(img.n, -w / 2, p.wy + 22 - h, w, h); ctx.restore(); }
-    else ctx.drawImage(img.n, p.wx - w / 2, p.wy + 22 - h, w, h);
+    Models.draw(ctx, p.model, p.rot, p.wx, p.wy, p.s);
   }
-  drawStructure(ctx, name, x, y, w, foot, flip) {
-    const img = Assets.img[name];
-    if (!img) return;
-    const h = w * img.h / img.w;
-    if (flip) { ctx.save(); ctx.translate(x, 0); ctx.scale(-1, 1); ctx.drawImage(img.n, -w / 2, y + foot - h, w, h); ctx.restore(); }
-    else ctx.drawImage(img.n, x - w / 2, y + foot - h, w, h);
-    if (name === 'spawn_gate') {
-      ctx.globalCompositeOperation = 'lighter';
-      ctx.globalAlpha = 0.35 + 0.25 * Math.sin(this.time * 3);
-      ctx.drawImage(Assets.fx.red, x - 75 + (flip ? 30 : -30), y - 115, 150, 150);
-      ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
-    }
+  // spawn gate: 3D bunker with a pulsing red glow in its opening (towards the road)
+  drawGate(ctx, g) {
+    Models.draw(ctx, 'p3d_spawn_gate', g.rot, g.x, g.y);
+    const a = g.dir * Math.PI / 2, ox = Math.cos(a) * 0.75, oy = Math.sin(a) * 0.75;
+    const x = g.x + (ox - oy) * HW, y = g.y + (ox + oy) * HH - 26;
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = 0.3 + 0.2 * Math.sin(this.time * 3);
+    ctx.drawImage(Assets.fx.red, x - 60, y - 60, 120, 120);
+    ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
   }
 
   // level-dependent energy ring under the tower (tower colour)

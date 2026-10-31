@@ -1,13 +1,14 @@
 // Core simulation: grid, routes, towers (turret aiming), enemies (attack towers), projectiles, waves.
 import {
-  TOWERS, ENEMIES, MAX_LEVEL, TOWER_SCALE, UPGRADE_TIME, WAVE_GAP, SELL_RATE, FULL_REFUND_TIME, towerStats, upgradeCost, totalInvested,
+  TOWERS, ENEMIES, BIOMES, MAX_LEVEL, TOWER_SCALE, UPGRADE_TIME, WAVE_GAP, SELL_RATE, FULL_REFUND_TIME, towerStats, upgradeCost, totalInvested,
 } from './config.js';
 import { getLevel, makeWaves, hpMultiplier, NEW_ENEMY_TIP } from './levels.js';
-import { toWorld, rand } from './iso.js';
+import { toWorld, rand, mulberry32 } from './iso.js';
 import { FX } from './fx.js';
 import { sfx } from './audio.js';
 import { Models } from './assets.js';
 
+const TALL_DECOR = new Set(['prop_tree', 'prop_j_tree', 'prop_i_pine', 'prop_v_spire']);
 export const CELL = { FREE: 0, ROAD: 1, BLOCK: 2, SPAWN: 3, BASE: 4, TOWER: 5 };
 const TAU = Math.PI * 2;
 let uid = 1;
@@ -99,10 +100,43 @@ export class Game {
       if (this.cell(x, y) !== CELL.FREE) continue;
       this.setCell(x, y, CELL.BLOCK);
       const w = toWorld(x + 0.5, y + 0.5);
-      this.props.push({ sprite, cx: x, cy: y, wx: w.x, wy: w.y, flip: ((x * 7 + y * 13) % 2) === 1 });
+      // 3D prop: one of 4 baked rotations and a little size variation
+      const h = (x * 73856093) ^ (y * 19349663);
+      this.props.push({ model: 'p3d_' + sprite, cx: x, cy: y, wx: w.x, wy: w.y, rot: (h >>> 3) & 3, s: 0.9 + ((h >>> 7) % 9) / 40 });
+    }
+    // small non-blocking decoration (bushes, rocks, debris) clustered around props and the map edge;
+    // building on a cell clears it
+    const B = BIOMES[L.biome], r = mulberry32(L.seed * 31 + 7);
+    const tot = B.decor.reduce((a, d) => a + d[3], 0);
+    this.decor = [];
+    for (let y = 0; y < this.N; y++) for (let x = 0; x < this.N; x++) {
+      if (this.cell(x, y) !== CELL.FREE) continue;
+      let near = 0, road = false;
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+        const c = this.cell(x + dx, y + dy);
+        if (c === CELL.BLOCK && x + dx >= 0 && y + dy >= 0 && x + dx < this.N && y + dy < this.N) near++;
+        if (c === CELL.ROAD || c === CELL.SPAWN || c === CELL.BASE) road = true;
+      }
+      const edge = x === 0 || y === 0 || x === this.N - 1 || y === this.N - 1;
+      if (r() > B.decorDensity * (1 + near * 1.3 + (edge ? 0.8 : 0)) * (road ? 0.5 : 1)) continue;
+      let k = r() * tot, d = B.decor[0];
+      for (const it of B.decor) { k -= it[3]; if (k <= 0) { d = it; break; } }
+      // tall decoration would hide units on the road: only low items next to it
+      if (road && TALL_DECOR.has(d[0])) d = B.decor.find(it => !TALL_DECOR.has(it[0])) || d;
+      const w = toWorld(x + 0.5 + (r() - 0.5) * 0.36, y + 0.5 + (r() - 0.5) * 0.36);
+      this.decor.push({ model: 'p3d_' + d[0], cx: x, cy: y, wx: w.x, wy: w.y, rot: Math.floor(r() * 4), s: d[1] + r() * (d[2] - d[1]) });
     }
     const b = toWorld(L.base[0] + 1, L.base[1] + 1);
     this.baseW = b;
+    // spawn gates (2x2 cells), opening turned towards the first road segment
+    // gate model: the opening faces grid angle 90° + 90°·frame
+    this.gates = L.paths.map((p) => {
+      const w = toWorld(p.spawn[0] + 1, p.spawn[1] + 1);
+      const r0 = p.pts[0], r1 = p.pts[1];
+      const th = Math.round(Math.atan2(r1[1] - r0[1], r1[0] - r0[0]) / (Math.PI / 2));
+      const rot = (((th - 1) % 4) + 4) % 4;
+      return { x: w.x, y: w.y, rot, dir: th };
+    });
   }
 
   emit(type, data) { this.events.push({ type, ...data }); }
@@ -126,6 +160,7 @@ export class Game {
     };
     this.towers.push(t);
     this.setCell(cx, cy, CELL.TOWER);
+    this.decor = this.decor.filter(d => d.cx !== cx || d.cy !== cy);
     this.fx.dust(w.x, w.y + 8, 1.2);
     this.fx.add({ k: 'ring', x: w.x, y: w.y + 10, r0: 20, r1: 80, life: 0.4, c: '200,220,255' });
     sfx('build');
@@ -196,8 +231,9 @@ export class Game {
     t.lastHit = this.time;
     if (t.hp <= 0) {
       this.removeTower(t);
-      this.fx.bigExplosion(t.wx, t.wy - 30, 1.6);
-      this.fx.debris(t.wx, t.wy - 20, 16, 300);
+      this.fx.bigExplosion(t.wx, t.wy - 10, 1.6, 'heavy');
+      this.fx.boom(t.wx, t.wy + 10, 200, 1.1, 'ground');
+      this.fx.debris(t.wx, t.wy - 20, 18, 320);
       this.decals.push({ x: t.wx, y: t.wy, s: 150 });
       this.emit('toast', { text: `${t.def.name} wurde zerstört!`, bad: true });
       this.emit('towerLost', { t });
@@ -298,8 +334,11 @@ export class Game {
     if (src) src.kills++;
     this.credits += e.reward;
     const y = this.bodyY(e);
-    const big = e.def.boss ? 3.2 : e.def.cost >= 10 ? 1.8 : e.def.cost >= 5 ? 1.35 : e.type === 'spider' ? 0.8 : 1;
-    if (big >= 1.3) this.fx.bigExplosion(e.wx, y, big); else this.fx.explosion(e.wx, y, big);
+    const big = e.def.boss ? 3.0 : e.def.cost >= 10 ? 1.7 : e.def.cost >= 5 ? 1.3 : e.type === 'spider' ? 0.8 : 1;
+    // explosion style depends on what killed the machine
+    const sk = src && src.def ? src.def.kind : null;
+    const kind = sk === 'plasma' || sk === 'emp' || sk === 'laser' || sk === 'rail' ? 'plasma' : (!sk && e.burnT > 0) || sk === 'flame' ? 'burn' : 'fire';
+    this.fx.death(e, { x: e.wx, y, ground: !e.air, kind, scale: big, frame: Models.unitFrame(e) });
     this.fx.text(e.wx, y - 30 * big, `+${e.reward}`);
     if (!e.air) this.decals.push({ x: e.wx, y: e.wy, s: 70 * Math.min(big, 2.4) });
     sfx('explosion', big >= 1.6);
@@ -759,7 +798,8 @@ export class Game {
           if (s.trail <= 0) { s.trail = 0.025; this.fx.trail(s.x, s.y); }
           if (d < 16 || s.life <= 0) {
             s.dead = true;
-            this.fx.explosion(s.tx, s.ty, s.k === 'missile' ? 0.65 + 0.12 * (s.big || 1) : 0.6);
+            const onGround = s.k === 'missile' && s.target && !s.target.air;
+            this.fx.explosion(s.tx, s.ty, s.k === 'missile' ? 0.65 + 0.12 * (s.big || 1) : 0.6, onGround && Math.random() < 0.5 ? 'ground' : 'fire');
             if (s.k === 'missile') this.explode(s.tgx, s.tgy, s.dmg, s.splash, { airBonus: s.airBonus, src: s.src });
             else this.damageTower(s.tower, s.dmg);
             sfx('explosion');
@@ -804,7 +844,9 @@ export class Game {
           if (s.trail <= 0) { s.trail = 0.04; this.fx.trail(s.x, s.y); }
           if (k >= 1) {
             s.dead = true;
-            this.fx.bigExplosion(s.tx, s.ty - 20, s.enemy ? 1.0 : 1.15 * (s.big || 1));
+            this.fx.boom(s.tx, s.ty + 6, 150 * (s.enemy ? 1 : 1.1 * (s.big || 1)), 1.0, 'ground');
+            this.fx.explosion(s.tx, s.ty - 14, s.enemy ? 0.7 : 0.8 * (s.big || 1), 'fire');
+            this.fx.add({ k: 'ring', x: s.tx, y: s.ty, r0: 10, r1: 110 * (s.big || 1), life: 0.4, c: '230,200,150' });
             this.decals.push({ x: s.tx, y: s.ty, s: 90 });
             if (s.enemy) this.damageTowersArea(s.tgx, s.tgy, s.dmg, s.splash);
             else this.explode(s.tgx, s.tgy, s.dmg, s.splash, { air: false, src: s.src });
