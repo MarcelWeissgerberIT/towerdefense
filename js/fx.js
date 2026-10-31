@@ -35,6 +35,12 @@ export class FX {
       this.add({ k: 'smoke', x: x + Math.cos(a) * 20, y: y + Math.sin(a) * 10, vx: Math.cos(a) * 50, vy: Math.sin(a) * 20 - 8, s: 22 * scale, grow: 40 * scale, life: 0.9, a: 0.5 });
     }
   }
+  footDust(x, y, scale = 1) {
+    for (let i = 0; i < 3; i++) {
+      const a = Math.random() * Math.PI * 2;
+      this.add({ k: 'smoke', x: x + Math.cos(a) * 10 * scale, y: y + Math.sin(a) * 5 * scale, vx: Math.cos(a) * 18 * scale, vy: Math.sin(a) * 8 - 6, s: 12 * scale, grow: 22 * scale, life: 0.7, a: 0.32 });
+    }
+  }
   // video fireball (sprite sheet) + procedural layers
   boom(x, y, size, life = 0.95) { this.add({ k: 'boom', x, y, s: size, life, rot: rand(-0.3, 0.3), flip: Math.random() < 0.5 }); }
   explosion(x, y, scale = 1) {

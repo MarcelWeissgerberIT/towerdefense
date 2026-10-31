@@ -46,19 +46,29 @@
   "P": 128
  },
  "enemy_android": {
+  "url": "glb/enemy_android_walk.glb",
   "mode": "unit",
   "frames": 16,
   "size": 0.95,
   "byHeight": true,
-  "yaw0": -90,
-  "P": 128
+  "yaw0": 90,
+  "P": 120,
+  "pad": 0.08,
+  "anim": {
+   "frames": 8
+  }
  },
  "enemy_mech": {
+  "url": "glb/enemy_mech_walk.glb",
   "mode": "unit",
   "frames": 16,
   "size": 0.85,
   "yaw0": 90,
-  "P": 128
+  "P": 120,
+  "pad": 0.08,
+  "anim": {
+   "frames": 8
+  }
  },
  "enemy_tank": {
   "mode": "unit",
@@ -114,12 +124,17 @@
   "capR": 0.3
  },
  "enemy_shield": {
+  "url": "glb/enemy_shield_walk.glb",
   "mode": "unit",
   "frames": 16,
   "size": 1.0,
   "byHeight": true,
   "yaw0": 90,
-  "P": 128
+  "P": 120,
+  "pad": 0.08,
+  "anim": {
+   "frames": 8
+  }
  },
  "enemy_kamikaze": {
   "mode": "unit",

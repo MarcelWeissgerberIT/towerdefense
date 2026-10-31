@@ -57,8 +57,9 @@ export const Models = {
   frameFor(name, ang) {
     const m = this.data[name];
     if (!m || m.n <= 1) return 0;
-    let f = Math.round(ang / TAU * m.n) % m.n;
-    if (f < 0) f += m.n;
+    const dirs = m.af ? m.n / m.af : m.n;   // animated sheets: one row of af frames per direction
+    let f = Math.round(ang / TAU * dirs) % dirs;
+    if (f < 0) f += dirs;
     return f;
   },
   // draw frame f with the model anchor at (x, y) world px; s = extra scale

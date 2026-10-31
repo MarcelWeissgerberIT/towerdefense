@@ -459,20 +459,65 @@ export class Renderer {
     if (t.hp < t.stats.hp * 0.4 && Math.random() < 0.08) this.game.fx.smoke(t.wx + (Math.random() - 0.5) * 30, t.wy - 40, 1, 18, 1.4, true);
   }
 
+  // per-type locomotion: walk-cycle frames (rigged models) or procedural gait / hover / track motion
+  enemyPose(e, m) {
+    const def = e.def;
+    const stride = def.stride || 0.6;
+    const ph = e.walk / stride;                 // one step per stride
+    let bob = 0, roll = 0, dx = 0;
+    switch (def.motion) {
+      case 'biped': {
+        if (!m.af) { bob = Math.abs(Math.sin(ph * Math.PI)) * 2.2; roll = Math.sin(ph * Math.PI) * 0.035; }
+        else bob = 0;
+        break;
+      }
+      case 'walker': {
+        // heavy stomp: body rises during the swing and drops hard on footfall, rolls from leg to leg
+        const s = Math.sin(ph * Math.PI);
+        bob = Math.pow(Math.abs(s), 0.7) * (def.boss ? 5 : 3.2);
+        roll = s * (def.boss ? 0.025 : 0.04);
+        break;
+      }
+      case 'spider': {
+        bob = Math.abs(Math.sin(ph * Math.PI * 2)) * 1.8;
+        roll = Math.sin(ph * Math.PI * 2) * 0.05;
+        dx = Math.sin(ph * Math.PI * 4) * 0.8;
+        break;
+      }
+      case 'tracks': {
+        bob = Math.sin(this.time * 47 + e.id) * 0.5;
+        roll = Math.sin(this.time * 31 + e.id) * 0.006;
+        break;
+      }
+      case 'hover': {
+        bob = Math.sin(e.anim * 1.6 * Math.PI * 2) * 4;
+        roll = Math.max(-0.28, Math.min(0.28, -e.turnRate * 0.11)) + Math.sin(e.anim * 1.1) * 0.025;
+        break;
+      }
+    }
+    return { bob, roll, dx };
+  }
+
   drawEnemy(ctx, e) {
     const def = e.def, name = def.model;
     const m = Models.meta(name);
     if (!m) return;
-    const f = Models.frameFor(name, e.ang);
-    const bobHz = e.air ? 1.5 : 2 + def.speed * 3;
-    const bob = Math.sin(e.anim * bobHz * Math.PI * 2) * (e.air ? 4 : 1.6);
-    const lift = e.air ? def.lift * (e.liftMul ?? 1) + bob : Math.abs(bob);
+    let f = Models.frameFor(name, e.ang);
+    if (m.af) f = f * m.af + (Math.floor((e.walk / (def.cycle || 1.1)) * m.af) % m.af);
+    const pose = this.enemyPose(e, m);
+    const lift = e.air ? def.lift * (e.liftMul ?? 1) + pose.bob : pose.bob;
     const y = e.wy - lift;
-    Models.draw(ctx, name, f, e.wx, y, def.scale);
-    if (e.flash > 0) {
-      ctx.globalCompositeOperation = 'lighter';
-      Models.draw(ctx, name, f, e.wx, y, def.scale, Math.min(1, e.flash / 0.06) * 0.55);
-      ctx.globalCompositeOperation = 'source-over';
+    const x = e.wx + pose.dx;
+    if (pose.roll) {
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.rotate(pose.roll);
+      Models.draw(ctx, name, f, 0, 0, def.scale);
+      if (e.flash > 0) { ctx.globalCompositeOperation = 'lighter'; Models.draw(ctx, name, f, 0, 0, def.scale, Math.min(1, e.flash / 0.06) * 0.55); ctx.globalCompositeOperation = 'source-over'; }
+      ctx.restore();
+    } else {
+      Models.draw(ctx, name, f, x, y, def.scale);
+      if (e.flash > 0) { ctx.globalCompositeOperation = 'lighter'; Models.draw(ctx, name, f, x, y, def.scale, Math.min(1, e.flash / 0.06) * 0.55); ctx.globalCompositeOperation = 'source-over'; }
     }
     const cy = y - m.centerPx * def.scale;
     if (e.slowT > 0) {

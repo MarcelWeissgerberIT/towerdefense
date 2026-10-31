@@ -12,14 +12,14 @@ Isometrisches Tower Defense im Browser, gebaut für das iPhone (Touch, Safe Area
   Gatling-MG · Raketenwerfer · Plasmakanone · EMP-Turm · Flak · Flammenwerfer · Railgun · Laser · Mörser
 - **11 Gegnertypen:** Späher-Spinne, Endoskelett, Jäger-Drohne, Sturm-Mech, HK-Panzer, Schild-Android, Reparatur-Crawler, Kamikaze-Drohne, Belagerungs-Walker und die Bosse Koloss & Mutterschiff
 - **Gegner greifen an:** Mechs, Panzer, Drohnen, Walker und Bosse beschießen die Türme; Kamikaze-Drohnen stürzen sich auf sie. Türme haben Panzerung, regenerieren langsam und lassen sich reparieren.
-- **Echte 3D-Drehung:** Geschütztürme schwenken realistisch zum Ziel (32 Winkel), mit Rückstoß und Mündungsfeuer am echten Laufende; Gegner laufen in 16 Richtungen.
+- **Echte 3D-Drehung & Animation:** Geschütztürme schwenken realistisch zum Ziel (32 Winkel), mit Rückstoß und Mündungsfeuer am echten Laufende. Endoskelette, Schild-Androiden und Mechs haben echte Laufzyklen (Meshy-Rigging, 16 Richtungen × 8 Phasen, an die Laufgeschwindigkeit gekoppelt); Spinnen trippeln, Walker stampfen mit Staubwolken, Panzer vibrieren, Drohnen legen sich in die Kurve. Alle Einheiten laufen weiche Bögen durch Kurven.
 - **Effekte:** Explosionen aus einem echten Feuerball-Video, Druckwellen, Glutbrocken, Trümmer, Rauchsäulen, Brandspuren, Laserstrahlen, Flammenstrahl, Flak-Wolken, Kettenblitze, Biom-Atmosphäre (Asche, Glühwürmchen, Staub, Schnee, Glut)
 - **Einfache Touch-Bedienung:** Feld antippen → Ring-Menü → Turm 1× antippen (Vorschau + Reichweite) → nochmal antippen zum Bauen. Turm antippen → Upgrade, Reparieren, Zielmodus, Verkaufen. 1 Finger verschiebt, 2 Finger zoomen.
 
 ## Asset-Pipeline
 1. **OpenArt** (GPT Image 2): Konzeptbilder aller Türme und Gegner, Requisiten, Bodentexturen pro Biom, Titelbild; **OpenArt-Video** (PixVerse) für die Explosion.
-2. **Meshy** (Image-to-3D): aus jedem Turm-/Gegnerbild ein texturiertes PBR-3D-Modell (`tools/meshy.py`, Eingaben in `tools/meshy_jobs.json`; der API-Key wird nur per Umgebungsvariable übergeben und nie gespeichert).
-3. **Offline-Renderer** (`tools/render/`): Three.js rendert die Modelle headless exakt im Iso-Winkel des Spiels. Türme werden in Sockel + drehbaren Geschützkopf geteilt (32 Winkel, Mündungspunkte pro Frame), Gegner in 16 Richtungen → WebP-Sprite-Sheets in `assets/models/`.
+2. **Meshy** (Image-to-3D): aus jedem Turm-/Gegnerbild ein texturiertes PBR-3D-Modell (`tools/meshy.py`, Eingaben in `tools/meshy_jobs.json`); humanoide Gegner werden zusätzlich mit Meshy gerigged und bekommen eine Laufanimation (`tools/meshy_rig.py`). Der API-Key wird nur per Umgebungsvariable übergeben und nie gespeichert.
+3. **Offline-Renderer** (`tools/render/`): Three.js rendert die Modelle headless exakt im Iso-Winkel des Spiels. Türme werden in Sockel + drehbaren Geschützkopf geteilt (32 Winkel, Mündungspunkte pro Frame), Gegner in 16 Richtungen (animierte Modelle mit 8 Laufphasen pro Richtung, Root-Motion herausgerechnet) → WebP-Sprite-Sheets in `assets/models/`.
 4. `tools/process_assets.py` stellt die 2D-Requisiten frei (weißer bzw. Magenta-Hintergrund, Kantenbereinigung), `tools/make_vfx.py` macht aus dem Explosions-Video ein RGBA-Sheet.
 5. `tools/gen_levels.mjs` generiert die 25 Karten (Pfade auf einem Grobraster, garantierter Bauplatz zwischen den Straßen), `tools/balance_sim.mjs` lässt einen Bot alle Level durchspielen.
 

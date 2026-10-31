@@ -12,12 +12,35 @@ export const CELL = { FREE: 0, ROAD: 1, BLOCK: 2, SPAWN: 3, BASE: 4, TOWER: 5 };
 const TAU = Math.PI * 2;
 let uid = 1;
 
+// Rounds every corner of the road polyline with a circular arc so units walk smooth curves
+// instead of pivoting on the spot.
+function smoothRoute(pts, r = 0.5) {
+  const out = [pts[0]];
+  for (let i = 1; i < pts.length - 1; i++) {
+    const [ax, ay] = pts[i - 1], [bx, by] = pts[i], [cx, cy] = pts[i + 1];
+    const l1 = Math.hypot(bx - ax, by - ay), l2 = Math.hypot(cx - bx, cy - by);
+    const rr = Math.min(r, l1 / 2, l2 / 2);
+    const d1 = [(bx - ax) / l1, (by - ay) / l1], d2 = [(cx - bx) / l2, (cy - by) / l2];
+    const p0 = [bx - d1[0] * rr, by - d1[1] * rr], p2 = [bx + d2[0] * rr, by + d2[1] * rr];
+    const steps = 7;
+    for (let k = 0; k <= steps; k++) {
+      const t = k / steps, u = 1 - t;
+      // quadratic Bezier with the corner as control point (close to a quarter circle)
+      out.push([u * u * p0[0] + 2 * u * t * bx + t * t * p2[0], u * u * p0[1] + 2 * u * t * by + t * t * p2[1]]);
+    }
+  }
+  out.push(pts[pts.length - 1]);
+  return out;
+}
+
 function buildRoute(pts) {
+  const spts = smoothRoute(pts);
   const seg = [];
   let total = 0;
-  for (let i = 0; i < pts.length - 1; i++) {
-    const [ax, ay] = pts[i], [bx, by] = pts[i + 1];
+  for (let i = 0; i < spts.length - 1; i++) {
+    const [ax, ay] = spts[i], [bx, by] = spts[i + 1];
     const len = Math.hypot(bx - ax, by - ay);
+    if (len < 1e-6) continue;
     seg.push({ ax, ay, dx: (bx - ax) / len, dy: (by - ay) / len, len, start: total });
     total += len;
   }
@@ -212,7 +235,7 @@ export class Game {
       gx: p.x, gy: p.y, wx: w.x, wy: w.y, rx: w.x, ry: w.y, ang: Math.atan2(p.dy, p.dx),
       off: rand(-0.16, 0.16), slowT: 0, slowF: 0, burnT: 0, burnDps: 0, flash: 0, flashCd: 0, anim: Math.random() * 10,
       alive: true, air: !!def.air, atkCool: rand(0.5, 1.5), atkTarget: null, reward: Math.round(def.reward * rewardMul),
-      spawnT: def.spawns ? def.spawns.every : 0, diving: null, healT: 0, hpMul,
+      spawnT: def.spawns ? def.spawns.every : 0, diving: null, healT: 0, hpMul, walk: Math.random() * 3, turnRate: 0,
     };
     this.enemies.push(e);
     return e;
@@ -523,6 +546,18 @@ export class Game {
     let sp = def.speed;
     if (e.slowT > 0) { e.slowT -= dt; sp *= 1 - e.slowF; if (e.slowT <= 0) e.slowF = 0; }
     e.d += sp * dt;
+    const prevStep = Math.floor(e.walk / (def.stride || 0.6));
+    e.walk += sp * dt;
+    e.turnRate = 0;
+    if (!e.air) {
+      if ((def.motion === 'walker' || def.motion === 'biped') && Math.floor(e.walk / (def.stride || 0.6)) !== prevStep) {
+        const heavy = def.motion === 'walker';
+        if (heavy || Math.random() < 0.25) this.fx.footDust(e.wx, e.wy, heavy ? (def.boss ? 1.8 : 1) : 0.5);
+        if (def.boss) this.fx.shake = Math.max(this.fx.shake, 2.2);
+      } else if (def.motion === 'tracks' && Math.random() < dt * 7) {
+        this.fx.footDust(e.wx - Math.cos(e.ang) * 18, e.wy - Math.sin(e.ang) * 9, 0.55);
+      }
+    }
     if (e.d >= e.route.total) {
       e.alive = false;
       this.lives = Math.max(0, this.lives - def.leak);
@@ -543,7 +578,9 @@ export class Game {
     e.wx = e.rx; e.wy = e.ry;
     const want = Math.atan2(p.dy, p.dx);
     const da = angDiff(e.ang, want);
-    e.ang += Math.abs(da) < 7 * dt ? da : Math.sign(da) * 7 * dt;
+    const step = Math.abs(da) < 6 * dt ? da : Math.sign(da) * 6 * dt;
+    e.ang += step;
+    e.turnRate = step / dt;
 
     // healing aura
     if (def.heal) {

@@ -38,7 +38,7 @@ for d in sorted(glob.glob(os.path.join(src, '*'))):
     x1, y1 = min(frames[0].width, x1 + 2), min(frames[0].height, y1 + 2)
     w, h = x1 - x0, y1 - y0
     n = len(frames)
-    cols = 8 if n >= 8 else n
+    cols = meta.get('af') or (8 if n >= 8 else n)
     rows = (n + cols - 1) // cols
     sheet = Image.new('RGBA', (cols * w, rows * h), (0, 0, 0, 0))
     for i, im in enumerate(frames):
@@ -49,6 +49,8 @@ for d in sorted(glob.glob(os.path.join(src, '*'))):
         'ax': round(meta['anchor'][0] - x0, 2), 'ay': round(meta['anchor'][1] - y0, 2),
         'P': meta.get('P'),
     }
+    if meta.get('af'):
+        out['af'] = meta['af']
     if base:
         base.crop((x0, y0, x1, y1)).save(os.path.join(dst, f'{name}_base.webp'), 'WEBP', quality=88, method=6)
         out['base'] = True

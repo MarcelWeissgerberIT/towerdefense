@@ -69,7 +69,8 @@ function collectVerts(root, filter) {
     const pos = o.geometry.attributes.position;
     const step = Math.max(1, Math.floor(pos.count / 6000));
     for (let i = 0; i < pos.count; i += step) {
-      v.fromBufferAttribute(pos, i).applyMatrix4(o.matrixWorld);
+      if (o.isSkinnedMesh) { o.getVertexPosition(i, v); v.applyMatrix4(o.matrixWorld); }
+      else v.fromBufferAttribute(pos, i).applyMatrix4(o.matrixWorld);
       if (!filter || filter(v)) out.push(v.clone());
     }
   });
@@ -83,14 +84,16 @@ window.renderModel = async function (opt) {
   const model = gltf.scene;
   model.traverse((o) => {
     if (o.isMesh) {
-      o.castShadow = true; o.receiveShadow = true;
+      o.castShadow = true; o.receiveShadow = true; o.frustumCulled = false;
       const mats = Array.isArray(o.material) ? o.material : [o.material];
       for (const m of mats) { if (m.map) m.map.anisotropy = 8; m.envMapIntensity = 1.0; }
     }
   });
   // normalise: feet at y=0; towers are centred + scaled on their base footprint (the turret axis),
   // units on their full bounding box
-  let box = new THREE.Box3().setFromObject(model);
+  model.updateMatrixWorld(true);
+  const pts0 = collectVerts(model);
+  let box = new THREE.Box3().setFromPoints(pts0);
   const sz = box.getSize(new THREE.Vector3());
   let ref = box;
   if (opt.mode === 'tower') {
@@ -107,8 +110,31 @@ window.renderModel = async function (opt) {
   const pivot = new THREE.Group(); pivot.add(inner);
   scene.add(pivot);
   current = { pivot };
+  // optional walk cycle (rigged Meshy GLB): sample the first clip, keep the hips in place
+  let mixer = null, clip = null, hips = null, hips0 = null;
+  if (opt.anim && gltf.animations.length) {
+    clip = gltf.animations[0];
+    mixer = new THREE.AnimationMixer(model);
+    mixer.clipAction(clip).play();
+    mixer.setTime(0);
+    model.traverse((o) => { if (!hips && o.isBone && /hip|pelvis/i.test(o.name)) hips = o; });
+    if (!hips) model.traverse((o) => { if (!hips && o.isBone) hips = o; });
+    pivot.updateMatrixWorld(true);
+    hips0 = hips.getWorldPosition(new THREE.Vector3());
+  }
+  const pose = (t) => {
+    if (!mixer) return;
+    mixer.setTime(t);
+    inner.position.set(0, 0, 0);
+    pivot.updateMatrixWorld(true);
+    const hp = hips.getWorldPosition(new THREE.Vector3());
+    // cancel root motion in the horizontal plane (pivot rotation applies afterwards)
+    const local = new THREE.Vector3(hp.x - hips0.x, 0, hp.z - hips0.z).applyAxisAngle(new THREE.Vector3(0, 1, 0), -pivot.rotation.y);
+    inner.position.set(-local.x, 0, -local.z);
+    pivot.updateMatrixWorld(true);
+  };
   pivot.updateMatrixWorld(true);
-  box = new THREE.Box3().setFromObject(pivot);
+  box = new THREE.Box3().setFromPoints(collectVerts(pivot));
   const H = box.max.y;
 
   const N = opt.frames || 16;
@@ -198,12 +224,17 @@ window.renderModel = async function (opt) {
     out.cutPx = toPx(new THREE.Vector3(0, cutY, 0))[1] - anchor[1];
   } else {
     out.frames = [];
+    const af = opt.anim ? opt.anim.frames : 1;
     for (let i = 0; i < N; i++) {
       const a = 2 * Math.PI * i / N;
       pivot.rotation.y = yaw0 - a;
-      pivot.updateMatrixWorld(true);
-      out.frames.push(shot());
+      for (let k = 0; k < af; k++) {
+        if (mixer) pose((k / af) * clip.duration);
+        pivot.updateMatrixWorld(true);
+        out.frames.push(shot());
+      }
     }
+    if (opt.anim) { out.af = af; out.clip = clip ? clip.duration : 0; if (mixer) pose(0); }
     // body centre (for aiming) in px relative to anchor
     out.center = toPx(new THREE.Vector3(0, H * 0.5, 0)).map((v, k) => v - anchor[k]);
     out.top = toPx(new THREE.Vector3(0, H, 0)).map((v, k) => v - anchor[k]);
