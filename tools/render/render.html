@@ -111,7 +111,7 @@ window.renderModel = async function (opt) {
   scene.add(pivot);
   current = { pivot };
   // optional walk cycle (rigged Meshy GLB): sample the first clip, keep the hips in place
-  let mixer = null, clip = null, hips = null, hips0 = null;
+  let mixer = null, clip = null, hips = null, hips0 = null, animYaw = null;
   if (opt.anim && gltf.animations.length) {
     clip = gltf.animations[0];
     mixer = new THREE.AnimationMixer(model);
@@ -121,6 +121,19 @@ window.renderModel = async function (opt) {
     if (!hips) model.traverse((o) => { if (!hips && o.isBone) hips = o; });
     pivot.updateMatrixWorld(true);
     hips0 = hips.getWorldPosition(new THREE.Vector3());
+    // facing from the skeleton: average ankle -> toe direction of both feet
+    const bone = (re) => { let b = null; model.traverse((o) => { if (!b && o.isBone && re.test(o.name)) b = o; }); return b; };
+    const pairs = [[/LeftFoot$/i, /LeftToe/i], [/RightFoot$/i, /RightToe/i]];
+    let fx = 0, fz = 0;
+    for (const [fa, ta] of pairs) {
+      const f = bone(fa), t = bone(ta);
+      if (!f || !t) continue;
+      const a = f.getWorldPosition(new THREE.Vector3()), b = t.getWorldPosition(new THREE.Vector3());
+      fx += b.x - a.x; fz += b.z - a.z;
+    }
+    const footYaw = (fx || fz) ? Math.atan2(fz, fx) : null;
+    if (opt.autoFacing && footYaw !== null) animYaw = footYaw;
+    console.log('feet point to (deg)', footYaw === null ? 'n/a' : (footYaw * 180 / Math.PI).toFixed(0));
   }
   const pose = (t) => {
     if (!mixer) return;
@@ -141,7 +154,7 @@ window.renderModel = async function (opt) {
   const cutY = opt.mode === 'tower' ? H * (opt.cut ?? 0.45) : null;
 
   // auto-detect forward direction / muzzle for turrets (farthest vertex from the axis above the cut)
-  let yaw0 = opt.yaw0 != null ? THREE.MathUtils.degToRad(opt.yaw0) : null;
+  let yaw0 = animYaw ?? (opt.yaw0 != null ? THREE.MathUtils.degToRad(opt.yaw0) : null);
   let muzzle = opt.muzzle ? new THREE.Vector3(...opt.muzzle) : null;
   let autoInfo = null;
   if (opt.mode === 'tower') {
