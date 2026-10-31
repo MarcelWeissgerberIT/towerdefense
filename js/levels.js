@@ -27,7 +27,7 @@ function rng(seed) {
   };
 }
 
-const GAP = { spider: 0.38, android: 0.8, drone: 0.85, mech: 1.7, tank: 2.1, shield: 1.2, repair: 1.6, kamikaze: 0.55, siege: 2.6, boss: 7, mothership: 7, infiltrator: 0.9, brood: 3.2, bomber: 2.6, aegis: 2.4 };
+const GAP = { spider: 0.38, android: 0.8, drone: 0.85, mech: 1.7, tank: 2.1, shield: 1.2, repair: 1.6, kamikaze: 0.55, siege: 2.6, boss: 7, mothership: 7, infiltrator: 0.9, brood: 3.2, bomber: 2.6, aegis: 2.4, saboteur: 1.6 };
 
 export function hpMultiplier(levelNum, wave) {
   const n = wave - 1;
@@ -58,7 +58,7 @@ export function makeWaves(level) {
       let count = Math.max(1, Math.round(budget * share / cost));
       // support / siege units are capped so a wave never consists of a healing or artillery blob
       const cap = { repair: 2 + Math.floor(lv / 8), siege: 2 + Math.floor(w / 8), shield: 4 + Math.floor(lv / 5), kamikaze: 8 + Math.floor(lv / 2),
-        spider: 24 + 2 * Math.floor(lv / 5), brood: 1 + Math.floor(w / 9), aegis: 2 + Math.floor(lv / 12), bomber: 2 + Math.floor(w / 7), infiltrator: 2 + Math.floor(lv / 6) + Math.floor(w / 6) }[type];
+        spider: 24 + 2 * Math.floor(lv / 5), brood: 1 + Math.floor(w / 9), aegis: 2 + Math.floor(lv / 12), bomber: 2 + Math.floor(w / 7), infiltrator: 2 + Math.floor(lv / 6) + Math.floor(w / 6), saboteur: 2 + Math.floor(lv / 8) }[type];
       if (cap && count > cap) {
         const rest = (count - cap) * cost;
         count = cap;

@@ -118,6 +118,69 @@ export function towerStats(type, level) {
   };
 }
 export const upgradeCost = (type, level) => Math.round(TOWERS[type].cost * 0.8 * level);
+
+// specializations: once a tower reaches level III it can pick one of two directions (mods multiply stats,
+// set overrides them, add adds to them; pierce = share of the target's armour that is ignored)
+export const SPECS = {
+  gatling: [
+    { id: 'ap', name: 'Uranmunition', desc: 'Durchschlägt 60 % der Panzerung, +40 % Schaden', mods: { dmg: 1.4 }, pierce: 0.6 },
+    { id: 'twin', name: 'Doppellauf', desc: 'Doppelte Feuerrate', mods: { rate: 2 } },
+  ],
+  missile: [
+    { id: 'heavy', name: 'Schwere Sprengköpfe', desc: '+70 % Schaden, +50 % Explosionsradius', mods: { dmg: 1.7, splash: 1.5, rate: 0.85 } },
+    { id: 'salvo', name: 'Salvenwerfer', desc: '+90 % Feuerrate, +15 % Reichweite', mods: { rate: 1.9, range: 1.15 } },
+  ],
+  plasma: [
+    { id: 'over', name: 'Überladung', desc: '+80 % Schaden, größere Plasmawolke', mods: { dmg: 1.8, splash: 1.4, rate: 0.9 } },
+    { id: 'cap', name: 'Schnellkondensator', desc: '+80 % Feuerrate, +10 % Reichweite', mods: { rate: 1.8, range: 1.1 } },
+  ],
+  emp: [
+    { id: 'storm', name: 'Kettensturm', desc: 'Springt auf 4 weitere Ziele, +50 % Schaden', mods: { dmg: 1.5 }, add: { chain: 4 } },
+    { id: 'stasis', name: 'Stasisfeld', desc: 'Verlangsamt um 80 %, feuert öfter', mods: { rate: 1.3 }, set: { slow: 0.8 } },
+  ],
+  flak: [
+    { id: 'shrap', name: 'Splitterhagel', desc: '+60 % Splitterradius, +35 % Schaden', mods: { splash: 1.6, dmg: 1.35 } },
+    { id: 'radar', name: 'Abfangradar', desc: '+35 % Reichweite, +30 % Feuerrate', mods: { range: 1.35, rate: 1.3 } },
+  ],
+  flame: [
+    { id: 'napalm', name: 'Napalm', desc: 'Brand mehr als doppelt so stark', mods: { burn: 2.3, dps: 1.15 } },
+    { id: 'torch', name: 'Plasmabrenner', desc: '+70 % Flammenschaden, +15 % Reichweite', mods: { dps: 1.7, range: 1.15 } },
+  ],
+  rail: [
+    { id: 'gauss', name: 'Gauß-Beschleuniger', desc: '+80 % Schaden, +10 % Reichweite', mods: { dmg: 1.8, range: 1.1 } },
+    { id: 'coil', name: 'Schnellspule', desc: 'Doppelte Feuerrate, −20 % Schaden', mods: { rate: 2, dmg: 0.8 } },
+  ],
+  laser: [
+    { id: 'focus', name: 'Fokuslinse', desc: '+60 % Strahlstärke', mods: { dps: 1.6 } },
+    { id: 'optic', name: 'Weitwinkel-Optik', desc: '+35 % Reichweite, +15 % Strahlstärke', mods: { range: 1.35, dps: 1.15 } },
+  ],
+  acid: [
+    { id: 'conc', name: 'Hochkonzentrat', desc: 'Doppelte Ätzwirkung, +30 % Schaden', mods: { acid: 2, dmg: 1.3 } },
+    { id: 'spray', name: 'Streuwerfer', desc: '+60 % Radius, +40 % Feuerrate', mods: { splash: 1.6, rate: 1.4 } },
+  ],
+  mortar: [
+    { id: 'cluster', name: 'Streubomben', desc: '+50 % Radius, +30 % Schaden', mods: { splash: 1.5, dmg: 1.3 } },
+    { id: 'auto', name: 'Schnelllader', desc: '+90 % Feuerrate', mods: { rate: 1.9 } },
+  ],
+  cryo: [
+    { id: 'deep', name: 'Tiefkühlung', desc: 'Friert fast doppelt so schnell ein', mods: { frost: 1.9 } },
+    { id: 'shard', name: 'Eissplitter', desc: 'Kältestrahl macht 2,2× Schaden, +10 % Reichweite', mods: { dps: 2.2, range: 1.1 } },
+  ],
+};
+export const specCost = (type) => Math.round(TOWERS[type].cost * 2.2);
+
+// commander perks: bought with earned stars between missions (campaign only), 3 levels each
+export const PERKS = [
+  { id: 'credits', name: 'Kriegskasse', icon: 'credits', desc: '+8 % Startkapital pro Stufe', per: 0.08 },
+  { id: 'reward', name: 'Beutejäger', icon: 'gold', desc: '+6 % Credits pro Abschuss pro Stufe', per: 0.06 },
+  { id: 'dmg', name: 'Hohlladungen', icon: 'damage', desc: '+5 % Turmschaden pro Stufe', per: 0.05 },
+  { id: 'range', name: 'Zielsysteme', icon: 'range', desc: '+4 % Turmreichweite pro Stufe', per: 0.04 },
+  { id: 'repair', name: 'Pioniere', icon: 'wrench', desc: 'Türme reparieren sich 35 % schneller, Upgrades 12 % schneller pro Stufe', per: 0.35 },
+  { id: 'cd', name: 'Satellitennetz', icon: 'orbital', desc: 'Spezialwaffen laden 9 % schneller pro Stufe', per: 0.09 },
+  { id: 'lives', name: 'Bunker', icon: 'lives', desc: '+2 Basis-Leben pro Stufe', per: 2 },
+  { id: 'drops', name: 'Nachschub', icon: 'star', desc: 'Power-ups 15 % häufiger und 20 % länger pro Stufe', per: 0.15 },
+];
+export const PERK_COST = [3, 5, 8];
 export function totalInvested(type, level) {
   let c = TOWERS[type].cost;
   for (let l = 1; l < level; l++) c += upgradeCost(type, l);
@@ -148,14 +211,22 @@ export const ENEMIES = {
   brood:    { cls: 'armored', info: 'Wandelnde Spinnenbrut. Setzt unterwegs Späher-Spinnen aus und zerplatzt beim Tod in einen ganzen Schwarm.', motion: 'walker', stride: 0.8, name: 'Brutmutter', model: 'enemy_brood', hp: 780, speed: 0.48, armor: 4, reward: 45, leak: 3, cost: 14, scale: 0.85, spawns: { type: 'spider', every: 4.5, count: 2 }, burst: { type: 'spider', count: 6 } },
   bomber:   { cls: 'air', info: 'Schwerer Bomber. Fliegt über deine Stellungen und wirft Bombenteppiche auf die Türme darunter.', motion: 'hover', name: 'Bomber', model: 'enemy_bomber', hp: 520, speed: 0.6, armor: 4, reward: 38, leak: 3, cost: 12, scale: 0.85, air: true, lift: 70, bomb: { every: 2.4, dmg: 55, splash: 0.85, range: 1.15 } },
   aegis:    { cls: 'armored', info: 'Mobiler Schildprojektor. Lädt die Energieschilde aller Maschinen in seiner Nähe auf – zuerst ausschalten!', motion: 'tracks', name: 'Schildprojektor', model: 'enemy_aegis', hp: 460, speed: 0.62, armor: 4, reward: 34, leak: 2, cost: 11, scale: 0.85, project: { every: 3.5, range: 1.9, shield: 110 } },
+  saboteur: { cls: 'light', info: 'Hacker-Einheit. Bleibt neben einem Turm stehen und legt ihn lahm, solange er lebt – höchstens 12 Sekunden, dann zieht er zum nächsten. Sofort abschießen!', motion: 'biped', name: 'Saboteur', model: 'enemy_saboteur', hp: 190, speed: 1.05, armor: 1, reward: 16, leak: 1, cost: 5, scale: 0.9, hack: { range: 1.35, max: 12, cd: 3 } },
   mothership: { cls: 'air', info: 'Fliegende Festung. Setzt unterwegs laufend Kamikaze-Drohnen aus.', motion: 'hover', name: 'Mutterschiff',  model: 'enemy_mothership', hp: 3000, speed: 0.42, armor: 6, reward: 280, leak: 8, cost: 80, scale: 0.78, boss: true, air: true, lift: 84,
     atk: { dmg: 30, range: 3.2, rate: 1.1, kind: 'missile' }, spawns: { type: 'kamikaze', every: 6.5, count: 2 } },
+};
+
+// boss fight phases: rage at 50 % HP (faster, armour plates shed, energy shield, reinforcements),
+// overload at 20 % (EMP pulse that jams nearby towers)
+export const BOSS = {
+  rage: { at: 0.5, speed: 1.35, armor: 0.6, atk: 1.6, shield: 0.12, escort: { ground: ['mech', 'android', 'shield', 'android', 'mech', 'android'], air: ['kamikaze', 'drone', 'kamikaze', 'drone', 'kamikaze', 'kamikaze'] } },
+  overload: { at: 0.2, range: 3.0, jam: 4.5 },
 };
 
 // level number at which each regular enemy type starts appearing
 export const ENEMY_UNLOCK = {
   android: 1, spider: 1, drone: 2, mech: 3, tank: 4, repair: 6, shield: 8, kamikaze: 11, siege: 13,
-  infiltrator: 14, brood: 17, bomber: 21, aegis: 23,
+  infiltrator: 14, brood: 17, saboteur: 19, bomber: 21, aegis: 23,
 };
 
 export const BIOMES = {
@@ -224,6 +295,17 @@ BIOMES.city = {
   bg: ['#151a26', '#0b0e15', '#040508'], ambient: 'embers', roadEdge: 'rgba(8,8,10,0.4)',
 };
 export const BIOME_ORDER = ['wasteland', 'jungle', 'desert', 'ice', 'volcano', 'city'];
+
+// weather events: from wave 3, a wave can bring weather that lasts dur seconds
+export const WEATHER = {
+  sandstorm: { name: 'Sandsturm', icon: 'speed', color: '#e0b070', desc: 'Sicht −20 % Reichweite, Rückenwind: Gegner +15 % schneller', range: 0.8, speed: 1.15 },
+  fog:       { name: 'Dichter Nebel', icon: 'range', color: '#cfd8e0', desc: 'Sichtweite der Türme −35 %', range: 0.65 },
+  storm:     { name: 'Gewitter', icon: 'overdrive', color: '#9fc8ff', desc: 'Blitze schlagen ein – meist in Maschinen, manchmal in deine Türme. Flieger −30 % Tempo', airSpeed: 0.7, bolt: { every: [1.6, 3.2], r: 0.9, dmg: 340, towerDmg: 0.15, towerChance: 0.22 } },
+  blizzard:  { name: 'Schneesturm', icon: 'frost', color: '#e8f6ff', desc: 'Gegner −25 % Tempo, Türme feuern 15 % langsamer', speed: 0.75, rate: 0.85 },
+  meteor:    { name: 'Meteorschauer', icon: 'nuke', color: '#ff8a4a', desc: 'Glühende Brocken schlagen ein – Maschinen wie Türme. Auf die Warnkreise achten!', bolt: { every: [2.2, 4], r: 1.1, dmg: 520, towerDmg: 0.3, towerChance: 0.3, delay: 1.1 } },
+};
+export const BIOME_WEATHER = { wasteland: ['sandstorm', 'storm'], jungle: ['storm', 'fog'], desert: ['sandstorm', 'storm'], ice: ['blizzard', 'fog'], volcano: ['meteor', 'storm'], city: ['storm', 'fog'] };
+export const WEATHER_CFG = { from: 3, chance: 0.3, dur: 55 };
 
 // ---- special abilities ----
 // nuclear strike: charged by the credits earned from kills (from mission 5)

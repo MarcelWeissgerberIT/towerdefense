@@ -1,5 +1,5 @@
 // Isometric canvas renderer
-import { HW, HH, TOWERS, BIOMES, TOWER_SCALE, ELEV_PX, NUKE, POWERUPS, HOLE } from './config.js';
+import { HW, HH, TOWERS, BIOMES, TOWER_SCALE, ELEV_PX, NUKE, POWERUPS, HOLE, WEATHER } from './config.js';
 import { toWorld, toGrid, mulberry32, clamp } from './iso.js';
 import { Assets, Models, drawIcon } from './assets.js';
 import { CELL } from './game.js';
@@ -539,6 +539,7 @@ export class Renderer {
     this.drawShots(ctx, game.shots);
     this.drawStrikes(ctx, game);
     this.drawNukes(ctx, game);
+    this.drawWeatherStrikes(ctx, game);
     for (const h of game.holes) this.drawHole(ctx, h);
     if (ui.aim) this.drawAimTop(ctx, game, ui);
     this.drawDrops(ctx, game);
@@ -551,6 +552,8 @@ export class Renderer {
 
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     this.drawAmbient(ctx, dt);
+    if (game.weather) this.drawWeather(ctx, game, dt);
+    else this._wp = null;
     this.drawOffscreen(ctx, game);
     if (game.cine) {
       const c = game.cine, end = c.pre + c.freeze + c.slow + c.ramp;
@@ -583,6 +586,70 @@ export class Renderer {
     }
   }
 
+  // ---- weather (screen space): tinted air, rain / sand / snow / fog / embers, lightning flash ----
+  drawWeather(ctx, game, dt) {
+    const w = game.weather, W = this.vw, H = this.vh, type = w.type;
+    const f = Math.max(0, Math.min(1, w.t / 2, (w.dur - w.t) / 2));
+    const n = { sandstorm: 140, fog: 8, storm: 170, blizzard: 230, meteor: 60 }[type];
+    if (!this._wp || this._wp.type !== type) {
+      this._wp = { type, p: [] };
+      for (let i = 0; i < n; i++) this._wp.p.push({ x: Math.random(), y: Math.random(), v: 0.6 + Math.random() * 0.8, s: Math.random() });
+    }
+    ctx.save();
+    const tint = { sandstorm: 'rgba(170,120,60,0.26)', fog: 'rgba(205,212,220,0.2)', storm: 'rgba(8,16,36,0.32)', blizzard: 'rgba(225,238,255,0.16)', meteor: 'rgba(70,14,0,0.2)' }[type];
+    ctx.globalAlpha = f; ctx.fillStyle = tint; ctx.fillRect(0, 0, W, H);
+    for (const p of this._wp.p) {
+      if (type === 'sandstorm') {
+        p.x += p.v * dt * 0.9; p.y += p.v * dt * 0.12;
+        ctx.globalAlpha = f * (0.25 + 0.3 * p.s); ctx.strokeStyle = '#e8c08a'; ctx.lineWidth = 1 + p.s;
+        ctx.beginPath(); ctx.moveTo(p.x * W, p.y * H); ctx.lineTo(p.x * W - 30 - 40 * p.s, p.y * H - 5); ctx.stroke();
+      } else if (type === 'storm') {
+        p.x -= p.v * dt * 0.25; p.y += p.v * dt * 2.2;
+        ctx.globalAlpha = f * (0.25 + 0.25 * p.s); ctx.strokeStyle = '#a8c4e8'; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(p.x * W, p.y * H); ctx.lineTo(p.x * W + 6, p.y * H - 22); ctx.stroke();
+      } else if (type === 'blizzard') {
+        p.x += p.v * dt * 0.45; p.y += p.v * dt * 0.55;
+        ctx.globalAlpha = f * (0.5 + 0.4 * p.s); ctx.fillStyle = '#fff';
+        ctx.beginPath(); ctx.arc(p.x * W, p.y * H, 1 + 2 * p.s, 0, 6.28); ctx.fill();
+      } else if (type === 'fog') {
+        p.x += (0.012 + 0.01 * p.s) * dt;
+        const r = (0.35 + 0.3 * p.s) * Math.max(W, H);
+        const g = ctx.createRadialGradient(p.x * W, p.y * H, 0, p.x * W, p.y * H, r);
+        g.addColorStop(0, 'rgba(225,230,236,0.42)'); g.addColorStop(1, 'rgba(225,230,236,0)');
+        ctx.globalAlpha = f; ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+        if (p.x > 1.3) p.x = -0.3;
+        continue;
+      } else {
+        p.y -= p.v * dt * 0.12; p.x += Math.sin(this.time + p.s * 9) * dt * 0.02;
+        ctx.globalAlpha = f * (0.5 + 0.5 * Math.sin(this.time * 6 + p.s * 20)); ctx.fillStyle = '#ff9a40';
+        ctx.fillRect(p.x * W, p.y * H, 2 + 2 * p.s, 2 + 2 * p.s);
+      }
+      if (p.x > 1.05) p.x -= 1.1; if (p.x < -0.05) p.x += 1.1;
+      if (p.y > 1.05) p.y -= 1.1; if (p.y < -0.05) p.y += 1.1;
+    }
+    if (game.fx.lightning > 0) { ctx.globalAlpha = 1; ctx.fillStyle = `rgba(215,232,255,${0.45 * game.fx.lightning})`; ctx.fillRect(0, 0, W, H); }
+    ctx.restore();
+  }
+  // meteors: warning circle on the ground and the glowing rock coming down
+  drawWeatherStrikes(ctx, game) {
+    for (const b of game.strikesW) {
+      if (b.kind !== 'meteor' || b.t <= 0) continue;
+      const c = toWorld(b.gx, b.gy), k = 1 - b.t / b.dur, r = WEATHER.meteor.bolt.r;
+      const pul = 0.5 + 0.5 * Math.sin(this.time * 20);
+      ctx.save();
+      ctx.strokeStyle = `rgba(255,${100 + 100 * pul},40,0.9)`; ctx.lineWidth = 3;
+      ctx.setLineDash([12, 8]); ctx.lineDashOffset = -this.time * 60;
+      ctx.beginPath(); ctx.ellipse(c.x, c.y, r * HW * Math.SQRT2 * (1.2 - 0.2 * k), r * HH * Math.SQRT2 * (1.2 - 0.2 * k), 0, 0, Math.PI * 2); ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.globalCompositeOperation = 'lighter';
+      const mx = c.x + 420 * (1 - k), my = c.y - 1100 * (1 - k);
+      ctx.strokeStyle = 'rgba(255,150,60,0.6)'; ctx.lineWidth = 10 * k + 2;
+      ctx.beginPath(); ctx.moveTo(mx + 120, my - 300); ctx.lineTo(mx, my); ctx.stroke();
+      ctx.drawImage(Assets.fx.orange, mx - 40, my - 40, 80, 80);
+      ctx.drawImage(Assets.fx.white, mx - 14, my - 14, 28, 28);
+      ctx.restore();
+    }
+  }
   // nuke countdown: pulsing red alarm around the screen edge + big countdown (screen space)
   drawNukeAlarm(ctx, game) {
     const n = game.nukes[0], W = this.vw, H = this.vh;
@@ -1112,6 +1179,17 @@ export class Renderer {
     ctx.globalAlpha = (t.level === 3 ? 0.55 : 0.32) + 0.25 * pul;
     ctx.lineWidth = t.level === 3 ? 3.5 : 2.5;
     ctx.beginPath(); ctx.ellipse(t.wx, t.wy + 6, 56, 28, 0, 0, Math.PI * 2); ctx.stroke();
+    if (t.spec) {
+      // specialised: violet outer ring with four diamonds
+      ctx.strokeStyle = '#c58bff'; ctx.fillStyle = '#e2c4ff';
+      ctx.globalAlpha = 0.45 + 0.3 * pul; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.ellipse(t.wx, t.wy + 6, 74, 37, 0, 0, Math.PI * 2); ctx.stroke();
+      for (let i = 0; i < 4; i++) {
+        const a = this.time * 0.8 + i * Math.PI / 2, x = t.wx + Math.cos(a) * 74, y = t.wy + 6 + Math.sin(a) * 37;
+        ctx.beginPath(); ctx.moveTo(x, y - 6); ctx.lineTo(x + 5, y); ctx.lineTo(x, y + 6); ctx.lineTo(x - 5, y); ctx.closePath(); ctx.fill();
+      }
+      ctx.strokeStyle = col;
+    }
     if (t.level === 3) {
       ctx.globalAlpha = 0.25 + 0.2 * pul;
       ctx.lineWidth = 1.5;
@@ -1138,6 +1216,11 @@ export class Renderer {
     const dx = -(Math.cos(t.ang) - Math.sin(t.ang)) * rc * 0.7, dy = -(Math.cos(t.ang) + Math.sin(t.ang)) * rc * 0.35;
     const box = Models.draw(ctx, name, f, t.wx + dx, y + dy, TS);
     if (t.ghost) return;
+    // hacked by a saboteur / jammed by a boss EMP: glitching tint
+    if (t.hackedBy || t.jamT > 0) {
+      const gl = Math.random() < 0.15 ? (Math.random() - 0.5) * 8 : 0;
+      Models.drawTinted(ctx, name, f, t.wx + dx + gl, y + dy, TS, t.hackedBy ? 'hack' : 'ice', 0.25 + 0.2 * Math.sin(this.time * 14 + t.id));
+    }
     const glowA = (ui.selected === t ? 0.16 + 0.08 * Math.sin(this.time * 5) : 0)
       + (t.level === 3 ? 0.08 + 0.05 * Math.sin(this.time * 3 + t.id) : 0)
       + (t.powerUp || 0) * 0.7;
@@ -1293,6 +1376,7 @@ export class Renderer {
     else if (e.frost > 4) Models.drawTinted(ctx, name, f, x, y, s, 'ice', e.frost / 100 * 0.6);
     if (e.acidN > 0) Models.drawTinted(ctx, name, f, x, y, s, 'acid', 0.1 + 0.07 * e.acidN + 0.05 * Math.sin(this.time * 6 + e.id));
     if (e.radT > 0) Models.drawTinted(ctx, name, f, x, y, s, 'acid', Math.min(1, e.radT) * (0.18 + 0.14 * Math.sin(this.time * 9 + e.id)));
+    if (e.rage) Models.drawTinted(ctx, name, f, x, y, s, 'rage', 0.16 + 0.14 * Math.sin(this.time * 7));
   }
 
   drawEnemy(ctx, e, ghost = false) {
@@ -1408,6 +1492,19 @@ export class Renderer {
 
   drawBeams(ctx, game) {
     ctx.globalCompositeOperation = 'lighter';
+    // saboteur data links: flickering orange zigzag from the hacker's hands to the tower
+    for (const e of game.enemies) {
+      const t = e.hacking;
+      if (!t || !e.alive) continue;
+      const ax = e.wx, ay = game.bodyY(e) - 6, bx = t.wx, by = t.wy - 45;
+      ctx.strokeStyle = `rgba(255,${140 + Math.random() * 80},40,${0.55 + Math.random() * 0.4})`;
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(ax, ay);
+      for (let i = 1; i < 6; i++) { const u = i / 6; ctx.lineTo(ax + (bx - ax) * u + (Math.random() - 0.5) * 12, ay + (by - ay) * u + (Math.random() - 0.5) * 12); }
+      ctx.lineTo(bx, by); ctx.stroke();
+      ctx.drawImage(Assets.fx.orange, bx - 18, by - 18, 36, 36);
+      ctx.drawImage(Assets.fx.orange, ax - 10, ay - 10, 20, 20);
+    }
     for (const t of game.towers) {
       if (!t.firing || t.def.kind !== 'cryo' || !t.target) continue;
       const m = game.muzzle(t), a = game.aimPoint(t.target);

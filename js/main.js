@@ -1,5 +1,5 @@
 // Iron Sentinel – app controller: screens, HUD, build drawer, tower menu, game loop.
-import { TOWERS, ENEMIES, TOWER_ORDER, MAX_LEVEL, BIOMES, BIOME_ORDER, UPGRADE_TIME, ELEV_RANGE, CLASS_NAME, EFFECT, POWERUPS, NUKE, HOLE, DIFFICULTY, effectOf, upgradeCost, towerStats } from './config.js';
+import { TOWERS, ENEMIES, TOWER_ORDER, MAX_LEVEL, BIOMES, BIOME_ORDER, UPGRADE_TIME, ELEV_RANGE, CLASS_NAME, EFFECT, POWERUPS, NUKE, HOLE, DIFFICULTY, SPECS, PERKS, PERK_COST, WEATHER, specCost, effectOf, upgradeCost, towerStats } from './config.js';
 import { LEVEL_SPECS, LEVEL_COUNT, getLevel, makeWaves, hpMultiplier } from './levels.js';
 import { Assets, Models, drawIcon } from './assets.js';
 import { Renderer } from './render.js';
@@ -30,7 +30,7 @@ function showScreen(id) { for (const s of document.querySelectorAll('.screen')) 
 function hideScreens() { for (const s of document.querySelectorAll('.screen')) s.classList.add('hidden'); }
 function setInGameUI(on) {
   for (const id of ['hud', 'btn-wave']) $(id).classList.toggle('hidden', !on);
-  if (!on) { closeBuildMenu(); closeTowerMenu(); endAim(); $('nuke-flash').style.opacity = 0; hudCache.nukeFlash = 0; setXray(false); }
+  if (!on) { closeBuildMenu(); closeTowerMenu(); endAim(); $('nuke-flash').style.opacity = 0; hudCache.nukeFlash = 0; setXray(false); camTween = null; if (replay) endReplay(); $('btn-replay').classList.add('hidden'); $('boss-bar').classList.add('hidden'); document.body.classList.remove('boss'); hudCache.bossOn = false; }
 }
 function starsHTML(n) { let s = ''; for (let i = 0; i < 3; i++) s += i < n ? '★' : '<span class="off">★</span>'; return s; }
 
@@ -234,10 +234,18 @@ function updateTowerMenu(force) {
   const cost = maxed ? 0 : upgradeCost(t.type, t.level);
   const rc = game.repairCost(t);
   const prog = t.upgrading ? Math.floor(t.upgrading.t / t.upgrading.dur * 100) : -1;
-  const key = [t.id, t.level, t.mode, game.credits >= cost, maxed, game.sellValue(t), rc, Math.round(t.hp), prog, t.kills, t.rank].join('|');
+  const sc = SPECS[t.type] ? specCost(t.type) : 0;
+  const key = [t.id, t.level, t.mode, game.credits >= cost, maxed, game.sellValue(t), rc, Math.round(t.hp), prog, t.kills, t.rank, t.spec, game.credits >= sc].join('|');
   if (!force && key === tmCache) return;
   tmCache = key;
-  $('tm-name').textContent = def.name;
+  const spec = t.spec && SPECS[t.type].find(x => x.id === t.spec);
+  $('tm-name').innerHTML = spec ? `${def.name} <small class="tm-spec">◆ ${spec.name}</small>` : def.name;
+  // level III: choose a specialization
+  const box = $('tm-specs');
+  const choose = maxed && !t.spec && !t.upgrading && SPECS[t.type];
+  box.classList.toggle('hidden', !choose);
+  if (choose) box.innerHTML = `<div class="tm-spec-head">SPEZIALISIERUNG · ${IC('credits')} ${sc}</div>` + SPECS[t.type].map(x =>
+    `<button class="tm-spec-btn" data-spec="${x.id}" ${game.credits < sc ? 'disabled' : ''}><b>${x.name}</b><span>${x.desc}</span></button>`).join('');
   $('tm-level').textContent = ['I', 'II', 'III'][t.level - 1];
   $('tm-hpfill').style.width = `${Math.max(0, t.hp / s.hp) * 100}%`;
   const next = maxed ? null : game.statsFor(t.type, t.level + 1, t.cx, t.cy);
@@ -246,7 +254,8 @@ function updateTowerMenu(force) {
   $('tm-stats').innerHTML = `<span>${IC('damage')} ${dmg}${ndmg ? `<em>→${ndmg}</em>` : ''}</span><span>${IC('range')} ${s.range.toFixed(1)}</span><span>${IC('kills')} ${t.kills}${t.rank ? ` <em class="rank">${IC('star').repeat(t.rank)}</em>` : ''}</span>`;
   const up = $('tm-upgrade');
   up.disabled = maxed || game.credits < cost || !!t.upgrading;
-  up.textContent = t.upgrading ? `⏳ ${prog} %` : maxed ? 'MAX' : `▲ ${cost} · ${UPGRADE_TIME[t.level]} s`;
+  up.textContent = t.upgrading ? `⏳ ${prog} %` : maxed ? (t.spec ? '◆ MAX' : 'MAX') : `▲ ${cost} · ${Math.round(UPGRADE_TIME[t.level] * (1 - 0.12 * Math.round(game.perk.repair / 0.35)))} s`;
+  up.classList.toggle('hidden', !!choose);
   const rp = $('tm-repair');
   rp.classList.toggle('hidden', rc <= 0);
   rp.innerHTML = `${IC('wrench')} ${rc}`;
@@ -256,6 +265,11 @@ function updateTowerMenu(force) {
   $('tm-sell').innerHTML = `${IC('sell')} +${game.sellValue(t)}`;
 }
 $('tm-upgrade').onclick = (e) => { e.stopPropagation(); if (ui.selected && game.upgrade(ui.selected)) updateTowerMenu(true); };
+$('tm-specs').onclick = (e) => {
+  e.stopPropagation();
+  const b = e.target.closest('[data-spec]');
+  if (b && ui.selected && game.specialize(ui.selected, b.dataset.spec)) updateTowerMenu(true);
+};
 $('tm-repair').onclick = (e) => { e.stopPropagation(); if (ui.selected && game.repair(ui.selected)) updateTowerMenu(true); };
 $('tm-mode').onclick = (e) => {
   e.stopPropagation();
@@ -406,6 +420,7 @@ function openCatalog() {
 // ---------------- map interaction ----------------
 function onTap(p) {
   unlockAudio();
+  if (replay) return;
   if (!game || paused || game.state === 'won' || game.state === 'lost') return;
   if (ui.targeting) {
     const g = aimAt(p);
@@ -506,7 +521,7 @@ function updateAim() {
 $('aim-fire').onclick = () => { unlockAudio(); fireAim(); };
 $('aim-cancel').onclick = () => { endAim(); sfx('click'); };
 
-new Input(canvas, renderer, {
+const input = new Input(canvas, renderer, {
   tap: onTap,
   // desktop: the reticle follows the mouse
   hover: (p) => { if (game && ui.targeting && p) ui.aim = aimAt(p); },
@@ -568,9 +583,55 @@ function updateNuke() {
   setText('nuke-cd', ui.targeting === 'nuke' ? 'ZIEL' : n.used ? 'LEER' : ready ? 'BEREIT' : `${Math.floor(n.charge / n.need * 100)} %`);
 }
 function updateBuffs() {
-  const html = Object.entries(game.buffs).filter(([, v]) => v > 0)
+  const wt = game.weather, W = wt && WEATHER[wt.type];
+  const html = (W ? `<span class="buff weather" style="--bc:${W.color}">${IC(W.icon)} ${W.name} ${Math.ceil(wt.dur - wt.t)}s</span>` : '') + Object.entries(game.buffs).filter(([, v]) => v > 0)
     .map(([k, v]) => `<span class="buff" style="--bc:${POWERUPS[k].color}">${IC(POWERUPS[k].icon)} ${POWERUPS[k].name} ${Math.ceil(v)}s</span>`).join('');
   if (hudCache.buffs !== html) { hudCache.buffs = html; $('buffs').innerHTML = html; }
+}
+function showBanner(icon, name, desc, color) {
+  const b = $('pu-banner');
+  $('pu-icon').innerHTML = IC(icon); $('pu-name').textContent = name; $('pu-desc').textContent = desc;
+  b.style.setProperty('--pc', color);
+  b.classList.remove('hidden', 'show'); void b.offsetWidth; b.classList.add('show');
+}
+// a boss arrives: banner + the camera glides over to it and back (cancelled as soon as you touch the map)
+let camTween = null;
+function bossIntro(e) {
+  showBanner('skull', e.def.name.toUpperCase(), e.def.air ? 'Fliegende Festung im Anflug' : 'Boss-Einheit im Anmarsch', '#ff5a3c');
+  const c = renderer.cam;
+  camTween = { e, from: { x: c.x, y: c.y, z: c.zoom }, toZ: Math.min(renderer.maxZoom, Math.max(c.zoom, 0.95)), t: 0 };
+}
+function updateCamTween(dt) {
+  const tw = camTween;
+  if (!tw) return;
+  if (input.pointers.size || !tw.e.alive) { camTween = null; return; }
+  tw.t += dt;
+  const c = renderer.cam, ease = (u) => u < 0.5 ? 2 * u * u : 1 - Math.pow(-2 * u + 2, 2) / 2;
+  const to = { x: tw.e.wx, y: tw.e.wy - (tw.e.air ? 160 : 130) };
+  let k;
+  if (tw.t < 0.8) k = ease(tw.t / 0.8);
+  else if (tw.t < 2.4) k = 1;
+  else if (tw.t < 3.2) k = 1 - ease((tw.t - 2.4) / 0.8);
+  else { camTween = null; return; }
+  c.zoom = tw.from.z + (tw.toZ - tw.from.z) * k;
+  c.x = tw.from.x + (to.x - tw.from.x) * k; c.y = tw.from.y + (to.y - tw.from.y) * k;
+  renderer.clampCam();
+}
+function updateBossBar() {
+  let b = null;
+  for (const e of game.enemies) if (e.alive && e.def.boss && (!b || e.hp / e.maxHp < b.hp / b.maxHp)) b = e;
+  const on = !!b;
+  if (hudCache.bossOn !== on) { hudCache.bossOn = on; $('boss-bar').classList.toggle('hidden', !on); document.body.classList.toggle('boss', on); }
+  if (!b) return;
+  const n = game.enemies.filter(e => e.alive && e.def.boss).length;
+  setText('bb-name', b.def.name.toUpperCase() + (n > 1 ? ` ×${n}` : ''));
+  setText('bb-phase', b.phase === 3 ? 'ÜBERLADUNG' : b.phase === 2 ? 'WUTPHASE' : '');
+  const bar = $('boss-bar');
+  bar.classList.toggle('p2', b.phase === 2); bar.classList.toggle('p3', b.phase === 3);
+  const w = (Math.max(0, b.hp / b.maxHp) * 100).toFixed(1) + '%';
+  if (hudCache.bbFill !== w) { hudCache.bbFill = w; $('bb-fill').style.width = w; }
+  const sw = (b.maxShield ? Math.max(0, b.shield / b.maxHp) * 100 : 0).toFixed(1) + '%';
+  if (hudCache.bbShield !== sw) { hudCache.bbShield = sw; $('bb-shield').style.width = sw; }
 }
 function showPowerBanner(type) {
   const p = POWERUPS[type], b = $('pu-banner');
@@ -599,6 +660,7 @@ function updateHUD() {
   updateNuke();
   updateHole();
   updateAim();
+  updateBossBar();
   updateBuffs();
   setText('hud-lives', String(game.lives));
   if (setText('hud-credits', String(game.credits))) pulse('stat-credits');
@@ -734,6 +796,16 @@ function processEvents() {
       if (ui.selected === ev.t) closeTowerMenu();
     } else if (ev.type === 'wave') toast(`WELLE ${ev.n} / ${game.waves.length}`, '', 1600);
     else if (ev.type === 'powerup') showPowerBanner(ev.pu);
+    else if (ev.type === 'bossSpawn') bossIntro(ev.e);
+    else if (ev.type === 'weather') { const W = WEATHER[ev.w]; showBanner(W.icon, W.name.toUpperCase(), W.desc, W.color); if (ui.selected) updateTowerMenu(true); }
+    else if (ev.type === 'weatherEnd') { toast('Das Wetter klart auf', '', 1800); if (ui.selected) updateTowerMenu(true); }
+    else if (ev.type === 'specialized') { if (ui.selected === ev.t) updateTowerMenu(true); toast(`${TOWERS[ev.t.type].name}: ${ev.sp.name}`, '', 1600); }
+    else if (ev.type === 'hack') { if (!save.data.hackHint) { save.data.hackHint = true; save.write(); toast('Ein Saboteur hackt deinen Turm – schieß ihn ab, dann geht der Turm wieder online!', 'warn', 3600); } }
+    else if (ev.type === 'bossPhase') {
+      if (ev.phase === 2) toast(`${ev.e.def.name.toUpperCase()} – WUTPHASE: Panzerplatten abgeworfen, Energieschild, Verstärkung!`, 'warn', 3200);
+      else toast(`${ev.e.def.name.toUpperCase()} – ÜBERLADUNG: EMP-Stoß legt ${ev.jammed || 'keine'} Türme lahm!`, 'warn', 3200);
+      if (navigator.vibrate) try { navigator.vibrate(80); } catch (e) { /* ignore */ }
+    }
     else if (ev.type === 'nukeHit') { if (navigator.vibrate) try { navigator.vibrate([120, 60, 200]); } catch (e) { /* ignore */ } }
     else if (ev.type === 'rankUp') { if (ev.rank >= 2) toast(`${TOWERS[ev.t.type].name} erreicht Rang ${'★'.repeat(ev.rank)} (+${ev.rank * 8} % Schaden)`, '', 1800); }
     else if (ev.type === 'newTypes') {
@@ -757,7 +829,7 @@ async function startLevel(i, ch = null) {
   unlockAudio();
   const spec = LEVEL_SPECS[i];
   challenge = ch;
-  const g = new Game(i, { ...(ch ? ch.mods : DIFFICULTY[diffIdx()].mods), unlockAll: freePlay(), diff: ch ? 0 : diffIdx() });
+  const g = new Game(i, { ...(ch ? ch.mods : DIFFICULTY[diffIdx()].mods), unlockAll: freePlay(), diff: ch ? 0 : diffIdx(), perks: ch ? null : { ...perkLevels() } });
   // only the enemy types of this mission (incl. units launched by carriers / bursting out)
   const types = new Set();
   for (const w of g.waves.slice(0, 60)) for (const gr of w.groups) {
@@ -870,6 +942,34 @@ function maybeRotateHint() {
 }
 $('rotate-ok').onclick = () => { save.data.rotateHintSeen = true; save.write(); $('rotate-hint').classList.add('hidden'); };
 $('btn-play').onclick = () => { unlockAudio(); sfx('click'); toLevels(); };
+// ---------------- commander perks ----------------
+function starsEarned() { return Object.values(save.data.stars || {}).reduce((a, b) => a + (b || 0), 0); }
+function perkLevels() { return save.data.perks || (save.data.perks = {}); }
+function starsSpent() { let n = 0; for (const [id, l] of Object.entries(perkLevels())) for (let i = 0; i < l; i++) n += PERK_COST[i]; return n; }
+let perksFrom = 'screen-menu';
+function openPerks(from) { perksFrom = from; renderPerks(); showScreen('screen-perks'); }
+function renderPerks() {
+  const free = starsEarned() - starsSpent(), L = perkLevels();
+  $('perk-stars').innerHTML = `★ ${free} <small>frei · ${starsEarned()} verdient</small>`;
+  $('perk-list').innerHTML = PERKS.map(p => {
+    const l = L[p.id] || 0, max = l >= PERK_COST.length, c = max ? 0 : PERK_COST[l];
+    const pips = PERK_COST.map((_, i) => `<i class="${i < l ? 'on' : ''}"></i>`).join('');
+    return `<div class="perk"><i class="ic ic-${p.icon} perk-ic"></i><div class="perk-info"><b>${p.name}</b><span>${p.desc}</span><div class="perk-pips">${pips}</div></div>`
+      + `<button class="btn ${max ? '' : 'primary'}" data-perk="${p.id}" ${max || free < c ? 'disabled' : ''}>${max ? 'MAX' : `★ ${c}`}</button></div>`;
+  }).join('');
+}
+$('perk-list').onclick = (e) => {
+  const b = e.target.closest('[data-perk]');
+  if (!b) return;
+  const L = perkLevels(), id = b.dataset.perk, l = L[id] || 0;
+  if (l >= PERK_COST.length || starsEarned() - starsSpent() < PERK_COST[l]) { sfx('error'); return; }
+  L[id] = l + 1; save.write(); sfx('upgrade'); renderPerks();
+};
+$('btn-perks-reset').onclick = () => { save.data.perks = {}; save.write(); sfx('sell'); renderPerks(); };
+$('btn-perks').onclick = () => { unlockAudio(); sfx('click'); openPerks('screen-menu'); };
+$('btn-perks2').onclick = () => { sfx('click'); openPerks('screen-levels'); };
+$('btn-perks-back').onclick = () => { sfx('click'); if (perksFrom === 'screen-levels') toLevels(); else showScreen('screen-menu'); };
+
 $('btn-help').onclick = () => { unlockAudio(); sfx('click'); showScreen('screen-help'); };
 $('btn-help-back').onclick = () => { sfx('click'); showScreen('screen-menu'); };
 $('btn-levels-back').onclick = () => { sfx('click'); showScreen('screen-menu'); };
@@ -905,7 +1005,7 @@ function frame(now) {
   if (game && !paused) {
     // cinematic time (nuclear strike): freeze, slow motion, ramp back - the HUD and screen effects run in real time
     ts = game.timeScale();
-    game.advanceCinematic(dt);
+    if (!replay) game.advanceCinematic(dt);
     game.fx.realtimeScreen = true;
     game.fx.screen(dt);
     // the nuclear flash also blinds the HUD; in between, the whole screen turns into an X-ray negative
@@ -913,16 +1013,79 @@ function frame(now) {
     const ha = !st || st.xray ? 0 : st.t < 0.75 ? 1 : Math.max(0, 1 - (st.t - 0.75) / 0.5);
     if (hudCache.nukeFlash !== ha) { hudCache.nukeFlash = ha; $('nuke-flash').style.opacity = ha.toFixed(3); }
     setXray(!!(st && st.xray));
-    acc += dt * speed * ts;
-    let n = 0;
-    while (acc >= STEP && n < 12) { game.update(STEP); acc -= STEP; n++; }
-    if (n === 12) acc = 0;
-    processEvents();
-    updateHUD();
+    if (replay) updateReplay(dt);
+    else {
+      updateCamTween(dt);
+      acc += dt * speed * ts;
+      let n = 0;
+      while (acc >= STEP && n < 12) { game.update(STEP); acc -= STEP; n++; }
+      if (n === 12) acc = 0;
+      processEvents();
+      updateHUD();
+      offerReplay(dt);
+    }
   }
   else setXray(false);
   if (game) renderer.draw(paused ? 0 : dt * Math.min(speed, 2) * ts, ui);
 }
+// ---------------- nuke replay ----------------
+// the detonation once more from a snapshot of the battlefield: same flash, X-ray and slow motion, game paused meanwhile
+let replay = null, replayOffer = 0;
+function offerReplay(dt) {
+  if (!game.nukeReplay || replay || game.cine) { if (!game.nukeReplay) $('btn-replay').classList.add('hidden'); return; }
+  if (game.nukeReplay.offered) {
+    replayOffer -= dt;
+    if (replayOffer <= 0) $('btn-replay').classList.add('hidden');
+    return;
+  }
+  game.nukeReplay.offered = true; replayOffer = 14;
+  $('btn-replay').classList.remove('hidden');
+}
+function startReplay() {
+  const R = game && game.nukeReplay;
+  if (!R || replay || game.cine) return;
+  closeBuildMenu(); closeTowerMenu(); endAim();
+  const c = renderer.cam;
+  replay = { t: 0, gt: 0, blasted: false, cam: { x: c.x, y: c.y, z: c.zoom }, enemies: game.enemies, zones: game.radZones, drops: game.drops, strikes: game.strikesW };
+  game.enemies = R.enemies.map(e => ({ ...e }));
+  game.radZones = []; game.drops = []; game.strikesW = [];
+  const w = toWorld(R.gx, R.gy);
+  c.zoom = Math.max(c.zoom, Math.min(renderer.maxZoom, 0.62)); c.x = w.x; c.y = w.y - 120; renderer.clampCam();
+  game.fx.nuke(w.x, w.y);
+  game.startCinematic();
+  sfx('nuke');
+  $('btn-replay').classList.add('hidden');
+  $('replay-label').classList.remove('hidden');
+  document.body.classList.add('replaying');
+}
+function updateReplay(dt) {
+  const ts = game.timeScale();
+  game.advanceCinematic(dt);
+  game.fx.update(dt * ts);
+  replay.t += dt; replay.gt += dt * ts;
+  if (!replay.blasted && replay.gt >= 0.5) {
+    replay.blasted = true;
+    const R = game.nukeReplay;
+    let n = 0;
+    game.enemies = game.enemies.filter(e => {
+      if (Math.hypot(e.gx - R.gx, e.gy - R.gy) > NUKE.radius && !e.def.boss) return true;
+      if (n++ < 18) game.fx.explosion(e.wx, game.bodyY(e), e.def.boss ? 2.2 : 1.2, 'fire');
+      return !!e.def.boss;
+    });
+  }
+  if (!game.cine && replay.t > 1.2) endReplay();
+}
+function endReplay() {
+  if (!replay) return;
+  if (!game) { replay = null; $('replay-label').classList.add('hidden'); document.body.classList.remove('replaying'); return; }
+  game.enemies = replay.enemies; game.radZones = replay.zones; game.drops = replay.drops; game.strikesW = replay.strikes;
+  const c = renderer.cam; c.x = replay.cam.x; c.y = replay.cam.y; c.zoom = replay.cam.z; renderer.clampCam();
+  replay = null;
+  $('replay-label').classList.add('hidden');
+  document.body.classList.remove('replaying');
+}
+$('btn-replay').onclick = (e) => { e.stopPropagation(); unlockAudio(); startReplay(); };
+
 function setXray(on) { if (hudCache.xray !== on) { hudCache.xray = on; document.body.classList.toggle('xray', on); } }
 
 async function boot() {

@@ -1,6 +1,6 @@
 // Core simulation: grid, routes, towers (turret aiming), enemies (attack towers), projectiles, waves.
 import {
-  TOWERS, ENEMIES, BIOMES, EFFECT, FROST, SHATTER, THERMAL, ACID_ARMOR, NUKE, POWERUPS, DROP, HOLE, ELEV_PX, ELEV_RANGE, MAX_LEVEL, TOWER_SCALE, UPGRADE_TIME, WAVE_GAP, SELL_RATE, FULL_REFUND_TIME, towerStats, upgradeCost, totalInvested,
+  HW, TOWERS, ENEMIES, BIOMES, BOSS, SPECS, PERKS, WEATHER, BIOME_WEATHER, WEATHER_CFG, specCost, EFFECT, FROST, SHATTER, THERMAL, ACID_ARMOR, NUKE, POWERUPS, DROP, HOLE, ELEV_PX, ELEV_RANGE, MAX_LEVEL, TOWER_SCALE, UPGRADE_TIME, WAVE_GAP, SELL_RATE, FULL_REFUND_TIME, towerStats, upgradeCost, totalInvested,
 } from './config.js';
 import { getLevel, makeWaves, makeBossRush, hpMultiplier } from './levels.js';
 import { toWorld, rand, mulberry32 } from './iso.js';
@@ -66,10 +66,13 @@ export class Game {
     this.level = getLevel(levelIdx);
     if (M.endless) this.level = { ...this.level, waves: 150 };
     const L = this.level;
+    // commander perks (campaign): effect value per perk id
+    this.perk = {};
+    for (const p of PERKS) this.perk[p.id] = ((M.perks && M.perks[p.id]) || 0) * p.per;
     this.N = L.N;
     this.grid = new Uint8Array(this.N * this.N);
-    this.credits = Math.round((L.credits + (L.paths.length - 1) * 150) * (M.credits || 1));
-    this.lives = M.lives || 20;
+    this.credits = Math.round((L.credits + (L.paths.length - 1) * 150) * (M.credits || 1) * (1 + this.perk.credits));
+    this.lives = (M.lives || 20) + (M.lives === 1 ? 0 : this.perk.lives);
     this.maxLives = this.lives;
     this.waves = M.bossRush ? makeBossRush(L, M.bossRush) : makeWaves(L);
     if (M.count) for (const w of this.waves) for (const g of w.groups) if (!ENEMIES[g.type].boss) { g.count = Math.ceil(g.count * M.count); g.gap /= Math.sqrt(M.count); }
@@ -96,13 +99,15 @@ export class Game {
     this.puddles = [];
     // orbital strike: special ability with cooldown (from mission 2)
     // free play (unlockAll): every tower and ability from the first mission on
-    this.orbital = { cd: 25, max: Math.round(85 * (M.cd || 1)), on: (L.number >= 2 || M.unlockAll) && !M.noAbilities };
+    this.orbital = { cd: 25, max: Math.round(85 * (M.cd || 1) * (1 - this.perk.cd)), on: (L.number >= 2 || M.unlockAll) && !M.noAbilities };
     this.strikes = [];
     // nuclear strike, charged by kills; power-up crates and active buffs
-    this.nuke = { charge: 0, need: Math.round(NUKE.need(L.number) * (M.cd || 1)), on: (L.number >= NUKE.unlock || M.unlockAll) && !M.noAbilities };
+    this.nuke = { charge: 0, need: Math.round(NUKE.need(L.number) * (M.cd || 1) * (1 - this.perk.cd)), on: (L.number >= NUKE.unlock || M.unlockAll) && !M.noAbilities };
     this.nukes = [];
     this.nukeBlasts = [];
-    this.hole = { cd: Math.round(HOLE.first * (M.cd || 1)), max: Math.round(HOLE.cd * (M.cd || 1)), on: (L.number >= HOLE.unlock || M.unlockAll) && !M.noAbilities };
+    this.weather = null;
+    this.strikesW = [];
+    this.hole = { cd: Math.round(HOLE.first * (M.cd || 1) * (1 - this.perk.cd)), max: Math.round(HOLE.cd * (M.cd || 1) * (1 - this.perk.cd)), on: (L.number >= HOLE.unlock || M.unlockAll) && !M.noAbilities };
     this.holes = [];
     this.radZones = [];
     this.drops = [];
@@ -177,11 +182,102 @@ export class Game {
   // terrain height of a cell (0 = ground, 1-2 = plateau)
   heightAt(x, y) { return (x < 0 || y < 0 || x >= this.N || y >= this.N) ? 0 : this.height[this.idx(x, y)]; }
   // tower stats incl. the high-ground range bonus
-  statsFor(type, level, cx, cy) {
+  statsFor(type, level, cx, cy, spec = null) {
     const s = towerStats(type, level);
     const h = this.heightAt(cx, cy);
     if (h) s.range *= 1 + ELEV_RANGE * h;
+    const sp = spec && (SPECS[type] || []).find(x => x.id === spec);
+    if (sp) {
+      for (const [k, v] of Object.entries(sp.mods || {})) s[k] *= v;
+      for (const [k, v] of Object.entries(sp.add || {})) s[k] += v;
+      Object.assign(s, sp.set || {});
+      if (sp.pierce) s.pierce = sp.pierce;
+    }
+    const pd = 1 + (this.perk ? this.perk.dmg : 0);
+    s.dmg *= pd; s.dps *= pd; s.burn *= pd; s.acid *= pd;
+    s.range *= 1 + (this.perk ? this.perk.range : 0);
+    const W = this.weather && WEATHER[this.weather.type];
+    if (W) { s.range *= W.range || 1; s.rate *= W.rate || 1; s.dps *= W.rate || 1; }
     return s;
+  }
+  // ---- weather ----
+  maybeWeather(wv) {
+    if (this.weather || wv.boss || this.wave < WEATHER_CFG.from || this.mods.bossRush) return;
+    if (Math.random() > WEATHER_CFG.chance) return;
+    const opts = BIOME_WEATHER[this.level.biome] || ['storm'];
+    this.setWeather(opts[Math.floor(Math.random() * opts.length)]);
+  }
+  setWeather(type) {
+    this.weather = type ? { type, t: 0, dur: WEATHER_CFG.dur, boltT: 1.5 } : null;
+    for (const t of this.towers) t.stats = this.statsFor(t.type, t.level, t.cx, t.cy, t.spec);
+    if (type) { this.emit('weather', { w: type }); sfx('wave'); }
+    else this.emit('weatherEnd', {});
+  }
+  updateWeather(dt) {
+    const w = this.weather;
+    if (!w) return;
+    w.t += dt;
+    const W = WEATHER[w.type];
+    if (W.bolt && w.t > 1 && w.t < w.dur - 1.5) {
+      w.boltT -= dt;
+      if (w.boltT <= 0) {
+        w.boltT = W.bolt.every[0] + Math.random() * (W.bolt.every[1] - W.bolt.every[0]);
+        // mostly at the machines, sometimes at your towers
+        let gx, gy;
+        const hitTower = this.towers.length && Math.random() < W.bolt.towerChance;
+        const alive = this.enemies.filter(e => e.alive);
+        if (hitTower) { const t = this.towers[Math.floor(Math.random() * this.towers.length)]; gx = t.gx + rand(-0.3, 0.3); gy = t.gy + rand(-0.3, 0.3); }
+        else if (alive.length) { const e = alive[Math.floor(Math.random() * alive.length)]; gx = e.gx; gy = e.gy; }
+        else { gx = rand(1, this.N - 1); gy = rand(1, this.N - 1); }
+        this.strikesW.push({ kind: w.type, gx, gy, t: W.bolt.delay || 0, dur: W.bolt.delay || 0 });
+      }
+    }
+    for (const b of this.strikesW) {
+      b.t -= dt;
+      if (b.t > 0) continue;
+      b.done = true;
+      const B = WEATHER[b.kind].bolt, p = toWorld(b.gx, b.gy);
+      const dmg = B.dmg * Math.pow(hpMultiplier(this.level.number, Math.max(1, this.wave)), 0.85);
+      for (const e of this.enemiesInRange(b.gx, b.gy, B.r, true, true)) this.damage(e, dmg * (e.def.boss ? 0.35 : 1), { ignoreArmor: true });
+      for (const t of [...this.towers]) if (Math.hypot(t.gx - b.gx, t.gy - b.gy) < B.r * 0.75) this.damageTower(t, t.stats.hp * B.towerDmg);
+      if (b.kind === 'meteor') {
+        this.fx.bigExplosion(p.x, p.y - 20, 1.6, 'heavy');
+        this.decals.push({ x: p.x, y: p.y, s: 150 });
+        this.fx.shake = Math.max(this.fx.shake, 10);
+        sfx('explosion', true);
+      } else {
+        // jagged bolt from the sky
+        const pts = []; let x = p.x + rand(-60, 60);
+        for (let i = 0; i <= 10; i++) { const u = i / 10; x += rand(-28, 28) * (1 - u * 0.6); pts.push([i === 10 ? p.x : x, p.y - 900 * (1 - u)]); }
+        this.fx.add({ k: 'bolt', pts, w: 2.4, life: 0.32 });
+        this.fx.add({ k: 'glow', x: p.x, y: p.y - 20, s: 260, life: 0.25, spr: 'cyan' });
+        this.fx.sparks(p.x, p.y - 10, 18, '#dff0ff', 260);
+        this.fx.flash = Math.max(this.fx.flash, 0.25);
+        this.fx.lightning = 1;
+        this.decals.push({ x: p.x, y: p.y, s: 70 });
+        sfx('thunder');
+      }
+    }
+    if (this.strikesW.some(b => b.done)) this.strikesW = this.strikesW.filter(b => !b.done);
+    if (w.t >= w.dur) this.setWeather(null);
+  }
+  // level III towers pick one of two specializations
+  specialize(t, id) {
+    const sp = (SPECS[t.type] || []).find(x => x.id === id);
+    if (!sp || t.level < MAX_LEVEL || t.spec || t.upgrading) return false;
+    const c = specCost(t.type);
+    if (this.credits < c) { this.emit('toast', { text: 'Nicht genug Credits', bad: true }); sfx('error'); return false; }
+    this.credits -= c;
+    t.spec = id; t.specCost = c;
+    t.stats = this.statsFor(t.type, t.level, t.cx, t.cy, id);
+    t.hp = t.stats.hp; t.powerUp = 1;
+    this.fx.add({ k: 'ring', x: t.wx, y: t.wy + 10, r0: 20, r1: 140, life: 0.7, c: '200,140,255' });
+    this.fx.add({ k: 'glow', x: t.wx, y: t.wy - 40, s: 220, life: 0.5, spr: 'violet' });
+    this.fx.sparks(t.wx, t.wy - 40, 30, '#e2c4ff', 300);
+    this.fx.text(t.wx, t.wy - 110, sp.name.toUpperCase(), '#e2c4ff');
+    this.emit('specialized', { t, sp });
+    sfx('upgrade');
+    return true;
   }
 
   build(type, cx, cy) {
@@ -213,7 +309,7 @@ export class Game {
     const c = upgradeCost(t.type, t.level);
     if (this.credits < c) { this.emit('toast', { text: 'Nicht genug Credits', bad: true }); sfx('error'); return false; }
     this.credits -= c;
-    t.upgrading = { t: 0, dur: UPGRADE_TIME[t.level], cost: c, spark: 0 };
+    t.upgrading = { t: 0, dur: UPGRADE_TIME[t.level] * (1 - 0.12 * Math.round(this.perk.repair / 0.35)), cost: c, spark: 0 };
     t.target = null; t.firing = false; t.beamT = 0;
     this.fx.dust(t.wx, t.wy + 6, 0.9);
     sfx('upgradeStart');
@@ -223,7 +319,7 @@ export class Game {
     t.upgrading = null;
     t.level++;
     const ratio = t.hp / t.stats.hp;
-    t.stats = this.statsFor(t.type, t.level, t.cx, t.cy);
+    t.stats = this.statsFor(t.type, t.level, t.cx, t.cy, t.spec);
     t.hp = Math.min(t.stats.hp, Math.round(t.stats.hp * ratio) + Math.round(t.stats.hp * 0.3));
     t.powerUp = 1;
     const col = t.level === 3 ? '255,210,90' : '120,255,170';
@@ -237,7 +333,7 @@ export class Game {
   }
 
   sellValue(t) {
-    const inv = totalInvested(t.type, t.level) + (t.upgrading ? t.upgrading.cost : 0);
+    const inv = totalInvested(t.type, t.level) + (t.upgrading ? t.upgrading.cost : 0) + (t.specCost || 0);
     return this.time - t.placedAt < FULL_REFUND_TIME && t.level === 1 ? inv : Math.round(inv * SELL_RATE * (0.5 + 0.5 * t.hp / t.stats.hp));
   }
   sell(t) {
@@ -295,6 +391,7 @@ export class Game {
     if (bonus > 0) { this.credits += bonus; this.emit('toast', { text: `Früher Angriff: +${bonus} Credits` }); }
     const wv = this.waves[this.wave];
     this.wave++;
+    this.maybeWeather(wv);
     const hpMul = hpMultiplier(this.level.number, this.wave) * (this.mods.hp || 1);
     const rewardMul = (1 + 0.05 * (this.wave - 1)) * (1 + 0.025 * (this.level.number - 1));
     const nR = this.routes.length;
@@ -333,6 +430,90 @@ export class Game {
     if (n < this.waves.length) this.emit('toast', { text: `Welle ${n} abgewehrt! +${bonus} Credits` });
   }
 
+  // ---- saboteur: parks next to a tower and hacks it (offline while the saboteur lives, at most hack.max s) ----
+  updateHack(e, dt, stopped) {
+    const H = e.def.hack;
+    if (e.hacking) {
+      const t = e.hacking;
+      if (!this.towers.includes(t) || stopped || e.vortex) { this.endHack(e); return; }
+      e.hackT += dt;
+      if (Math.random() < dt * 10) this.fx.sparks(t.wx + rand(-20, 20), t.wy - rand(20, 70), 2, '#ffb060', 90);
+      if (e.hackT >= H.max) { this.endHack(e); e.hackCd = H.cd; }
+      return;
+    }
+    if (e.hackCd > 0) { e.hackCd -= dt; return; }
+    if (stopped) return;
+    let best = null, bd = H.range * H.range;
+    for (const t of this.towers) {
+      if (t.hackedBy || t.upgrading || t.built < 0.5) continue;
+      const d2 = (t.gx - e.gx) ** 2 + (t.gy - e.gy) ** 2;
+      if (d2 < bd) { bd = d2; best = t; }
+    }
+    if (!best) return;
+    e.hacking = best; e.hackT = 0; best.hackedBy = e;
+    this.fx.text(best.wx, best.wy - 110, 'GEHACKT!', '#ffb060');
+    this.fx.add({ k: 'ring', x: best.wx, y: best.wy, r0: 10, r1: 80, life: 0.45, c: '255,160,60' });
+    this.emit('hack', { t: best, e });
+    sfx('emp');
+  }
+  endHack(e) {
+    const t = e.hacking;
+    if (t && t.hackedBy === e) { t.hackedBy = null; this.fx.text(t.wx, t.wy - 100, 'WIEDER ONLINE', '#8dffb0'); }
+    e.hacking = null;
+  }
+
+  // ---- boss fight phases ----
+  updateBoss(e) {
+    if (!e.phase) e.phase = 1;
+    const f = e.hp / e.maxHp;
+    if (e.phase === 1 && f <= BOSS.rage.at) this.bossRage(e);
+    else if (e.phase === 2 && f <= BOSS.overload.at) this.bossOverload(e);
+  }
+  bossRage(e) {
+    const R = BOSS.rage;
+    e.phase = 2; e.rage = true;
+    e.speedMul *= R.speed;
+    e.atkMul = R.atk;
+    e.armor = Math.round(e.armor * R.armor);
+    e.maxShield = Math.round(e.maxHp * R.shield); e.shield = e.maxShield; e.shieldHit = this.time;
+    const y = this.bodyY(e);
+    // armour plates fly off, shockwave, reinforcements
+    this.fx.debris(e.wx, y, 18, 380);
+    this.fx.sparks(e.wx, y, 30, '#ff7a3a', 340);
+    this.fx.add({ k: 'ring', x: e.wx, y: e.wy, r0: 30, r1: 360, life: 0.7, c: '255,90,50' });
+    this.fx.add({ k: 'glow', x: e.wx, y: y, s: 300, life: 0.4, spr: 'red' });
+    this.fx.shake = Math.max(this.fx.shake, 16);
+    this.fx.text(e.wx, y - 90, 'WUTPHASE!', '#ff5a3c');
+    const ri = this.routes.indexOf(e.route);
+    const list = e.air ? R.escort.air : R.escort.ground;
+    list.forEach((type, i) => {
+      const c = this.spawn(type, ri, e.hpMul * 0.9, 0.5, Math.max(0, e.d - 0.3 - i * 0.35));
+      c.off = rand(-0.32, 0.32);
+      this.fx.add({ k: 'ring', x: c.wx, y: c.wy, r0: 6, r1: 60, life: 0.4, c: '255,120,80' });
+    });
+    this.emit('bossPhase', { e, phase: 2 });
+    sfx('alarm'); sfx('explosion', true);
+  }
+  bossOverload(e) {
+    const O = BOSS.overload;
+    e.phase = 3;
+    const y = this.bodyY(e);
+    let n = 0;
+    for (const t of this.towers) {
+      if (Math.hypot(t.gx - e.gx, t.gy - e.gy) > O.range) continue;
+      t.jamT = Math.max(t.jamT || 0, O.jam); n++;
+      this.fx.add({ k: 'glow', x: t.wx, y: t.wy - 40, s: 120, life: 0.4, spr: 'cyan' });
+    }
+    for (const [r1, life] of [[O.range * HW * 1.45, 0.8], [O.range * HW, 0.55]]) this.fx.add({ k: 'ring', x: e.wx, y: e.wy, r0: 20, r1, life, c: '140,220,255' });
+    this.fx.add({ k: 'glow', x: e.wx, y, s: 420, life: 0.5, spr: 'cyan' });
+    this.fx.sparks(e.wx, y, 40, '#bff0ff', 420);
+    this.fx.shake = Math.max(this.fx.shake, 20);
+    this.fx.flash = Math.max(this.fx.flash, 0.5);
+    this.fx.text(e.wx, y - 90, 'ÜBERLADUNG!', '#8fdcff');
+    this.emit('bossPhase', { e, phase: 3, jammed: n });
+    sfx('emp'); sfx('explosion', true);
+  }
+
   spawn(type, routeIdx, hpMul, rewardMul, startD = 0) {
     const def = ENEMIES[type];
     const route = this.routes[routeIdx] || this.routes[0];
@@ -352,6 +533,7 @@ export class Game {
     };
     if (this.mods.armor) e.armor = Math.round(def.armor * this.mods.armor + (def.armor ? 1 : 0));
     this.enemies.push(e);
+    if (def.boss) this.emit('bossSpawn', { e });
     return e;
   }
 
@@ -383,7 +565,7 @@ export class Game {
       if (e.shield <= 0) { this.fx.shieldBreak(e.wx, this.bodyY(e)); sfx('hit'); }
       if (dmg <= 0) return sd;
     }
-    const armor = Math.max(0, e.armor - e.acidN * ACID_ARMOR);     // acid eats the armour
+    const armor = Math.max(0, e.armor - e.acidN * ACID_ARMOR) * (1 - ((src && src.stats && src.stats.pierce) || 0));     // acid eats the armour, AP rounds go through
     dmg = opts.ignoreArmor ? dmg : Math.max(dmg * 0.2, dmg - armor);
     if (opts.acid) this.corrode(e, opts.acid, opts.src);
     e.hp -= dmg;
@@ -434,13 +616,13 @@ export class Game {
         }
       }
     }
-    const gain = this.mods.noRewards ? 0 : Math.max(1, Math.round(e.reward * (this.mods.reward || 1))) * (this.buffs.gold > 0 ? 3 : 1);
+    const gain = this.mods.noRewards ? 0 : Math.max(1, Math.round(e.reward * (this.mods.reward || 1) * (1 + this.perk.reward))) * (this.buffs.gold > 0 ? 3 : 1);
     this.credits += gain;
     if (this.buffs.gold > 0) this.fx.text(e.wx, this.bodyY(e) - 50, `+${gain} ×3`, '#ffd34d');
     if (this.nuke.on && !this.nuke.used && !this._nuking) this.nuke.charge = Math.min(this.nuke.need, this.nuke.charge + e.reward);
     // power-up crate: bosses always, others rarely (spaced out)
     if (!e.air || e.def.boss) {
-      if (!this.mods.noAbilities && (e.def.boss || (Math.random() < DROP.chance && this.time - this.lastDrop > DROP.gap && this.drops.length < 2))) this.spawnDrop(e.gx, e.gy);
+      if (!this.mods.noAbilities && (e.def.boss || (Math.random() < DROP.chance * (1 + this.perk.drops) && this.time - this.lastDrop > DROP.gap && this.drops.length < 2))) this.spawnDrop(e.gx, e.gy);
     }
     const y = this.bodyY(e);
     const big = e.def.boss ? 3.0 : e.def.cost >= 10 ? 1.7 : e.def.cost >= 5 ? 1.3 : e.type === 'spider' ? 0.8 : 1;
@@ -480,6 +662,7 @@ export class Game {
       else if (t.mode === 'near') v = -((e.gx - t.gx) ** 2 + (e.gy - t.gy) ** 2);
       else v = e.d - e.route.total;
       if (e.def.boss && t.mode === 'first') v += 0.5;
+    if (e.hacking) v += 1;   // free the hacked tower first
       if (v > bv) { bv = v; best = e; }
     }
     return best;
@@ -517,8 +700,17 @@ export class Game {
       t.firing = false;
       return;
     }
+    // jammed (boss EMP) or hacked (saboteur): no fire, twitching turret, sparks
+    if (t.hackedBy && !t.hackedBy.alive) t.hackedBy = null;
+    if (t.jamT > 0 || t.hackedBy) {
+      if (t.jamT > 0) t.jamT -= dt;
+      t.firing = false; t.beamT = 0; t.target = null;
+      if (!t.def.static) t.ang += Math.sin(this.time * 11 + t.id) * 1.8 * dt;
+      if (Math.random() < dt * 7) this.fx.sparks(t.wx + rand(-24, 24), t.wy - rand(20, 75), 3, t.hackedBy ? '#ff9a3a' : '#8fdcff', 120);
+      return;
+    }
     // passive regeneration when not under fire
-    if (this.time - t.lastHit > 3 && t.hp < t.stats.hp) t.hp = Math.min(t.stats.hp, t.hp + t.stats.hp * 0.035 * dt);
+    if (this.time - t.lastHit > 3 && t.hp < t.stats.hp) t.hp = Math.min(t.stats.hp, t.hp + t.stats.hp * 0.035 * (1 + this.perk.repair) * dt);
     const def = t.def;
     const s = t.stats;
     // retarget
@@ -745,6 +937,7 @@ export class Game {
   // ---------------- enemies ----------------
   updateEnemy(e, dt) {
     e.anim += dt;
+    if (e.def.boss) this.updateBoss(e);
     if (e.flash > 0) e.flash -= dt;
     if (e.flashCd > 0) e.flashCd -= dt;
     const def = e.def;
@@ -814,7 +1007,9 @@ export class Game {
       }
     }
 
+    if (def.hack) this.updateHack(e, dt, e.frozenT > 0 || (this.buffs.timestop > 0 && !def.boss));
     let sp = def.speed * e.speedMul;
+    if (e.hacking) sp = 0;
     let slow = 0;
     if (e.slowT > 0) { e.slowT -= dt; slow = e.slowF; if (e.slowT <= 0) e.slowF = 0; }
     slow = Math.max(slow, (e.frost / FROST.max) * (def.boss ? FROST.bossSlow : FROST.slow));
@@ -822,6 +1017,7 @@ export class Game {
     if (e.frozenT > 0) sp = 0;
     if (this.buffs.timestop > 0) sp *= def.boss ? 0.3 : 0;
     if (e.holeSlow) { sp *= 1 - e.holeSlow; e.holeSlow = 0; }
+    if (this.weather) { const W = WEATHER[this.weather.type]; sp *= (e.air ? W.airSpeed : W.speed) || 1; }
     e.d += sp * dt;
     // footfalls: two per animation cycle (or per configured stride for unanimated gaits)
     const stepLen = Models.meta(def.model)?.af ? Models.cycleOf(def) / 2 : (def.stride || 0.6);
@@ -919,7 +1115,7 @@ export class Game {
     }
     // attack towers
     if (def.atk && e.frozenT <= 0 && !(this.buffs.timestop > 0 && !def.boss)) {
-      e.atkCool -= dt;
+      e.atkCool -= dt * (e.atkMul || 1);
       if (e.atkCool <= 0) {
         const a = def.atk;
         let best = null, bd = a.range * a.range;
@@ -1002,6 +1198,8 @@ export class Game {
       if (n.t > 0) continue;
       n.done = true;
       const w = toWorld(n.gx, n.gy);
+      // snapshot of the battlefield for the replay (intact machines, before the blast wave)
+      this.nukeReplay = { gx: n.gx, gy: n.gy, enemies: this.enemies.filter(e => e.alive).map(e => ({ ...e })), at: this.time };
       // flash and X-ray first - the blast wave hits a moment later, so the machines show up in the X-ray
       this.fx.nuke(w.x, w.y);
       this.startCinematic();
@@ -1112,7 +1310,8 @@ export class Game {
     let r = Math.random() * pool.reduce((a, [, p]) => a + p.w, 0), type = pool[0][0];
     for (const [k, p] of pool) { r -= p.w; if (r <= 0) { type = k; break; } }
     const w = toWorld(gx, gy);
-    this.drops.push({ type, gx, gy, wx: w.x, wy: w.y, t: DROP.life, life: DROP.life, id: uid++ });
+    const life = DROP.life * (1 + this.perk.drops * 4 / 3);
+    this.drops.push({ type, gx, gy, wx: w.x, wy: w.y, t: life, life, id: uid++ });
     this.lastDrop = this.time;
     this.fx.add({ k: 'ring', x: w.x, y: w.y, r0: 6, r1: 50, life: 0.4, c: '255,240,160' });
     sfx('dropSpawn');
@@ -1175,6 +1374,7 @@ export class Game {
     this.updateNukes(dt);
     this.updateHoles(dt);
     this.updateDrops(dt);
+    this.updateWeather(dt);
     while (this.queue.length && this.queue[0].t <= this.time) {
       const s = this.queue.shift();
       const e = this.spawn(s.type, s.route, s.hpMul, s.rewardMul);

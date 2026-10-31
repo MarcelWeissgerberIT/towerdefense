@@ -5,8 +5,8 @@ import { rand } from './iso.js';
 const MAX_PARTICLES = 900;
 
 export class FX {
-  constructor() { this.p = []; this.shake = 0; this.flash = 0; this.whiteout = 0; this.blind = null; }
-  clear() { this.p.length = 0; this.shake = 0; this.flash = 0; this.whiteout = 0; this.blind = null; }
+  constructor() { this.p = []; this.shake = 0; this.flash = 0; this.whiteout = 0; this.blind = null; this.lightning = 0; }
+  clear() { this.p.length = 0; this.shake = 0; this.flash = 0; this.whiteout = 0; this.blind = null; this.lightning = 0; }
 
   add(o) {
     if (this.p.length >= MAX_PARTICLES) {
@@ -322,6 +322,7 @@ export class FX {
     this.flash = Math.max(0, this.flash - dt * 1.6);
     this.whiteout = Math.max(0, this.whiteout - dt * 1.6);
     if (this.blind && (this.blind.t += dt) > 3.2) this.blind = null;
+    this.lightning = Math.max(0, this.lightning - dt * 4);
   }
 
   draw(ctx) {

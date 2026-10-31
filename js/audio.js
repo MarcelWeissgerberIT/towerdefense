@@ -237,6 +237,13 @@ const SFX = {
     noise(t, 3.5, { freq: 900, q: 0.4, type: 'lowpass', gain: 0.9, sweepTo: 80, attack: 0.01 });
     noise(t + 0.4, 3, { freq: 300, q: 0.5, type: 'lowpass', gain: 0.5, attack: 0.3 });
   },
+  thunder() {
+    if (!throttle('thu', 400)) return;
+    // crack, then a low rolling rumble
+    noise(ctx.currentTime, 0.18, { freq: 3000, q: 0.5, type: 'highpass', gain: 0.5, attack: 0.002 });
+    if (play(pick('boomBig', 3), { gain: 0.8, rate: 0.55 + Math.random() * 0.1, delay: 0.05 })) return;
+    noise(ctx.currentTime, 2.2, { freq: 500, q: 0.4, type: 'lowpass', gain: 0.7, sweepTo: 80, attack: 0.05 });
+  },
   geiger() {
     // Geiger counter tick from the fallout zone
     if (!throttle('gei', 28)) return;

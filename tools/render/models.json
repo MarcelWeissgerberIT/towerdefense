@@ -272,5 +272,19 @@
    "frames": 12,
    "rootFacing": true
   }
+ },
+ "enemy_saboteur": {
+  "url": "glb/enemy_saboteur_walk.glb",
+  "mode": "unit",
+  "frames": 32,
+  "size": 0.95,
+  "byHeight": true,
+  "yaw0": 90,
+  "P": 120,
+  "pad": 0.08,
+  "anim": {
+   "frames": 12,
+   "rootFacing": true
+  }
  }
 }

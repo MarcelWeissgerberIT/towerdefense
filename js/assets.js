@@ -133,7 +133,7 @@ export const Models = {
       const grd = g.createLinearGradient(0, 0, 0, m.h);
       grd.addColorStop(0, 'rgba(235,250,255,0.85)'); grd.addColorStop(1, 'rgba(140,210,255,0.8)');
       g.fillStyle = grd;
-    } else g.fillStyle = 'rgba(120,255,40,0.75)';
+    } else g.fillStyle = kind === 'rage' ? 'rgba(255,50,20,0.8)' : kind === 'hack' ? 'rgba(255,150,40,0.8)' : 'rgba(120,255,40,0.75)';
     g.fillRect(0, 0, m.w, m.h);
     if (this._tint.size > 600) this._tint.clear();
     this._tint.set(key, c);

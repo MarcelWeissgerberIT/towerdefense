@@ -624,3 +624,60 @@ body.aiming #btn-wave { display: none; }
 body.xray #game, body.xray #hud, body.xray #btn-wave, body.xray #btn-orbital, body.xray #btn-nuke, body.xray #btn-hole {
   filter: grayscale(1) invert(1) brightness(0.7) contrast(2.8) sepia(0.8) hue-rotate(165deg) saturate(3.5) brightness(1.3);
 }
+
+/* ---------- boss bar ---------- */
+#boss-bar { position: fixed; z-index: 6; left: 50%; transform: translateX(-50%); top: calc(58px + var(--sat)); width: min(460px, 56vw); pointer-events: none; }
+#boss-bar .bb-head { display: flex; justify-content: space-between; align-items: baseline; font-family: var(--font-title); font-weight: 800; font-size: 12px; letter-spacing: 0.1em; color: #ffd0c0; text-shadow: 0 1px 3px #000; margin-bottom: 3px; }
+#bb-phase { color: #ff5a3c; font-size: 11px; }
+#boss-bar.p2 #bb-phase { animation: obarm 0.5s infinite alternate; }
+#boss-bar.p3 #bb-phase { color: #8fdcff; }
+#boss-bar .bb-track { position: relative; height: 12px; background: rgba(10,8,8,0.85); border: 1px solid rgba(255,120,90,0.6); box-shadow: 0 0 12px rgba(255,60,30,0.35); overflow: hidden; }
+#bb-fill { position: absolute; inset: 0 auto 0 0; width: 100%; background: linear-gradient(180deg, #ff6a3c, #b3200f); transition: width 0.15s; }
+#boss-bar.p2 #bb-fill { background: linear-gradient(180deg, #ff3b2e, #7a0c05); }
+#bb-shield { position: absolute; inset: 0 auto 0 0; width: 0; background: rgba(120,220,255,0.55); }
+#boss-bar .bb-track i { position: absolute; top: 0; bottom: 0; width: 2px; background: rgba(255,255,255,0.7); }
+body.boss #buffs { top: calc(100px + var(--sat)); }
+body.boss #toasts { top: calc(100px + var(--sat)); }
+@media (max-aspect-ratio: 1/1) { #boss-bar { top: calc(64px + var(--sat)); width: 86vw; } body.boss #toasts, body.boss #buffs { top: calc(108px + var(--sat)); } }
+
+/* ---------- tower specializations ---------- */
+.tm-spec { font-size: 11px; color: #e2c4ff; font-weight: 700; letter-spacing: 0.04em; }
+.tm-specs { display: flex; flex-direction: column; gap: 4px; margin: 4px 0 6px; }
+.tm-spec-head { font-family: var(--font-title); font-size: 11px; font-weight: 800; letter-spacing: 0.1em; color: #e2c4ff; }
+.tm-spec-head .ic { width: 15px; height: 15px; vertical-align: -0.2em; }
+.tm-spec-btn { font: inherit; text-align: left; display: flex; flex-direction: column; gap: 1px; padding: 6px 8px; color: var(--text); background: linear-gradient(180deg, rgba(120,70,190,0.45), rgba(60,30,100,0.55)); border: 1px solid rgba(200,150,255,0.55); }
+.tm-spec-btn b { font-size: 14px; color: #f0e2ff; }
+.tm-spec-btn span { font-size: 11.5px; color: #cfc4dd; line-height: 1.15; }
+.tm-spec-btn:disabled { filter: grayscale(0.8) brightness(0.6); }
+.tm-spec-btn:active { filter: brightness(1.3); }
+
+/* ---------- commander perks ---------- */
+.perk-box { width: min(720px, 100%); background: rgba(10,12,14,0.88); border: 1px solid var(--line); padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; }
+.perk-top { display: flex; align-items: center; gap: 12px; }
+.perk-top .panel-title { flex: 1; margin: 0; text-align: left; }
+.perk-stars { color: var(--amber); font-weight: 800; font-size: 22px; }
+.perk-stars small { font-size: 12px; color: var(--muted); font-weight: 600; }
+.perk-hint { font-size: 13px; color: var(--muted); }
+#perk-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 6px; }
+.perk { display: flex; align-items: center; gap: 10px; padding: 8px 10px; background: rgba(255,255,255,0.04); border: 1px solid var(--line); }
+.perk-ic { width: 34px; height: 34px; }
+.perk-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.perk-info b { font-size: 15px; color: #fff; }
+.perk-info span { font-size: 12px; color: #c9c3b8; line-height: 1.15; }
+.perk-pips { display: flex; gap: 4px; margin-top: 2px; }
+.perk-pips i { width: 18px; height: 5px; background: rgba(255,255,255,0.15); }
+.perk-pips i.on { background: var(--amber); box-shadow: 0 0 6px rgba(255,178,30,0.6); }
+.perk .btn { min-width: 64px; }
+#btn-perks2 { white-space: nowrap; color: var(--amber); }
+@media (max-width: 560px) { #btn-perks2 { padding: 4px 8px; font-size: 13px; } }
+/* tall content in a centred screen: centre with auto margins so the top stays reachable when it scrolls */
+#screen-perks, #screen-help { justify-content: flex-start; }
+#screen-perks > .perk-box, #screen-help > .help-box { margin-block: auto; }
+@media (max-height: 500px) { .perk { padding: 5px 8px; } .perk-info span { font-size: 11px; } .perk-ic { width: 28px; height: 28px; } }
+
+/* ---------- nuke replay ---------- */
+#btn-replay { position: fixed; z-index: 7; left: 50%; transform: translateX(-50%); bottom: calc(14px + var(--sab)); font: inherit; font-family: var(--font-title); font-weight: 800; font-size: 15px; letter-spacing: 0.1em; padding: 10px 18px; color: #1a1206; background: linear-gradient(180deg, #e8ff3a, #9fae10); border: 1px solid #f6ff9a; clip-path: polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px); animation: aimIn 0.25s ease-out, glowpulse 1.2s infinite; }
+body.aiming #btn-replay { display: none; }
+#replay-label { position: fixed; z-index: 13; left: calc(16px + var(--sal)); top: calc(14px + var(--sat)); font-family: var(--font-title); font-weight: 800; font-size: 15px; letter-spacing: 0.12em; color: #fff; text-shadow: 0 1px 4px #000; pointer-events: none; }
+#replay-label i { display: inline-block; width: 11px; height: 11px; border-radius: 50%; background: #ff2a1a; margin-right: 6px; animation: obarm 0.5s infinite alternate; }
+body.replaying #hud, body.replaying #btn-wave, body.replaying #btn-orbital, body.replaying #btn-nuke, body.replaying #btn-hole, body.replaying #boss-bar, body.replaying #buffs { visibility: hidden; }

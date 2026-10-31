@@ -57,6 +57,12 @@
     <button id="aim-fire" class="btn primary">AUSLÖSEN</button>
     <button id="aim-cancel" class="btn icon" aria-label="Abbrechen">✕</button>
   </div>
+  <button id="btn-replay" class="hidden">▶ WIEDERHOLUNG</button>
+  <div id="replay-label" class="hidden"><i></i> WIEDERHOLUNG</div>
+  <div id="boss-bar" class="hidden">
+    <div class="bb-head"><span id="bb-name"></span><span id="bb-phase"></span></div>
+    <div class="bb-track"><div id="bb-fill"></div><div id="bb-shield"></div><i style="left:50%"></i><i style="left:20%"></i></div>
+  </div>
   <div id="buffs"></div>
   <div id="pu-banner" class="hidden"><div class="pu-icon" id="pu-icon"></div><div class="pu-name" id="pu-name"></div><div class="pu-desc" id="pu-desc"></div></div>
 
@@ -76,6 +82,7 @@
     <div class="tm-head"><span id="tm-name">Gatling-MG</span><span id="tm-level">I</span></div>
     <div class="tm-hp"><div id="tm-hpfill"></div></div>
     <div class="tm-stats" id="tm-stats"></div>
+    <div class="tm-specs hidden" id="tm-specs"></div>
     <div class="tm-actions">
       <button id="tm-upgrade" class="btn primary">▲ UPGRADE</button>
       <button id="tm-repair" class="btn"></button>
@@ -99,6 +106,7 @@
       <div class="tagline">30 Einsätze. 6 Kriegsschauplätze. Challenges. Halte die Maschinenarmee auf.</div>
       <div class="menu-buttons">
         <button class="btn primary large" id="btn-play">SPIELEN</button>
+        <button class="btn large" id="btn-perks">KOMMANDO ★</button>
         <button class="btn large" id="btn-help">ANLEITUNG</button>
         <button class="btn large" id="btn-free">FREIES SPIEL: AN</button>
         <button class="btn large" id="btn-sound">TON: AN</button>
@@ -110,6 +118,7 @@
     <div class="levels-top">
       <button class="btn icon" id="btn-levels-back">◀</button>
       <div class="lv-tabs"><button id="tab-campaign" class="lv-tab on">KAMPAGNE</button><button id="tab-challenges" class="lv-tab">CHALLENGES</button></div>
+      <button class="btn icon" id="btn-perks2" title="Kommando">★ KOMMANDO</button>
       <div class="total-stars" id="total-stars"></div>
       <div id="diff-bar">
         <span class="diff-label">SCHWIERIGKEIT</span>
@@ -119,6 +128,15 @@
     </div>
     <div id="level-list"></div>
     <div id="challenge-list" class="hidden"></div>
+  </div>
+
+  <div id="screen-perks" class="screen hidden title-bg dim">
+    <div class="perk-box">
+      <div class="perk-top"><button class="btn icon" id="btn-perks-back">◀</button><div class="panel-title">KOMMANDO</div><div class="perk-stars" id="perk-stars"></div></div>
+      <div class="perk-hint">Verdiente Sterne in dauerhafte Vorteile investieren – sie gelten in allen Kampagnen-Einsätzen (nicht in Challenges).</div>
+      <div id="perk-list"></div>
+      <button class="btn" id="btn-perks-reset">ALLE STERNE ZURÜCKHOLEN</button>
+    </div>
   </div>
 
   <div id="screen-help" class="screen hidden title-bg dim">

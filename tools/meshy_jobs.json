@@ -106,5 +106,9 @@
  },
  "p3d_prop_c_uplink": {
   "image_url": "https://cdn.openart.ai/openart-ai/production/2026-10/create-image/wRD6PTxSzjxZwjWN69MC/gpt-image-2-1_1793461603277_715d3438.png"
+ },
+ "enemy_saboteur": {
+  "image_url": "https://cdn.openart.ai/openart-ai/production/2026-10/create-image/wRD6PTxSzjxZwjWN69MC/gpt-image-2-1_1793476382781_a2ddc9b0.png",
+  "polycount": 40000
  }
 }
