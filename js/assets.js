@@ -239,7 +239,7 @@ export const Assets = {
     for (const [k, [file, cols, n, size, ay]] of Object.entries(VFX)) {
       jobs.push(loadImage(`assets/vfx/${file}.webp`).then((im) => { this.vfx[k] = { img: im, cols, n, size, ay }; }));
     }
-    this._vfxLazy = { nuke: ['explosion_nuke', 7, 28, 300, 0.84] };
+    this._vfxLazy = { nuke: ['explosion_nuke', 7, 28, 300, 0.84], hole: ['vfx_blackhole', 8, 40, 300, 0.5] };
     // UI icon set (OpenArt, one consistent badge style)
     jobs.push(Promise.all([fetch('assets/ui/icons.json').then(r => r.json()), loadImage('assets/ui/icons.webp')]).then(([meta, img]) => { this.ui = { meta, img }; }));
     await Promise.all(jobs);

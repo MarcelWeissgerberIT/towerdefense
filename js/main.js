@@ -1,5 +1,5 @@
 // Iron Sentinel – app controller: screens, HUD, build drawer, tower menu, game loop.
-import { TOWERS, ENEMIES, TOWER_ORDER, MAX_LEVEL, BIOMES, BIOME_ORDER, UPGRADE_TIME, ELEV_RANGE, CLASS_NAME, EFFECT, POWERUPS, NUKE, effectOf, upgradeCost, towerStats } from './config.js';
+import { TOWERS, ENEMIES, TOWER_ORDER, MAX_LEVEL, BIOMES, BIOME_ORDER, UPGRADE_TIME, ELEV_RANGE, CLASS_NAME, EFFECT, POWERUPS, NUKE, HOLE, effectOf, upgradeCost, towerStats } from './config.js';
 import { LEVEL_SPECS, LEVEL_COUNT, getLevel, makeWaves, hpMultiplier } from './levels.js';
 import { Assets, Models, drawIcon } from './assets.js';
 import { Renderer } from './render.js';
@@ -128,6 +128,7 @@ function openBuildMenu(cx, cy) {
   $('btn-wave').classList.add('under-drawer');
   $('btn-orbital').classList.add('under-drawer');
   $('btn-nuke').classList.add('under-drawer');
+  $('btn-hole').classList.add('under-drawer');
   requestAnimationFrame(() => ensureCellVisible(cx, cy));
   sfx('click');
 }
@@ -181,6 +182,7 @@ function closeBuildMenu() {
   $('btn-wave').classList.remove('under-drawer');
   $('btn-orbital').classList.remove('under-drawer');
   $('btn-nuke').classList.remove('under-drawer');
+  $('btn-hole').classList.remove('under-drawer');
 }
 $('bd-build').onclick = (e) => { e.stopPropagation(); buildChosen(); };
 $('bd-close').onclick = (e) => { e.stopPropagation(); closeBuildMenu(); sfx('click'); };
@@ -389,6 +391,13 @@ function openCatalog() {
 function onTap(p) {
   unlockAudio();
   if (!game || paused || game.state === 'won' || game.state === 'lost') return;
+  if (ui.targeting === 'hole') {
+    const w = renderer.screenToWorld(p.x, p.y), g = toGrid(w.x, w.y);
+    if (game.holeStrike(g.x, g.y)) toast('SCHWARZES LOCH GEÖFFNET', 'warn', 1600);
+    ui.targeting = null;
+    $('btn-hole').classList.remove('arming');
+    return;
+  }
   if (ui.targeting === 'nuke') {
     const w = renderer.screenToWorld(p.x, p.y), g = toGrid(w.x, w.y);
     if (game.nukeStrike(g.x, g.y)) toast('ATOMSCHLAG – EINSCHLAG IN 3 SEKUNDEN', 'bad', 2400);
@@ -433,7 +442,7 @@ $('btn-orbital').onclick = () => {
   if (ui.targeting === 'orbital') { ui.targeting = null; $('btn-orbital').classList.remove('arming'); sfx('click'); return; }
   if (game.orbital.cd > 0) { sfx('error'); toast(`Orbitalschlag lädt noch ${Math.ceil(game.orbital.cd)} s`, 'bad', 1400); return; }
   closeBuildMenu(); closeTowerMenu();
-  if (ui.targeting === 'nuke') $('btn-nuke').classList.remove('arming');
+  for (const id of ['btn-nuke', 'btn-hole']) $(id).classList.remove('arming');
   ui.targeting = 'orbital';
   $('btn-orbital').classList.add('arming');
   sfx('click');
@@ -445,12 +454,33 @@ $('btn-nuke').onclick = () => {
   if (ui.targeting === 'nuke') { ui.targeting = null; $('btn-nuke').classList.remove('arming'); sfx('click'); return; }
   if (!game.nukeReady()) { sfx('error'); toast(`Atombombe lädt: ${Math.floor(game.nuke.charge / game.nuke.need * 100)} % – Abschüsse laden sie auf`, 'bad', 1800); return; }
   closeBuildMenu(); closeTowerMenu();
-  if (ui.targeting === 'orbital') $('btn-orbital').classList.remove('arming');
+  for (const id of ['btn-orbital', 'btn-hole']) $(id).classList.remove('arming');
   ui.targeting = 'nuke';
   $('btn-nuke').classList.add('arming');
   sfx('alarm');
   toast('Ziel antippen – Vorsicht: beschädigt eigene Türme im Zentrum', 'warn', 2600);
 };
+$('btn-hole').onclick = () => {
+  if (!game || paused || !game.hole.on) return;
+  unlockAudio();
+  if (ui.targeting === 'hole') { ui.targeting = null; $('btn-hole').classList.remove('arming'); sfx('click'); return; }
+  if (game.hole.cd > 0) { sfx('error'); toast(`Schwarzes Loch lädt noch ${Math.ceil(game.hole.cd)} s`, 'bad', 1400); return; }
+  closeBuildMenu(); closeTowerMenu();
+  for (const id of ['btn-orbital', 'btn-nuke']) $(id).classList.remove('arming');
+  ui.targeting = 'hole';
+  $('btn-hole').classList.add('arming');
+  sfx('click');
+  toast('Ziel für das Schwarze Loch antippen', 'warn', 2200);
+};
+function updateHole() {
+  const b = $('btn-hole'), o = game.hole;
+  b.classList.toggle('hidden', !o.on);
+  if (!o.on) return;
+  const ready = o.cd <= 0;
+  b.style.setProperty('--p', (1 - o.cd / o.max).toFixed(3));
+  b.classList.toggle('ready', ready && ui.targeting !== 'hole');
+  setText('hole-cd', ui.targeting === 'hole' ? 'ZIEL' : ready ? 'BEREIT' : `${Math.ceil(o.cd)} s`);
+}
 function updateNuke() {
   const b = $('btn-nuke'), n = game.nuke;
   b.classList.toggle('hidden', !n.on);
@@ -490,6 +520,7 @@ function updateHUD() {
   if (!game) return;
   updateOrbital();
   updateNuke();
+  updateHole();
   updateBuffs();
   setText('hud-lives', String(game.lives));
   if (setText('hud-credits', String(game.credits))) pulse('stat-credits');
@@ -657,7 +688,7 @@ async function startLevel(i, ch = null) {
   }
   const models = [...types].map(t => ENEMIES[t].model);
   const slow = setTimeout(() => toast('Lade Einsatzdaten …', '', 1500), 400);
-  await Promise.all([Assets.loadBiome(spec.biome), Assets.loadModels(models), i + 1 >= NUKE.unlock ? Assets.loadVfx('nuke') : null]);
+  await Promise.all([Assets.loadBiome(spec.biome), Assets.loadModels(models), i + 1 >= NUKE.unlock ? Assets.loadVfx('nuke') : null, i + 1 >= HOLE.unlock ? Assets.loadVfx('hole') : null]);
   clearTimeout(slow);
   game = g;
   window.__game = game;
@@ -682,6 +713,10 @@ async function startLevel(i, ch = null) {
     save.data.bigMapHint = true; save.write();
     setTimeout(() => toast('Große Karte: mit zwei Fingern zoomen und verschieben – rote Pfeile zeigen Gegner außerhalb', '', 5000), 1200);
   } else if (game.routes.length > 1) setTimeout(() => toast(`${game.routes.length} Angriffspfade – verteidige alle Zugänge!`, '', 3200), 1400);
+  if (game.hole.on && !save.data.holeHint) {
+    save.data.holeHint = true; save.write();
+    setTimeout(() => toast('Neu: SCHWARZES LOCH – saugt Gegner 10 Sekunden lang ein (Knopf rechts oben)', 'warn', 5000), 4200);
+  }
   if (game.nuke.on && !save.data.nukeHint) {
     save.data.nukeHint = true; save.write();
     setTimeout(() => toast('Neu: ATOMBOMBE – lädt sich durch Abschüsse auf (Knopf rechts)', 'warn', 5000), 3400);
@@ -772,15 +807,21 @@ function frame(now) {
   let dt = (now - last) / 1000;
   last = now;
   if (dt > 0.1) dt = 0.1;
+  let ts = 1;
   if (game && !paused) {
-    acc += dt * speed;
+    // cinematic time (nuclear strike): freeze, slow motion, ramp back - the HUD and screen effects run in real time
+    ts = game.timeScale();
+    game.advanceCinematic(dt);
+    game.fx.realtimeScreen = true;
+    game.fx.screen(dt);
+    acc += dt * speed * ts;
     let n = 0;
     while (acc >= STEP && n < 12) { game.update(STEP); acc -= STEP; n++; }
     if (n === 12) acc = 0;
     processEvents();
     updateHUD();
   }
-  if (game) renderer.draw(paused ? 0 : dt * Math.min(speed, 2), ui);
+  if (game) renderer.draw(paused ? 0 : dt * Math.min(speed, 2) * ts, ui);
 }
 
 async function boot() {

@@ -199,7 +199,7 @@ export class FX {
     this.whiteout = 1.35;
     this.flash = 1;
     this.shake = 36;
-    this.boom(x, y + 20, 820, 3.4, Assets.vfx.nuke ? 'nuke' : 'heavy');
+    this.boom(x, y + 20, 820, 6.5, Assets.vfx.nuke ? 'nuke' : 'heavy');
     this.add({ k: 'glow', x, y: y - 60, s: 900, life: 0.9, spr: 'white', keep: true });
     this.add({ k: 'glow', x, y: y - 40, s: 600, life: 1.6, spr: 'orange', keep: true });
     for (const [r1, life, c] of [[1100, 1.4, '255,255,255'], [800, 1.1, '255,200,120'], [520, 0.8, '255,150,60']]) this.add({ k: 'ring', x, y, r0: 30, r1, life, c, keep: true });
@@ -215,6 +215,17 @@ export class FX {
       this.boom(x + Math.cos(a) * r, y + Math.sin(a) * r * 0.5, rand(110, 190), 1.0, Math.random() < 0.5 ? 'ground' : 'fire');
       this.shake = Math.max(this.shake, 8);
     });
+  }
+  // light and debris orbiting into a black hole (cx, cy = core)
+  orbit(cx, cy, r, debris = false) {
+    this.add({ k: 'orbit', cx, cy, r, a: Math.random() * Math.PI * 2, va: rand(2.5, 4.5), vr: r / rand(0.9, 1.6), debris, c: debris ? '#2a2630' : Math.random() < 0.5 ? '#ffd6a0' : '#d9a8ff', life: 1.6, x: cx, y: cy });
+  }
+  holeCollapse(x, y) {
+    this.flash = Math.max(this.flash, 0.6);
+    this.add({ k: 'glow', x, y, s: 520, life: 0.5, spr: 'violet', keep: true });
+    this.add({ k: 'glow', x, y, s: 260, life: 0.35, spr: 'white', keep: true });
+    for (const [r1, life, c] of [[700, 0.9, '220,170,255'], [420, 0.6, '255,255,255']]) this.add({ k: 'ring', x, y: y + 70, r0: 20, r1, life, c, keep: true });
+    for (let i = 0; i < 40; i++) this.add({ k: 'spark', x, y, vx: rand(-420, 420), vy: rand(-380, 200), c: Math.random() < 0.5 ? '#e7c8ff' : '#ffffff', life: rand(0.4, 0.9) });
   }
   frostMist(x, y) {
     this.add({ k: 'mist', x, y, vx: rand(-14, 14), vy: rand(-18, -6), s: rand(14, 24), grow: 26, life: rand(0.5, 0.9) });
@@ -262,6 +273,12 @@ export class FX {
           break;
         case 'text': o.y -= 34 * dt; break;
         case 'mist': case 'gsmoke': o.x += o.vx * dt; o.y += o.vy * dt; o.vx *= 1 - dt * 1.5; break;
+        case 'orbit':
+          o.a += o.va * dt * (1 + 60 / (o.r + 20));
+          o.r = Math.max(0, o.r - o.vr * dt);
+          o.x = o.cx + Math.cos(o.a) * o.r; o.y = o.cy + Math.sin(o.a) * o.r * 0.42;
+          if (o.r <= 2) o.t = o.life;
+          break;
         case 'drip': o.x += o.vx * dt; o.y += o.vy * dt; o.vy += 520 * dt; break;
         case 'shard':
           o.x += o.vx * dt; o.y += o.vy * dt;
@@ -286,9 +303,14 @@ export class FX {
     for (let i = n; i < p.length; i++) p[w++] = p[i];
     p.length = w;
     for (const o of spawned) if (p.length < MAX_PARTICLES) p.push(o);
+    if (!this.realtimeScreen) this.screen(dt);
+  }
+
+  // screen-space effects decay in real time (they keep fading while the world is frozen / in slow motion)
+  screen(dt) {
     this.shake = Math.max(0, this.shake - dt * 18);
     this.flash = Math.max(0, this.flash - dt * 1.6);
-    this.whiteout = Math.max(0, this.whiteout - dt * 0.8);
+    this.whiteout = Math.max(0, this.whiteout - dt * 1.6);
   }
 
   draw(ctx) {
@@ -319,6 +341,9 @@ export class FX {
           ctx.drawImage(o.dark ? fx.flakSmoke : fx.smoke, o.x - s / 2, o.y - s / 2, s, s);
           break;
         }
+        case 'orbit':
+          if (o.debris) { ctx.globalAlpha = Math.min(1, o.r / 30); ctx.fillStyle = o.c; ctx.fillRect(o.x - 2.5, o.y - 2.5, 5, 5); }
+          break;
         case 'drip':
           ctx.globalAlpha = 1 - k;
           ctx.fillStyle = '#7dff2e';
@@ -338,14 +363,21 @@ export class FX {
         case 'boom': {
           const ex = Assets.vfx[o.kind || 'fire'];
           if (!ex || !ex.img) break;
-          const f = Math.min(ex.n - 1, Math.floor(k * ex.n));
-          const sx = (f % ex.cols) * ex.size, sy = Math.floor(f / ex.cols) * ex.size;
-          ctx.globalAlpha = k > 0.8 ? (1 - k) / 0.2 : 1;
+          const fp = Math.min(ex.n - 1, k * ex.n);
+          const f = Math.floor(fp);
+          const a0 = k > 0.8 ? (1 - k) / 0.2 : 1;
           ctx.save();
           ctx.translate(o.x, o.y);
           ctx.rotate(o.rot);
           if (o.flip) ctx.scale(-1, 1);
-          ctx.drawImage(ex.img, sx, sy, ex.size, ex.size, -o.s / 2, -o.s * ex.ay, o.s, o.s);
+          const frameAt = (fi, a) => {
+            const sx = (fi % ex.cols) * ex.size, sy = Math.floor(fi / ex.cols) * ex.size;
+            ctx.globalAlpha = a;
+            ctx.drawImage(ex.img, sx, sy, ex.size, ex.size, -o.s / 2, -o.s * ex.ay, o.s, o.s);
+          };
+          // slow, long effects (mushroom cloud) blend between frames so they stay smooth
+          if (o.kind === 'nuke' && f < ex.n - 1) { const fr = fp - f; frameAt(f, a0); frameAt(f + 1, a0 * fr); }
+          else frameAt(f, a0);
           ctx.restore();
           break;
         }
@@ -401,6 +433,15 @@ export class FX {
           ctx.globalAlpha = 0.6 * (1 - k);
           ctx.drawImage(fx.green, o.x - 6, o.y - 6, 12, 12);
           break;
+        case 'orbit': {
+          if (o.debris) break;
+          const s = 6 + o.r * 0.05;
+          ctx.globalAlpha = Math.min(1, o.r / 40) * 0.9;
+          ctx.strokeStyle = o.c; ctx.lineWidth = 2;
+          ctx.beginPath(); ctx.moveTo(o.x, o.y); ctx.lineTo(o.cx + Math.cos(o.a - 0.25) * (o.r + 6), o.cy + Math.sin(o.a - 0.25) * (o.r + 6) * 0.42); ctx.stroke();
+          ctx.drawImage(fx.violet, o.x - s, o.y - s, s * 2, s * 2);
+          break;
+        }
         case 'boom': {
           if (k < 0.35) {
             ctx.globalAlpha = (0.35 - k) * 1.4;

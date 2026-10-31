@@ -242,3 +242,5 @@ export const POWERUPS = {
   atom: { name: 'ATOMCODE', icon: 'atom', color: '#e8ff3a', dur: 0, w: 1, desc: 'Atombombe zur Hälfte geladen' },
 };
 export const DROP = { chance: 0.022, gap: 18, life: 9 };
+// black hole (from mission 8): captures machines in its radius, spirals them in and crushes them; lasts 10 s
+export const HOLE = { unlock: 8, cd: 110, first: 45, dur: 10, radius: 2.6, pull: 1.4, dps: 0.07, flat: 30, bossSlow: 0.75, bossDps: 0.012, collapse: 0.3 };

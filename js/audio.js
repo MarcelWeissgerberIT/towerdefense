@@ -161,6 +161,19 @@ const SFX = {
     [523, 659, 784, 1047].forEach((f, i) => tone(t + i * 0.07, 0.22, { type: 'square', f0: f, gain: 0.06 }));
     noise(t, 0.5, { freq: 2000, q: 0.5, sweepTo: 8000, gain: 0.08 });
   },
+  holeOpen() {
+    const t = ctx.currentTime;
+    tone(t, 9.6, { type: 'sine', f0: 55, f1: 36, gain: 0.35, attack: 0.6 });
+    tone(t, 9.6, { type: 'triangle', f0: 82, f1: 60, gain: 0.08, attack: 1 });
+    noise(t, 9.6, { freq: 400, q: 0.6, type: 'lowpass', gain: 0.18, attack: 1.2, sweepTo: 120 });
+    noise(t, 1.2, { freq: 6000, q: 0.5, sweepTo: 300, gain: 0.12, attack: 0.05 });
+  },
+  holeCollapse() {
+    const t = ctx.currentTime;
+    noise(t, 0.6, { freq: 200, q: 0.5, sweepTo: 5000, gain: 0.2, attack: 0.4 });
+    tone(t + 0.5, 1.4, { type: 'sine', f0: 90, f1: 25, gain: 0.7 });
+    noise(t + 0.5, 1.6, { freq: 700, q: 0.4, type: 'lowpass', gain: 0.5, sweepTo: 90 });
+  },
   rankUp() {
     const t = ctx.currentTime;
     tone(t, 0.12, { type: 'square', f0: 660, gain: 0.05 });

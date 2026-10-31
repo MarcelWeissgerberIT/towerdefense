@@ -1,5 +1,5 @@
 // Isometric canvas renderer
-import { HW, HH, TOWERS, BIOMES, TOWER_SCALE, ELEV_PX, NUKE, POWERUPS } from './config.js';
+import { HW, HH, TOWERS, BIOMES, TOWER_SCALE, ELEV_PX, NUKE, POWERUPS, HOLE } from './config.js';
 import { toWorld, toGrid, mulberry32, clamp } from './iso.js';
 import { Assets, Models, drawIcon } from './assets.js';
 import { CELL } from './game.js';
@@ -486,6 +486,7 @@ export class Renderer {
     }
     for (const p of game.puddles) this.drawPuddle(ctx, p);
     for (const z of game.radZones) this.drawRadiation(ctx, z);
+    for (const h of game.holes) this.drawHoleGround(ctx, h);
     for (const e of game.enemies) {
       const m = Models.meta(e.def.model);
       const s = (m ? m.w * m.scale * 0.6 : 60) * e.def.scale;
@@ -537,6 +538,7 @@ export class Renderer {
     this.drawShots(ctx, game.shots);
     this.drawStrikes(ctx, game);
     this.drawNukes(ctx, game);
+    for (const h of game.holes) this.drawHole(ctx, h);
     this.drawDrops(ctx, game);
     game.fx.draw(ctx);
     for (const e of game.enemies) this.drawHp(ctx, e);
@@ -546,6 +548,19 @@ export class Renderer {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     this.drawAmbient(ctx, dt);
     this.drawOffscreen(ctx, game);
+    if (game.cine) {
+      const c = game.cine, end = c.pre + c.freeze + c.slow + c.ramp;
+      const k = Math.min(1, c.t / 0.35, Math.max(0, (end - c.t) / 0.7));
+      const bh = this.vh * 0.085 * k;
+      ctx.fillStyle = '#000';
+      ctx.fillRect(0, 0, this.vw, bh); ctx.fillRect(0, this.vh - bh, this.vw, bh);
+      const ts = game.timeScale();
+      if (k > 0.5) {
+        ctx.font = '800 15px "Rajdhani", system-ui, sans-serif'; ctx.textAlign = 'center';
+        ctx.fillStyle = `rgba(255,${ts === 0 ? 90 : 200},60,${0.65 + 0.35 * Math.sin(this.time * 8)})`;
+        ctx.fillText(ts === 0 ? '■  ZEIT ANGEHALTEN' : ts < 1 ? '▶  ZEITLUPE' : '', this.vw / 2, this.vh - bh / 2 + 5);
+      }
+    }
     if (game.buffs.timestop > 0) {
       const a = Math.min(1, game.buffs.timestop / 0.5, (6 - game.buffs.timestop) / 0.3 + 0.2);
       ctx.fillStyle = `rgba(90,170,255,${0.14 * a})`; ctx.fillRect(0, 0, this.vw, this.vh);
@@ -621,6 +636,62 @@ export class Renderer {
       ctx.drawImage(Assets.fx.white, hx - 12, hy - 12, 24, 24);
       ctx.restore();
     }
+  }
+  // black hole: gravity well on the ground, swirling arms
+  drawHoleGround(ctx, h) {
+    const c = toWorld(h.gx, h.gy), str = h.str ?? 1;
+    const rx = HOLE.radius * HW * Math.SQRT2, ry = HOLE.radius * HH * Math.SQRT2;
+    ctx.save();
+    const g = ctx.createRadialGradient(c.x, c.y, 0, c.x, c.y, rx);
+    g.addColorStop(0, `rgba(0,0,0,${0.75 * str})`); g.addColorStop(0.55, `rgba(20,0,30,${0.4 * str})`); g.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.ellipse(c.x, c.y, rx, ry, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.lineWidth = 3;
+    for (let arm = 0; arm < 4; arm++) {
+      ctx.strokeStyle = `rgba(190,120,255,${0.28 * str})`;
+      ctx.beginPath();
+      for (let i = 0; i <= 40; i++) {
+        const u = i / 40, r = rx * (1 - u) * 0.95, a = arm * Math.PI / 2 + this.time * 1.6 + u * 4.2;
+        const x = c.x + Math.cos(a) * r, y = c.y + Math.sin(a) * r * (ry / rx);
+        if (i) ctx.lineTo(x, y); else ctx.moveTo(x, y);
+      }
+      ctx.stroke();
+    }
+    ctx.strokeStyle = `rgba(210,150,255,${(0.3 + 0.2 * Math.sin(this.time * 4)) * str})`; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.ellipse(c.x, c.y, rx, ry, 0, 0, Math.PI * 2); ctx.stroke();
+    ctx.restore();
+  }
+  // the hole itself: event horizon + accretion disk (video sprite), hovering above the ground
+  drawHole(ctx, h) {
+    const c = toWorld(h.gx, h.gy), t = h.t;
+    const ex = Assets.vfx.hole;
+    const S = 470 * Math.min(1, t / 0.45) * Math.min(1, Math.max(0, (h.dur - t) / 0.5));
+    if (S <= 1) return;
+    const cx = c.x, cy = c.y - 90;
+    let f = 0;
+    if (ex) {
+      const open = 2.4, top = Math.round((ex.n - 1) * 0.72);
+      if (t < open) f = Math.floor(t / open * top);
+      else { const p = Math.floor((t - open) * 10) % (2 * (ex.n - 1 - top)); f = top + (p < ex.n - 1 - top ? p : 2 * (ex.n - 1 - top) - p); }
+    }
+    ctx.save();
+    // event horizon (always pitch black)
+    const r = S * (0.045 + 0.09 * f / Math.max(1, (ex ? ex.n : 2) - 1));
+    ctx.fillStyle = '#000';
+    ctx.beginPath(); ctx.arc(cx, cy + (0.485 - 0.5) * S, r, 0, Math.PI * 2); ctx.fill();
+    if (ex && ex.img) {
+      const sx = (f % ex.cols) * ex.size, sy = Math.floor(f / ex.cols) * ex.size;
+      ctx.drawImage(ex.img, sx, sy, ex.size, ex.size, cx - S / 2, cy - S / 2, S, S);
+    }
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = 0.35 + 0.15 * Math.sin(this.time * 5);
+    ctx.drawImage(Assets.fx.violet, cx - S * 0.45, cy - S * 0.3, S * 0.9, S * 0.6);
+    ctx.restore();
+    // remaining time ring under the hole
+    const k = 1 - t / h.dur;
+    ctx.strokeStyle = 'rgba(220,170,255,0.8)'; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.ellipse(c.x, c.y, 26, 13, 0, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * k); ctx.stroke();
   }
   drawRadiation(ctx, z) {
     const c = toWorld(z.gx, z.gy);
@@ -1006,12 +1077,15 @@ export class Renderer {
     if (!m) return;
     const f = Models.unitFrame(e);
     const pose = this.enemyPose(e, m);
+    const vx = e.vortex;
+    if (vx) pose.roll = (pose.roll || 0) + Math.sin(vx.spin) * 0.5 * vx.k + vx.spin * 0.12 * vx.k;
+    const sc = def.scale * (vx ? vx.sq : 1);
     const lift = e.air ? def.lift * (e.liftMul ?? 1) + pose.bob : pose.bob;
     const y = e.wy - lift;
     const x = e.wx + pose.dx;
     if (ghost) {
-      if (pose.roll) { ctx.save(); ctx.translate(x, y); ctx.rotate(pose.roll); Models.draw(ctx, name, f, 0, 0, def.scale); ctx.restore(); }
-      else Models.draw(ctx, name, f, x, y, def.scale);
+      if (pose.roll) { ctx.save(); ctx.translate(x, y); ctx.rotate(pose.roll); Models.draw(ctx, name, f, 0, 0, sc); ctx.restore(); }
+      else Models.draw(ctx, name, f, x, y, sc);
       return;
     }
     if (def.cloak && !this.game.visible(e)) {
@@ -1032,12 +1106,12 @@ export class Renderer {
       ctx.save();
       ctx.translate(x, y);
       ctx.rotate(pose.roll);
-      Models.draw(ctx, name, f, 0, 0, def.scale);
+      Models.draw(ctx, name, f, 0, 0, sc);
       this.drawStatus(ctx, e, name, f, 0, 0);
       if (e.flash > 0) { ctx.globalCompositeOperation = 'lighter'; Models.draw(ctx, name, f, 0, 0, def.scale, Math.min(1, e.flash / 0.06) * 0.55); ctx.globalCompositeOperation = 'source-over'; }
       ctx.restore();
     } else {
-      Models.draw(ctx, name, f, x, y, def.scale);
+      Models.draw(ctx, name, f, x, y, sc);
       this.drawStatus(ctx, e, name, f, x, y);
       if (e.flash > 0) { ctx.globalCompositeOperation = 'lighter'; Models.draw(ctx, name, f, x, y, def.scale, Math.min(1, e.flash / 0.06) * 0.55); ctx.globalCompositeOperation = 'source-over'; }
     }

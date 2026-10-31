@@ -1,6 +1,6 @@
 // Core simulation: grid, routes, towers (turret aiming), enemies (attack towers), projectiles, waves.
 import {
-  TOWERS, ENEMIES, BIOMES, EFFECT, FROST, SHATTER, THERMAL, ACID_ARMOR, NUKE, POWERUPS, DROP, ELEV_PX, ELEV_RANGE, MAX_LEVEL, TOWER_SCALE, UPGRADE_TIME, WAVE_GAP, SELL_RATE, FULL_REFUND_TIME, towerStats, upgradeCost, totalInvested,
+  TOWERS, ENEMIES, BIOMES, EFFECT, FROST, SHATTER, THERMAL, ACID_ARMOR, NUKE, POWERUPS, DROP, HOLE, ELEV_PX, ELEV_RANGE, MAX_LEVEL, TOWER_SCALE, UPGRADE_TIME, WAVE_GAP, SELL_RATE, FULL_REFUND_TIME, towerStats, upgradeCost, totalInvested,
 } from './config.js';
 import { getLevel, makeWaves, makeBossRush, hpMultiplier } from './levels.js';
 import { toWorld, rand, mulberry32 } from './iso.js';
@@ -100,6 +100,8 @@ export class Game {
     // nuclear strike, charged by kills; power-up crates and active buffs
     this.nuke = { charge: 0, need: NUKE.need(L.number), on: L.number >= NUKE.unlock && !M.noAbilities };
     this.nukes = [];
+    this.hole = { cd: HOLE.first, max: HOLE.cd, on: L.number >= HOLE.unlock && !M.noAbilities };
+    this.holes = [];
     this.radZones = [];
     this.drops = [];
     this.lastDrop = -99;
@@ -772,6 +774,7 @@ export class Game {
       if (e.frozenT <= 0) { e.frost = 35; e.freezeImm = FROST.immune; this.fx.sparks(e.wx, this.bodyY(e), 6, '#dff7ff', 120); }
     } else if (e.frost > 0 && this.time - (e.frostHit || 0) > 0.25) e.frost = Math.max(0, e.frost - FROST.decay * dt);
 
+    if (e.vortex) { if (this.holes.includes(e.vortex.h)) { this.updateVortex(e, dt); return; } e.vortex = null; }
     // kamikaze dive
     if (def.dive) {
       if (!e.diving) {
@@ -814,6 +817,7 @@ export class Game {
     sp *= 1 - slow;
     if (e.frozenT > 0) sp = 0;
     if (this.buffs.timestop > 0) sp *= def.boss ? 0.3 : 0;
+    if (e.holeSlow) { sp *= 1 - e.holeSlow; e.holeSlow = 0; }
     e.d += sp * dt;
     // footfalls: two per animation cycle (or per configured stride for unanimated gaits)
     const stepLen = Models.meta(def.model)?.af ? Models.cycleOf(def) / 2 : (def.stride || 0.6);
@@ -959,6 +963,25 @@ export class Game {
   }
 
   // ---------------- update ----------------
+  // ---- cinematic time: real-time phases [pre (normal), freeze, slow motion, ramp back] ----
+  startCinematic(o = {}) { this.cine = { t: 0, pre: 0.55, freeze: 0.9, slow: 2.6, scale: 0.12, ramp: 1.6, ...o }; }
+  timeScale() {
+    const c = this.cine;
+    if (!c) return 1;
+    let t = c.t;
+    if ((t -= c.pre) < 0) return 1;
+    if ((t -= c.freeze) < 0) return 0;
+    if ((t -= c.slow) < 0) return c.scale;
+    if ((t -= c.ramp) < 0) { const k = 1 + t / c.ramp; return c.scale + (1 - c.scale) * k * k; }
+    return 1;
+  }
+  advanceCinematic(realDt) {
+    const c = this.cine;
+    if (!c) return;
+    c.t += realDt;
+    if (c.t > c.pre + c.freeze + c.slow + c.ramp + 0.1) this.cine = null;
+  }
+
   // ---- nuclear strike ----
   nukeReady() { return this.nuke.on && this.nuke.charge >= this.nuke.need; }
   nukeStrike(gx, gy) {
@@ -989,6 +1012,7 @@ export class Game {
       this._nuking = false;
       this.radZones.push({ gx: n.gx, gy: n.gy, r: NUKE.radR, t: NUKE.radT, life: NUKE.radT });
       this.fx.nuke(w.x, w.y);
+      this.startCinematic();
       this.decals.push({ x: w.x, y: w.y, s: 420 });
       this.emit('nukeHit', {});
       sfx('nuke');
@@ -1000,6 +1024,68 @@ export class Game {
     }
     if (this.radZones.some(z => z.t <= 0)) this.radZones = this.radZones.filter(z => z.t > 0);
   }
+  // ---- black hole ----
+  holeStrike(gx, gy) {
+    if (!this.hole.on || this.hole.cd > 0) return false;
+    this.hole.cd = this.hole.max;
+    this.holes.push({ gx, gy, t: 0, dur: HOLE.dur, id: uid++ });
+    sfx('holeOpen');
+    return true;
+  }
+  updateHoles(dt) {
+    if (this.hole.on && this.wave > 0 && this.hole.cd > 0) this.hole.cd = Math.max(0, this.hole.cd - dt);
+    for (const h of this.holes) {
+      h.t += dt;
+      const w = toWorld(h.gx, h.gy);
+      const open = Math.min(1, h.t / 0.8) * Math.min(1, (h.dur - h.t) / 0.5 + 0.2);
+      h.str = Math.max(0, open);
+      // debris and light streaming into the vortex
+      if (Math.random() < dt * 40 * h.str) this.fx.orbit(w.x, w.y - 70, rand(70, 190) * h.str, Math.random() < 0.3);
+      for (const e of this.enemiesInRange(h.gx, h.gy, HOLE.radius, true, true)) {
+        if (e.def.boss) {
+          e.holeSlow = HOLE.bossSlow;
+          this.damage(e, e.maxHp * HOLE.bossDps * dt, { ignoreArmor: true, dot: true });
+          continue;
+        }
+        if (!e.vortex) {
+          const a = Math.atan2(e.gy - h.gy, e.gx - h.gx);
+          e.vortex = { h, k: 0, a, r: Math.hypot(e.gx - h.gx, e.gy - h.gy), spin: 0, sq: 1 };
+        }
+      }
+      if (h.t >= h.dur) {
+        h.done = true;
+        this.fx.holeCollapse(w.x, w.y - 70);
+        this.fx.shake = Math.max(this.fx.shake, 12);
+        for (const e of this.enemies) if (e.vortex && e.vortex.h === h) {
+          this.damage(e, e.maxHp * HOLE.collapse, { ignoreArmor: true });
+          e.vortex = null;
+        }
+        sfx('holeCollapse');
+      }
+    }
+    if (this.holes.some(h => h.done)) this.holes = this.holes.filter(h => !h.done);
+  }
+  // a captured machine spirals into the core, shrinking and spinning, crushed by tidal forces
+  updateVortex(e, dt) {
+    const v = e.vortex, h = v.h;
+    v.k = Math.min(1, v.k + dt / HOLE.pull);
+    const str = h.str ?? 1;
+    v.r = Math.max(0, v.r - dt * (0.25 + 0.55 * v.k) * str);
+    v.a += dt * (1.2 + 5 * (1 - v.r / HOLE.radius)) * str;
+    v.spin += dt * (2 + 9 * v.k);
+    v.sq = 0.35 + 0.65 * Math.min(1, v.r / HOLE.radius + 0.25);
+    e.gx = h.gx + Math.cos(v.a) * v.r;
+    e.gy = h.gy + Math.sin(v.a) * v.r;
+    const w = toWorld(e.gx, e.gy);
+    const lift = (1 - v.r / HOLE.radius) * 60 * v.k;
+    e.wx = e.rx = w.x; e.wy = e.ry = w.y - lift;
+    this.damage(e, (e.maxHp * HOLE.dps + HOLE.flat * Math.sqrt(e.hpMul)) * dt * v.k, { ignoreArmor: true, dot: true });
+    if (e.alive && v.r < 0.18) {
+      this.fx.add({ k: 'glow', x: e.wx, y: e.wy - 20, s: 90, life: 0.25, spr: 'violet' });
+      this.damage(e, e.hp + e.shield + 1, { ignoreArmor: true });
+    }
+  }
+
   // ---- power-up crates ----
   spawnDrop(gx, gy) {
     const pool = Object.entries(POWERUPS).filter(([k]) => k !== 'atom' || this.nuke.on);
@@ -1067,6 +1153,7 @@ export class Game {
     this.time += dt;
     this.updateStrikes(dt);
     this.updateNukes(dt);
+    this.updateHoles(dt);
     this.updateDrops(dt);
     while (this.queue.length && this.queue[0].t <= this.time) {
       const s = this.queue.shift();
