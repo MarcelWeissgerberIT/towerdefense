@@ -3,7 +3,7 @@
 
 let ctx = null, master = null, noiseBuf = null;
 let sprite = null, spriteMap = null, spriteLoading = null;
-let sirenH = null;
+let sirenH = null, outNode = null, meter = null;
 let enabled = true;
 const last = {};
 
@@ -23,6 +23,7 @@ function init() {
   comp.threshold.value = -10; comp.knee.value = 6; comp.ratio.value = 5;
   comp.attack.value = 0.003; comp.release.value = 0.25;
   master.connect(hpf).connect(comp).connect(ctx.destination);
+  outNode = comp;
   noiseBuf = ctx.createBuffer(1, ctx.sampleRate * 1.5, ctx.sampleRate);
   const d = noiseBuf.getChannelData(0);
   for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
@@ -53,10 +54,10 @@ function play(name, { gain = 1, rate = 1, offset = 0, dur = null, delay = 0, fad
   else {
     g.gain.setValueAtTime(gain, t0 + Math.max(fadeIn, len - fadeOut));
     g.gain.linearRampToValueAtTime(0, t0 + len);
-    src.stop(t0 + len + 0.02);
   }
   src.connect(g).connect(master);
   src.start(t0, m[0] + offset);
+  if (!loop) src.stop(t0 + len + 0.02);     // stop() is only allowed after start()
   return { src, g, t0 };
 }
 const pick = (base, n) => base + (1 + Math.floor(Math.random() * n));
@@ -371,11 +372,19 @@ const SFX = {
   },
 };
 
+const errLogged = {};
 export function sfx(name, arg) {
   if (!enabled || !ctx || ctx.state !== 'running') return;
   const fn = SFX[name];
-  if (fn) try { fn(arg); } catch (e) { /* ignore */ }
+  if (fn) try { fn(arg); } catch (e) { if (!errLogged[name]) { errLogged[name] = 1; console.warn('sfx ' + name, e); } }
 }
 
-// for tests / debugging
+// for tests / debugging: peak level (dBFS) at the output over the last ~50 ms
+export function audioLevel() {
+  if (!outNode) return -120;
+  if (!meter) { meter = ctx.createAnalyser(); meter.fftSize = 2048; outNode.connect(meter); }
+  const d = new Float32Array(meter.fftSize); meter.getFloatTimeDomainData(d);
+  let pk = 0; for (const v of d) pk = Math.max(pk, Math.abs(v));
+  return 20 * Math.log10(pk + 1e-6);
+}
 export function audioStatus() { return { state: ctx && ctx.state, sprite: !!sprite, sounds: spriteMap ? Object.keys(spriteMap).length : 0 }; }
