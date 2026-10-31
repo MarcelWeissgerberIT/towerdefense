@@ -1,6 +1,6 @@
 // Core simulation: grid, routes, towers (turret aiming), enemies (attack towers), projectiles, waves.
 import {
-  TOWERS, ENEMIES, BIOMES, EFFECT, ELEV_PX, ELEV_RANGE, MAX_LEVEL, TOWER_SCALE, UPGRADE_TIME, WAVE_GAP, SELL_RATE, FULL_REFUND_TIME, towerStats, upgradeCost, totalInvested,
+  TOWERS, ENEMIES, BIOMES, EFFECT, FROST, SHATTER, THERMAL, ACID_ARMOR, ELEV_PX, ELEV_RANGE, MAX_LEVEL, TOWER_SCALE, UPGRADE_TIME, WAVE_GAP, SELL_RATE, FULL_REFUND_TIME, towerStats, upgradeCost, totalInvested,
 } from './config.js';
 import { getLevel, makeWaves, hpMultiplier } from './levels.js';
 import { toWorld, rand, mulberry32 } from './iso.js';
@@ -8,6 +8,7 @@ import { FX } from './fx.js';
 import { sfx } from './audio.js';
 import { Models } from './assets.js';
 
+export const RANKS = [10, 30, 70, 140];
 const TALL_DECOR = new Set(['prop_tree', 'prop_j_tree', 'prop_i_pine', 'prop_v_spire']);
 export const CELL = { FREE: 0, ROAD: 1, BLOCK: 2, SPAWN: 3, BASE: 4, TOWER: 5 };
 const TAU = Math.PI * 2;
@@ -87,6 +88,10 @@ export class Game {
     const avgLen = L.paths.reduce((a, p) => a + p.cells.length, 0) / L.paths.length;
     this.waveGap = WAVE_GAP + Math.max(0, avgLen - 40) * 0.12;
     this.props = [];
+    this.puddles = [];
+    // orbital strike: special ability with cooldown (from mission 2)
+    this.orbital = { cd: 25, max: 85, on: L.number >= 2 };
+    this.strikes = [];
     this.setupGrid();
   }
 
@@ -322,6 +327,7 @@ export class Game {
       shield: def.shield ? Math.round(def.shield * hpMul) : 0, maxShield: def.shield ? Math.round(def.shield * hpMul) : 0, shieldHit: -9,
       gx: p.x, gy: p.y, wx: w.x, wy: w.y, rx: w.x, ry: w.y, ang: Math.atan2(p.dy, p.dx),
       off: rand(-0.16, 0.16), slowT: 0, slowF: 0, burnT: 0, burnDps: 0, flash: 0, flashCd: 0, anim: Math.random() * 10,
+      frost: 0, frozenT: 0, freezeImm: 0, acidN: 0, acidT: 0, acidDps: 0, acidSrc: null, puddleCd: 0,
       alive: true, air: !!def.air, atkCool: rand(0.5, 1.5), atkTarget: null, reward: Math.round(def.reward * rewardMul),
       spawnT: def.spawns ? def.spawns.every : 0, diving: null, healT: 0, hpMul, walk: Math.random() * 3, turnRate: 0,
     };
@@ -334,7 +340,12 @@ export class Game {
     if (!e.alive) return 0;
     // tower effectiveness against the enemy class (light / armoured / heavy / air)
     const src = opts.src;
-    const mult = src && src.type && EFFECT[src.type] ? (EFFECT[src.type][e.def.cls] ?? 1) : 1;
+    let mult = src && src.type && EFFECT[src.type] ? (EFFECT[src.type][e.def.cls] ?? 1) : 1;
+    if (src && src.rank) mult *= 1 + 0.08 * src.rank;            // veteran towers
+    if (e.frozenT > 0 && src && SHATTER.towers.includes(src.type)) {
+      mult *= SHATTER.mul;                                          // frozen machines shatter
+      if (this.time > (e.shatterFx || 0)) { e.shatterFx = this.time + 0.6; this.fx.text(e.wx, this.bodyY(e) - 50, 'ZERSCHMETTERT', '#bff0ff'); this.fx.sparks(e.wx, this.bodyY(e), 10, '#e6fbff', 200); }
+    }
     let dmg = raw * mult;
     if (src && (mult >= 1.35 || mult <= 0.6) && this.time > (src.fbT || 0) && this.time > (this._fbG || 0)) {
       src.fbT = this.time + 7; this._fbG = this.time + 0.9;
@@ -350,23 +361,59 @@ export class Game {
       if (e.shield <= 0) { this.fx.shieldBreak(e.wx, this.bodyY(e)); sfx('hit'); }
       if (dmg <= 0) return sd;
     }
-    dmg = opts.ignoreArmor ? dmg : Math.max(dmg * 0.2, dmg - e.armor);
+    const armor = Math.max(0, e.armor - e.acidN * ACID_ARMOR);     // acid eats the armour
+    dmg = opts.ignoreArmor ? dmg : Math.max(dmg * 0.2, dmg - armor);
+    if (opts.acid) this.corrode(e, opts.acid, opts.src);
     e.hp -= dmg;
     if (e.flashCd <= 0) { e.flash = 0.06; e.flashCd = 0.2; }
     if (e.hp <= 0) this.kill(e, opts.src);
     return dmg;
   }
 
+  // frost build-up: slows, at 100 % the machine freezes solid (bosses only slow down)
+  chill(e, amt) {
+    if (!e.alive || e.frozenT > 0) return;
+    e.frost = Math.min(FROST.max, e.frost + amt * (e.freezeImm > 0 ? 0.4 : 1));
+    e.frostHit = this.time;
+    if (e.frost >= FROST.max && !e.def.boss && e.freezeImm <= 0) {
+      e.frozenT = FROST.freeze;
+      this.fx.add({ k: 'ring', x: e.wx, y: e.wy, r0: 10, r1: 60, life: 0.35, c: '190,240,255' });
+      this.fx.sparks(e.wx, this.bodyY(e), 10, '#dff7ff', 160);
+      sfx('freeze');
+    }
+  }
+  // acid corrosion: stacks reduce armour and burn over time
+  corrode(e, dps, src, stacks = 1) {
+    e.acidN = Math.min(src && src.def ? src.def.acidMax || 5 : 5, e.acidN + stacks);
+    e.acidT = src && src.def ? src.def.acidDur || 4 : 4;
+    e.acidDps = Math.max(e.acidDps, dps);
+    e.acidSrc = src || e.acidSrc;
+  }
+
   kill(e, src) {
     e.alive = false;
     this.kills++;
-    if (src) src.kills++;
+    if (src) {
+      src.kills++;
+      // veterans: rank up at 10 / 30 / 70 / 140 kills (+8 % damage per rank)
+      if (src.def && this.towers.includes(src)) {
+        const rank = RANKS.filter(k => src.kills >= k).length;
+        if (rank > (src.rank || 0)) {
+          src.rank = rank;
+          this.fx.text(src.wx, src.wy - 100, 'RANG ' + '★'.repeat(rank), '#ffd34d');
+          this.fx.add({ k: 'ring', x: src.wx, y: src.wy + 8, r0: 16, r1: 90, life: 0.5, c: '255,210,90' });
+          this.emit('rankUp', { t: src, rank });
+          sfx('rankUp');
+        }
+      }
+    }
     this.credits += e.reward;
     const y = this.bodyY(e);
     const big = e.def.boss ? 3.0 : e.def.cost >= 10 ? 1.7 : e.def.cost >= 5 ? 1.3 : e.type === 'spider' ? 0.8 : 1;
     // explosion style depends on what killed the machine
     const sk = src && src.def ? src.def.kind : null;
-    const kind = sk === 'plasma' || sk === 'emp' || sk === 'laser' || sk === 'rail' ? 'plasma' : (!sk && e.burnT > 0) || sk === 'flame' ? 'burn' : 'fire';
+    const kind = e.frozenT > 0 || sk === 'cryo' ? 'ice' : sk === 'acid' || (!sk && e.acidT > 0) ? 'acid'
+      : sk === 'plasma' || sk === 'emp' || sk === 'laser' || sk === 'rail' ? 'plasma' : (!sk && e.burnT > 0) || sk === 'flame' ? 'burn' : 'fire';
     this.fx.death(e, { x: e.wx, y, ground: !e.air, kind, scale: big, frame: Models.unitFrame(e) });
     this.fx.text(e.wx, y - 30 * big, `+${e.reward}`);
     if (!e.air) this.decals.push({ x: e.wx, y: e.wy, s: 70 * Math.min(big, 2.4) });
@@ -461,7 +508,7 @@ export class Game {
       const d = angDiff(t.ang, want);
       const step = def.turn * dt;
       t.ang += Math.abs(d) <= step ? d : Math.sign(d) * step;
-      aimOk = Math.abs(angDiff(t.ang, want)) < (def.kind === 'flame' || def.kind === 'laser' ? 0.35 : 0.22);
+      aimOk = Math.abs(angDiff(t.ang, want)) < (def.kind === 'flame' || def.kind === 'laser' || def.kind === 'cryo' ? 0.35 : 0.22);
     }
     if (!aimOk) { t.beamT = Math.max(0, t.beamT - dt); return; }
 
@@ -475,6 +522,16 @@ export class Game {
       sfx('laser');
       return;
     }
+    if (def.kind === 'cryo') {
+      t.firing = true;
+      this.damage(target, s.dps * dt, { src: t });
+      this.chill(target, s.frost * dt);
+      // upgraded cryo spreads the cold around the target
+      if (t.level >= 2) for (const e of this.enemiesInRange(target.gx, target.gy, 0.45 + 0.2 * t.level, true, true)) if (e !== target) this.chill(e, s.frost * 0.35 * dt);
+      if (Math.random() < dt * 14) { const a = this.aimPoint(target); this.fx.frostMist(a.x + rand(-10, 10), a.y + rand(-8, 8)); }
+      sfx('cryo');
+      return;
+    }
     if (def.kind === 'flame') {
       t.firing = true;
       const cone = def.cone;
@@ -483,6 +540,16 @@ export class Game {
         if (Math.abs(angDiff(t.ang, a)) <= cone / 2 + 0.12) {
           this.damage(e, s.dps * dt, { src: t });
           e.burnT = def.burnDur; e.burnDps = Math.max(e.burnDps, s.burn);
+          // thermal shock: fire on a deep-frozen machine cracks it open
+          if (e.alive && (e.frost >= THERMAL.frost || e.frozenT > 0) && this.time > (e.thermalCd || 0)) {
+            e.thermalCd = this.time + 4;
+            const bonus = e.maxHp * (e.def.boss ? THERMAL.bossFrac : THERMAL.hpFrac);
+            e.frost = 0; e.frozenT = 0; e.freezeImm = FROST.immune;
+            this.fx.thermalShock(e.wx, this.bodyY(e));
+            this.fx.text(e.wx, this.bodyY(e) - 46, 'THERMOSCHOCK', '#ffe0b0');
+            this.damage(e, bonus, { ignoreArmor: true, src: t });
+            sfx('freeze');
+          }
         }
       }
       const m = this.muzzle(t);
@@ -588,6 +655,20 @@ export class Game {
         sfx('emp');
         break;
       }
+      case 'acid': {
+        const flight = 0.75;
+        const p = routePos(target.route, target.d + target.def.speed * (1 - target.slowF) * flight);
+        const w = toWorld(p.x, p.y);
+        const n = t.level >= 3 ? 2 : 1;
+        for (let i = 0; i < n; i++) {
+          const ox = i ? rand(-0.35, 0.35) : 0, oy = i ? rand(-0.35, 0.35) : 0;
+          const w2 = toWorld(p.x + ox, p.y + oy);
+          this.shots.push({ k: 'acid', sx: m.x, sy: m.y, x: m.x, y: m.y, tx: w2.x, ty: w2.y, tgx: p.x + ox, tgy: p.y + oy, t0: -i * 0.08, dur: flight, arc: 70, dmg: s.dmg / n * (n > 1 ? 1.2 : 1), splash: s.splash, acid: s.acid, src: t, lvl: t.level });
+        }
+        this.fx.muzzle(m.x, m.y, 'green', 34);
+        sfx('acid');
+        break;
+      }
       case 'mortar': {
         const flight = 1.25;
         const p = routePos(target.route, target.d + target.def.speed * (1 - target.slowF) * flight);
@@ -633,6 +714,27 @@ export class Game {
       if (!e.alive) return;
     }
     if (e.shield < e.maxShield && this.time - e.shieldHit > 2.5) e.shield = Math.min(e.maxShield, e.shield + e.maxShield * 0.15 * dt);
+    // acid: damage over time per corrosion stack
+    if (e.acidT > 0) {
+      e.acidT -= dt;
+      this.damage(e, e.acidN * e.acidDps * dt, { ignoreArmor: true, src: e.acidSrc, dot: true });
+      if (Math.random() < dt * 6 * e.acidN) this.fx.acidDrip(e.wx + rand(-12, 12), this.bodyY(e) + rand(-10, 14));
+      if (e.acidT <= 0) { e.acidN = 0; e.acidDps = 0; }
+      if (!e.alive) return;
+    }
+    // acid puddles on the road
+    if (!e.air && this.puddles.length) {
+      e.puddleCd -= dt;
+      if (e.puddleCd <= 0) for (const p of this.puddles) {
+        if ((e.gx - p.gx) ** 2 + (e.gy - p.gy) ** 2 <= p.r * p.r) { this.corrode(e, p.dps, p.src); e.puddleCd = 0.8; break; }
+      }
+    }
+    // frost thaws, a freeze wears off into short immunity
+    if (e.freezeImm > 0) e.freezeImm -= dt;
+    if (e.frozenT > 0) {
+      e.frozenT -= dt;
+      if (e.frozenT <= 0) { e.frost = 35; e.freezeImm = FROST.immune; this.fx.sparks(e.wx, this.bodyY(e), 6, '#dff7ff', 120); }
+    } else if (e.frost > 0 && this.time - (e.frostHit || 0) > 0.25) e.frost = Math.max(0, e.frost - FROST.decay * dt);
 
     // kamikaze dive
     if (def.dive) {
@@ -670,7 +772,11 @@ export class Game {
     }
 
     let sp = def.speed;
-    if (e.slowT > 0) { e.slowT -= dt; sp *= 1 - e.slowF; if (e.slowT <= 0) e.slowF = 0; }
+    let slow = 0;
+    if (e.slowT > 0) { e.slowT -= dt; slow = e.slowF; if (e.slowT <= 0) e.slowF = 0; }
+    slow = Math.max(slow, (e.frost / FROST.max) * (def.boss ? FROST.bossSlow : FROST.slow));
+    sp *= 1 - slow;
+    if (e.frozenT > 0) sp = 0;
     e.d += sp * dt;
     // footfalls: two per animation cycle (or per configured stride for unanimated gaits)
     const stepLen = Models.meta(def.model)?.af ? Models.cycleOf(def) / 2 : (def.stride || 0.6);
@@ -736,7 +842,7 @@ export class Game {
       }
     }
     // attack towers
-    if (def.atk) {
+    if (def.atk && e.frozenT <= 0) {
       e.atkCool -= dt;
       if (e.atkCool <= 0) {
         const a = def.atk;
@@ -785,9 +891,42 @@ export class Game {
   }
 
   // ---------------- update ----------------
+  // orbital strike at grid point: a targeting beam, then a huge blast (ground and air)
+  orbitalStrike(gx, gy) {
+    if (!this.orbital.on || this.orbital.cd > 0) return false;
+    this.orbital.cd = this.orbital.max;
+    this.strikes.push({ gx, gy, t: 1.15, dur: 1.15 });
+    sfx('orbital');
+    return true;
+  }
+  updateStrikes(dt) {
+    if (this.orbital.on && this.wave > 0 && this.orbital.cd > 0) this.orbital.cd = Math.max(0, this.orbital.cd - dt);
+    for (const s of this.strikes) {
+      s.t -= dt;
+      if (s.t > 0) continue;
+      s.done = true;
+      const w = toWorld(s.gx, s.gy);
+      const dmg = 420 * Math.pow(hpMultiplier(this.level.number, Math.max(1, this.wave)), 0.85);
+      for (const e of this.enemiesInRange(s.gx, s.gy, 1.7, true, true)) {
+        const d = Math.hypot(e.gx - s.gx, e.gy - s.gy);
+        this.damage(e, dmg * (d < 0.8 ? 1 : 0.6) * (e.air ? 0.6 : 1), { ignoreArmor: true });
+      }
+      this.fx.bigExplosion(w.x, w.y - 30, 2.4, 'heavy');
+      this.fx.boom(w.x, w.y + 10, 320, 1.1, 'ground');
+      this.fx.add({ k: 'ring', x: w.x, y: w.y, r0: 20, r1: 260, life: 0.6, c: '255,230,200' });
+      this.fx.add({ k: 'glow', x: w.x, y: w.y - 40, s: 420, life: 0.35, spr: 'white' });
+      this.fx.flash = Math.max(this.fx.flash, 0.7);
+      this.fx.shake = Math.max(this.fx.shake, 16);
+      this.decals.push({ x: w.x, y: w.y, s: 200 });
+      sfx('explosion', true);
+    }
+    if (this.strikes.some(s => s.done)) this.strikes = this.strikes.filter(s => !s.done);
+  }
+
   update(dt) {
     if (this.state === 'won' || this.state === 'lost') { this.fx.update(dt); return; }
     this.time += dt;
+    this.updateStrikes(dt);
     while (this.queue.length && this.queue[0].t <= this.time) {
       const s = this.queue.shift();
       const e = this.spawn(s.type, s.route, s.hpMul, s.rewardMul);
@@ -866,6 +1005,20 @@ export class Game {
           }
           break;
         }
+        case 'acid': {
+          s.t0 += dt;
+          const k = Math.max(0, Math.min(1, s.t0 / s.dur));
+          s.x = s.sx + (s.tx - s.sx) * k;
+          s.y = s.sy + (s.ty - s.sy) * k - Math.sin(k * Math.PI) * s.arc;
+          if (k >= 1) {
+            s.dead = true;
+            this.fx.acidSplash(s.tx, s.ty, 1 + 0.2 * (s.lvl - 1));
+            this.explode(s.tgx, s.tgy, s.dmg, s.splash, { air: false, src: s.src, acid: s.acid });
+            this.puddles.push({ gx: s.tgx, gy: s.tgy, r: 0.42 + 0.08 * s.lvl, t: s.src.def.puddle, life: s.src.def.puddle, dps: s.acid * 0.6, src: s.src, seed: Math.random() * 10 });
+            sfx('acidHit');
+          }
+          break;
+        }
         case 'shell': {
           s.t0 += dt;
           const k = Math.min(1, s.t0 / s.dur);
@@ -888,6 +1041,8 @@ export class Game {
       }
     }
     if (this.shots.some(s => s.dead)) this.shots = this.shots.filter(s => !s.dead);
+    for (const p of this.puddles) p.t -= dt;
+    if (this.puddles.some(p => p.t <= 0)) this.puddles = this.puddles.filter(p => p.t > 0);
   }
 
   stars() {

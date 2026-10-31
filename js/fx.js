@@ -90,7 +90,19 @@ export class FX {
     const m = Models.meta(name);
     const heavy = e.def.cost >= 7 || e.def.boss;
     const s0 = (m ? m.scale : 0.7) * e.def.scale;
-    if (kind === 'plasma') {
+    if (kind === 'ice') {
+      // frozen machine bursts into ice
+      this.boom(x, y, 100 * scale, 0.6, 'plasma');
+      this.add({ k: 'glow', x, y, s: 170 * scale, life: 0.3, spr: 'white' });
+      this.add({ k: 'ring', x, y, r0: 10, r1: 90 * scale, life: 0.35, c: '200,245,255' });
+      for (let i = 0; i < 18 * scale; i++) this.add({ k: 'spark', x, y, vx: rand(-260, 260) * scale, vy: rand(-300, 40), c: Math.random() < 0.5 ? '#ffffff' : '#bfefff', life: rand(0.4, 0.8) });
+      for (let i = 0; i < 4; i++) this.add({ k: 'mist', x: x + rand(-20, 20), y: y + rand(-10, 10), vx: rand(-20, 20), vy: rand(-20, -5), s: 22, grow: 40, life: 1.1 });
+    } else if (kind === 'acid') {
+      this.boom(x, y - 6, 100 * scale, 0.8, 'fire');
+      this.add({ k: 'glow', x, y, s: 140 * scale, life: 0.35, spr: 'green' });
+      for (let i = 0; i < 12 * scale; i++) this.add({ k: 'drip', x, y, vx: rand(-150, 150), vy: rand(-200, -40), life: rand(0.4, 0.7) });
+      for (let i = 0; i < 5; i++) this.add({ k: 'gsmoke', x: x + rand(-18, 18), y: y + rand(-10, 6), vx: rand(-10, 10), vy: rand(-30, -10), s: 18, grow: 40, life: 1.2 });
+    } else if (kind === 'plasma') {
       this.boom(x, y, 130 * scale, 0.75, 'plasma');
       this.add({ k: 'glow', x, y, s: 150 * scale, life: 0.25, spr: 'cyan' });
       this.sparks(x, y, Math.round(12 * scale), '#aef0ff', 300 * scale);
@@ -114,12 +126,12 @@ export class FX {
           k: 'shard', c: sh.c, w: sh.w * s0, h: sh.h * s0,
           x: e.wx + sh.ox * s0, y: e.wy + sh.oy * s0 - lift, z: 0, base: e.wy + rand(-8, 10),
           vx: Math.cos(a) * v, vy: Math.sin(a) * v * 0.5, vz: rand(160, 380), rot: 0, vr: rand(-9, 9),
-          life: rand(1.1, 1.9), burn: Math.random() < 0.45, trail: 0,
+          life: rand(1.1, 1.9), burn: kind !== 'ice' && kind !== 'acid' && Math.random() < 0.45, ice: kind === 'ice', acid: kind === 'acid', trail: 0,
         });
       }
     }
     // charred wreck for heavy ground machines
-    if (ground && heavy && m && m.img) {
+    if (ground && heavy && m && m.img && kind !== 'ice') {
       this.add({ k: 'wreck', c: Models.wreck(name, frame), x: e.wx, y: e.wy, w: m.w * s0, h: m.h * s0, ax: m.ax * s0, ay: m.ay * s0, life: e.def.boss ? 14 : 8, fire: 0 });
     }
     if (heavy) {
@@ -177,6 +189,26 @@ export class FX {
     this.add({ k: 'bolt', pts: out, life: 0.16, w: 1 + 0.4 * (lvl - 1) });
     for (let i = 1; i < pts.length; i++) this.add({ k: 'glow', x: pts[i][0], y: pts[i][1], s: 46, life: 0.18, spr: 'violet' });
   }
+  frostMist(x, y) {
+    this.add({ k: 'mist', x, y, vx: rand(-14, 14), vy: rand(-18, -6), s: rand(14, 24), grow: 26, life: rand(0.5, 0.9) });
+    if (Math.random() < 0.5) this.add({ k: 'spark', x, y, vx: rand(-60, 60), vy: rand(-90, -20), c: '#eafcff', life: rand(0.25, 0.45) });
+  }
+  acidDrip(x, y) {
+    this.add({ k: 'drip', x, y, vx: rand(-10, 10), vy: rand(-20, 10), life: rand(0.35, 0.6) });
+    if (Math.random() < 0.3) this.add({ k: 'gsmoke', x, y, vx: rand(-6, 6), vy: rand(-22, -10), s: 10, grow: 18, life: 0.7 });
+  }
+  acidSplash(x, y, k = 1) {
+    this.add({ k: 'glow', x, y, s: 90 * k, life: 0.3, spr: 'green' });
+    this.add({ k: 'ring', x, y, r0: 8, r1: 60 * k, life: 0.3, c: '150,255,80' });
+    for (let i = 0; i < 10 * k; i++) this.add({ k: 'drip', x, y: y - 6, vx: rand(-110, 110), vy: rand(-160, -40), life: rand(0.35, 0.6) });
+    for (let i = 0; i < 3; i++) this.add({ k: 'gsmoke', x: x + rand(-14, 14), y: y - rand(0, 10), vx: rand(-8, 8), vy: rand(-26, -10), s: 16, grow: 30, life: 0.9 });
+  }
+  thermalShock(x, y) {
+    this.add({ k: 'glow', x, y, s: 150, life: 0.3, spr: 'white' });
+    this.add({ k: 'ring', x, y, r0: 10, r1: 90, life: 0.35, c: '255,230,200' });
+    for (let i = 0; i < 7; i++) this.add({ k: 'smoke', x: x + rand(-16, 16), y: y + rand(-12, 8), vx: rand(-40, 40), vy: rand(-60, -20), s: 18, grow: 46, life: rand(0.8, 1.2), a: 0.75 });
+    this.sparks(x, y, 12, '#fff2dc', 260);
+  }
   text(x, y, str, color = '#ffd34d') { this.add({ k: 'text', x, y, str, c: color, life: 0.9 }); }
   trail(x, y) { this.add({ k: 'smoke', x, y, vx: rand(-6, 6), vy: rand(-10, -2), s: 9, grow: 22, life: 0.6, a: 0.45 }); }
 
@@ -202,6 +234,8 @@ export class FX {
           if (o.trail <= 0) { o.trail = 0.04; spawned.push({ k: 'smoke', x: o.x, y: o.y, vx: 0, vy: -8, s: 8, grow: 18, life: 0.7, a: 0.5, dark: true, t: 0 }); }
           break;
         case 'text': o.y -= 34 * dt; break;
+        case 'mist': case 'gsmoke': o.x += o.vx * dt; o.y += o.vy * dt; o.vx *= 1 - dt * 1.5; break;
+        case 'drip': o.x += o.vx * dt; o.y += o.vy * dt; o.vy += 520 * dt; break;
         case 'shard':
           o.x += o.vx * dt; o.y += o.vy * dt;
           if (o.z > 0 || o.vz > 0) {
@@ -257,6 +291,17 @@ export class FX {
           ctx.drawImage(o.dark ? fx.flakSmoke : fx.smoke, o.x - s / 2, o.y - s / 2, s, s);
           break;
         }
+        case 'drip':
+          ctx.globalAlpha = 1 - k;
+          ctx.fillStyle = '#7dff2e';
+          ctx.fillRect(o.x - 1.6, o.y - 1.6, 3.2, 3.2);
+          break;
+        case 'gsmoke': {
+          const s = o.s + o.grow * k;
+          ctx.globalAlpha = 0.45 * (1 - k);
+          ctx.drawImage(fx.smoke, o.x - s / 2, o.y - s / 2, s, s);
+          break;
+        }
         case 'debris':
           ctx.globalAlpha = 1 - k * k;
           ctx.fillStyle = o.c;
@@ -310,6 +355,24 @@ export class FX {
           ctx.drawImage(fx.orange, o.x - 9, o.y - 9, 18, 18);
           break;
         }
+        case 'mist': {
+          const s = o.s + o.grow * k;
+          ctx.globalAlpha = 0.32 * (1 - k);
+          ctx.drawImage(fx.cyan, o.x - s / 2, o.y - s / 2, s, s);
+          ctx.globalAlpha = 0.2 * (1 - k);
+          ctx.drawImage(fx.white, o.x - s / 3, o.y - s / 3, s / 1.5, s / 1.5);
+          break;
+        }
+        case 'gsmoke': {
+          const s = (o.s + o.grow * k) * 0.8;
+          ctx.globalAlpha = 0.25 * (1 - k);
+          ctx.drawImage(fx.green, o.x - s / 2, o.y - s / 2, s, s);
+          break;
+        }
+        case 'drip':
+          ctx.globalAlpha = 0.6 * (1 - k);
+          ctx.drawImage(fx.green, o.x - 6, o.y - 6, 12, 12);
+          break;
         case 'boom': {
           if (k < 0.35) {
             ctx.globalAlpha = (0.35 - k) * 1.4;
@@ -319,6 +382,11 @@ export class FX {
           break;
         }
         case 'shard': {
+          if ((o.ice || o.acid) && k < 0.8) {
+            ctx.globalAlpha = (0.8 - k) * 0.7;
+            const s = Math.max(o.w, o.h) * 0.9;
+            ctx.drawImage(o.ice ? fx.cyan : fx.green, o.x - s / 2, o.y - o.z - s / 2, s, s);
+          }
           if (o.burn && k < 0.75) {
             ctx.globalAlpha = (0.75 - k) * 0.9;
             const s = Math.max(o.w, o.h) * 0.9;

@@ -60,6 +60,17 @@ export const TOWERS = {
     desc: 'Schwere Artillerie mit riesigem Wirkungsradius. Mindestreichweite, nur Bodenziele.',
     cost: 280, range: 5.2, minRange: 1.4, rate: 0.42, dmg: 120, splash: 1.25, ground: true, air: false, turn: 2.2, hp: 780, color: '#e0c080',
   },
+  acid: {
+    name: 'Säurewerfer', model: 'tower_acid', unlock: 10, kind: 'acid',
+    desc: 'Ätzende Säurekugeln zerfressen die Panzerung, brennen nach und hinterlassen Säurepfützen. Nur Bodenziele.',
+    cost: 190, range: 3.0, rate: 0.75, dmg: 20, splash: 0.75, acid: 7, acidMax: 5, acidDur: 4, puddle: 3.2,
+    ground: true, air: false, turn: 4, hp: 620, color: '#8dff3a',
+  },
+  cryo: {
+    name: 'Kryo-Turm', model: 'tower_cryo', unlock: 16, kind: 'cryo',
+    desc: 'Kältestrahl verlangsamt stark und friert Gegner ein. Gefrorene zerspringen unter Railgun, Mörser und Raketen – Feuer danach löst einen Thermoschock aus.',
+    cost: 220, range: 2.8, dps: 14, frost: 55, ground: true, air: true, turn: 5, hp: 640, color: '#9fe6ff',
+  },
 };
 // effectiveness of each tower against the enemy classes (damage multiplier; 0 = cannot target)
 export const CLASS_NAME = { light: 'Leicht', armored: 'Gepanzert', heavy: 'Schwer gepanzert', air: 'Luftziel' };
@@ -73,13 +84,20 @@ export const EFFECT = {
   rail:    { light: 0.6, armored: 1.2, heavy: 1.6, air: 1.0 },
   laser:   { light: 0.9, armored: 1.1, heavy: 1.35, air: 1.0 },
   mortar:  { light: 1.25, armored: 1.0, heavy: 0.75, air: 0 },
+  acid:    { light: 0.9, armored: 1.2, heavy: 1.3, air: 0 },
+  cryo:    { light: 1.0, armored: 1.0, heavy: 0.9, air: 1.0 },
 };
+// status effects
+export const FROST = { max: 100, decay: 18, slow: 0.6, bossSlow: 0.35, freeze: 1.7, immune: 2.5 };
+export const SHATTER = { mul: 1.6, towers: ['rail', 'mortar', 'missile'] };
+export const THERMAL = { frost: 45, hpFrac: 0.06, bossFrac: 0.02 };
+export const ACID_ARMOR = 1.6;   // armour removed per corrosion stack
 export function effectOf(towerType, enemyType) {
   const t = TOWERS[towerType], e = ENEMIES[enemyType];
   if (e.air ? !t.air : !t.ground) return 0;
   return EFFECT[towerType][e.cls] ?? 1;
 }
-export const TOWER_ORDER = ['gatling', 'missile', 'plasma', 'emp', 'flak', 'flame', 'rail', 'laser', 'mortar'];
+export const TOWER_ORDER = ['gatling', 'missile', 'plasma', 'emp', 'flak', 'flame', 'rail', 'acid', 'laser', 'mortar', 'cryo'];
 
 export function towerStats(type, level) {
   const t = TOWERS[type];
@@ -94,6 +112,8 @@ export function towerStats(type, level) {
     splash: t.splash ? t.splash * (1 + 0.1 * l) : 0,
     chain: t.chain ? t.chain + l : 0,
     slow: t.slow ? Math.min(0.7, t.slow + 0.08 * l) : 0,
+    frost: (t.frost || 0) * (1 + 0.3 * l),
+    acid: (t.acid || 0) * m,
     hp: Math.round(t.hp * (1 + 0.35 * l)),
   };
 }

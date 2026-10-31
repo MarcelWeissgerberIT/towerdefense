@@ -442,3 +442,27 @@ button {
   .vs-h { flex-basis: 100%; width: auto; margin-top: 2px; }
   .intel { align-items: flex-start; }
 }
+
+/* ---------- orbital strike ---------- */
+#btn-orbital {
+  position: fixed; z-index: 5;
+  right: calc(12px + var(--sar)); bottom: calc(12px + var(--sab));
+  width: 66px; height: 66px; border-radius: 50%; padding: 0;
+  border: none; color: #fff; font: inherit;
+  background: conic-gradient(#ff5a3c calc(var(--p, 0) * 360deg), rgba(255,255,255,0.12) 0);
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.6);
+}
+#btn-orbital::before { content: ''; position: absolute; inset: 4px; border-radius: 50%; background: radial-gradient(circle at 50% 35%, #3a2a26, #131011); }
+#btn-orbital > * { position: relative; }
+#btn-orbital .ob-icon { font-size: 25px; line-height: 1; filter: grayscale(0.6); }
+#btn-orbital .ob-cd { font-size: 11px; font-weight: 700; letter-spacing: 0.04em; color: #c9c3b8; margin-top: 1px; }
+#btn-orbital.ready .ob-icon { filter: none; }
+#btn-orbital.ready .ob-cd { color: #ffb43c; }
+#btn-orbital.ready { animation: obpulse 1.6s infinite; }
+#btn-orbital.arming { background: conic-gradient(#ff3020 360deg, #ff3020 0); animation: obarm 0.5s infinite alternate; }
+@keyframes obpulse { 0%,100% { box-shadow: 0 0 0 0 rgba(255,90,60,0.6); } 50% { box-shadow: 0 0 0 8px rgba(255,90,60,0); } }
+@keyframes obarm { from { filter: brightness(1); } to { filter: brightness(1.4); } }
+#btn-orbital.under-drawer { display: none; }
+.tm-stats em.rank { color: #ffd34d; font-size: 12px; }
+.vs-fx { color: #9fe6ff; }

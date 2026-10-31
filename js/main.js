@@ -5,7 +5,7 @@ import { Assets, Models } from './assets.js';
 import { Renderer } from './render.js';
 import { Input } from './input.js';
 import { Game } from './game.js';
-import { toWorld } from './iso.js';
+import { toWorld, toGrid } from './iso.js';
 import { sfx, unlockAudio, setSound, soundOn } from './audio.js';
 
 const $ = (id) => document.getElementById(id);
@@ -103,6 +103,7 @@ let bmButtons = [];
 const ROLE = {
   gatling: 'Boden + Luft · Schnellfeuer', missile: 'Boden + Luft · Fläche', plasma: 'Boden · ignoriert Panzer', emp: 'Boden + Luft · verlangsamt',
   flak: 'nur Luft · Fläche', flame: 'Boden · Kegel + Brand', rail: 'Boden + Luft · Durchschlag', laser: 'Boden + Luft · heizt auf', mortar: 'Boden · Artillerie',
+  acid: 'Boden · zerfrisst Panzerung', cryo: 'Boden + Luft · friert ein',
 };
 function openBuildMenu(cx, cy) {
   closeTowerMenu();
@@ -124,6 +125,7 @@ function openBuildMenu(cx, cy) {
   $('bd-build').classList.add('hidden');
   $('builddrawer').classList.remove('hidden');
   $('btn-wave').classList.add('under-drawer');
+  $('btn-orbital').classList.add('under-drawer');
   requestAnimationFrame(() => ensureCellVisible(cx, cy));
   sfx('click');
 }
@@ -137,7 +139,13 @@ function vsLine(k) {
   }
   if (!def.air) bad.push('trifft keine Luftziele');
   if (!def.ground) bad.push('nur Luftziele');
-  return (good.length ? `<span class="vs-good">▲ ${good.join(', ')}</span>` : '') + (bad.length ? `<span class="vs-bad">▼ ${bad.join(', ')}</span>` : '');
+  const special = {
+    cryo: '❄ friert ein · Kombo: Railgun, Mörser, Raketen ×1,6 · Feuer = Thermoschock',
+    acid: '☣ zerfrisst Panzerung · Säurepfützen',
+    emp: '⚡ Schilde ×4 · verlangsamt',
+    plasma: '🔷 ignoriert Panzerung · Schilde ×2',
+  }[k];
+  return (good.length ? `<span class="vs-good">▲ ${good.join(', ')}</span>` : '') + (special ? `<span class="vs-fx">${special}</span>` : '') + (bad.length ? `<span class="vs-bad">▼ ${bad.join(', ')}</span>` : '');
 }
 function chooseTower(k) {
   if (!game || !ui.buildCell) return;
@@ -169,6 +177,7 @@ function closeBuildMenu() {
   ui.buildCell = null; ui.previewType = null;
   $('builddrawer').classList.add('hidden');
   $('btn-wave').classList.remove('under-drawer');
+  $('btn-orbital').classList.remove('under-drawer');
 }
 $('bd-build').onclick = (e) => { e.stopPropagation(); buildChosen(); };
 $('bd-close').onclick = (e) => { e.stopPropagation(); closeBuildMenu(); sfx('click'); };
@@ -204,7 +213,7 @@ function updateTowerMenu(force) {
   const cost = maxed ? 0 : upgradeCost(t.type, t.level);
   const rc = game.repairCost(t);
   const prog = t.upgrading ? Math.floor(t.upgrading.t / t.upgrading.dur * 100) : -1;
-  const key = [t.id, t.level, t.mode, game.credits >= cost, maxed, game.sellValue(t), rc, Math.round(t.hp), prog].join('|');
+  const key = [t.id, t.level, t.mode, game.credits >= cost, maxed, game.sellValue(t), rc, Math.round(t.hp), prog, t.kills, t.rank].join('|');
   if (!force && key === tmCache) return;
   tmCache = key;
   $('tm-name').textContent = def.name;
@@ -213,7 +222,7 @@ function updateTowerMenu(force) {
   const next = maxed ? null : game.statsFor(t.type, t.level + 1, t.cx, t.cy);
   const dmg = def.dps ? `${Math.round(s.dps)}/s` : def.kind === 'hitscan' || def.kind === 'flak' ? `${Math.round(s.dmg)}×${s.rate.toFixed(1)}` : Math.round(s.dmg);
   const ndmg = next ? (def.dps ? Math.round(next.dps) : Math.round(next.dmg)) : null;
-  $('tm-stats').innerHTML = `<span>💥 ${dmg}${ndmg ? `<em>→${ndmg}</em>` : ''}</span><span>📡 ${s.range.toFixed(1)}</span><span>☠ ${t.kills}</span>`;
+  $('tm-stats').innerHTML = `<span>💥 ${dmg}${ndmg ? `<em>→${ndmg}</em>` : ''}</span><span>📡 ${s.range.toFixed(1)}</span><span>☠ ${t.kills}${t.rank ? ` <em class="rank">${'★'.repeat(t.rank)}</em>` : ''}</span>`;
   const up = $('tm-upgrade');
   up.disabled = maxed || game.credits < cost || !!t.upgrading;
   up.textContent = t.upgrading ? `⏳ ${prog} %` : maxed ? 'MAX' : `▲ ${cost} · ${UPGRADE_TIME[t.level]} s`;
@@ -360,6 +369,13 @@ function openCatalog() {
 function onTap(p) {
   unlockAudio();
   if (!game || paused || game.state === 'won' || game.state === 'lost') return;
+  if (ui.targeting === 'orbital') {
+    const w = renderer.screenToWorld(p.x, p.y), g = toGrid(w.x, w.y);
+    if (game.orbitalStrike(g.x, g.y)) toast('ORBITALSCHLAG EINGELEITET', 'warn', 1400);
+    ui.targeting = null;
+    $('btn-orbital').classList.remove('arming');
+    return;
+  }
   const c = renderer.screenToCell(p.x, p.y);
   const inMap = c.x >= 0 && c.y >= 0 && c.x < game.N && c.y < game.N;
   const t = inMap ? game.towerAt(c.x, c.y) : null;
@@ -379,6 +395,27 @@ function onTap(p) {
 }
 new Input(canvas, renderer, { tap: onTap, hover: () => {} });
 
+$('btn-orbital').onclick = () => {
+  if (!game || paused || !game.orbital.on) return;
+  unlockAudio();
+  if (ui.targeting === 'orbital') { ui.targeting = null; $('btn-orbital').classList.remove('arming'); sfx('click'); return; }
+  if (game.orbital.cd > 0) { sfx('error'); toast(`Orbitalschlag lädt noch ${Math.ceil(game.orbital.cd)} s`, 'bad', 1400); return; }
+  closeBuildMenu(); closeTowerMenu();
+  ui.targeting = 'orbital';
+  $('btn-orbital').classList.add('arming');
+  sfx('click');
+  toast('Ziel für den Orbitalschlag antippen', 'warn', 2200);
+};
+function updateOrbital() {
+  const b = $('btn-orbital'), o = game.orbital;
+  b.classList.toggle('hidden', !o.on);
+  if (!o.on) return;
+  const ready = o.cd <= 0;
+  b.style.setProperty('--p', (1 - o.cd / o.max).toFixed(3));
+  b.classList.toggle('ready', ready && ui.targeting !== 'orbital');
+  setText('orbital-cd', ui.targeting === 'orbital' ? 'ZIEL' : ready ? 'BEREIT' : `${Math.ceil(o.cd)} s`);
+}
+
 // ---------------- HUD ----------------
 const hudCache = {};
 function setText(id, v) { if (hudCache[id] === v) return false; hudCache[id] = v; $(id).textContent = v; return true; }
@@ -386,6 +423,7 @@ function pulse(id) { const el = $(id); el.classList.remove('pulse'); void el.off
 
 function updateHUD() {
   if (!game) return;
+  updateOrbital();
   setText('hud-lives', String(game.lives));
   if (setText('hud-credits', String(game.credits))) pulse('stat-credits');
   setText('hud-wave', `${game.wave}/${game.waves.length}`);
@@ -498,6 +536,7 @@ function processEvents() {
     } else if (ev.type === 'towerLost') {
       if (ui.selected === ev.t) closeTowerMenu();
     } else if (ev.type === 'wave') toast(`WELLE ${ev.n} / ${game.waves.length}`, '', 1600);
+    else if (ev.type === 'rankUp') { if (ev.rank >= 2) toast(`${TOWERS[ev.t.type].name} erreicht Rang ${'★'.repeat(ev.rank)} (+${ev.rank * 8} % Schaden)`, '', 1800); }
     else if (ev.type === 'newTypes') {
       save.data.intel = save.data.intel || {};
       for (const k of ev.types) if (!save.data.intel[k]) { save.data.intel[k] = true; showIntel(k, true); }
@@ -546,6 +585,10 @@ async function startLevel(i) {
     save.data.bigMapHint = true; save.write();
     setTimeout(() => toast('Große Karte: mit zwei Fingern zoomen und verschieben – rote Pfeile zeigen Gegner außerhalb', '', 5000), 1200);
   } else if (game.routes.length > 1) setTimeout(() => toast(`${game.routes.length} Angriffspfade – verteidige alle Zugänge!`, '', 3200), 1400);
+  if (game.orbital.on && !save.data.orbitalHint) {
+    save.data.orbitalHint = true; save.write();
+    setTimeout(() => toast('Neu: ORBITALSCHLAG – Knopf unten rechts, dann Ziel antippen', 'warn', 4500), 2600);
+  }
   maybeRotateHint();
 }
 function toMenu() { game = null; setInGameUI(false); showScreen('screen-menu'); }

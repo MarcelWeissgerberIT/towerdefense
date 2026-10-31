@@ -117,6 +117,36 @@ export const Models = {
     this._cut.set(key, out);
     return out;
   },
+  _tint: new Map(),
+  // frame recoloured for status effects ('ice' = hoarfrost, 'acid' = corrosion), cached per frame
+  tinted(name, f, kind) {
+    const key = name + ':' + f + ':' + kind;
+    let c = this._tint.get(key);
+    if (c) return c;
+    const m = this.data[name];
+    c = document.createElement('canvas');
+    c.width = m.w; c.height = m.h;
+    const g = c.getContext('2d');
+    g.drawImage(m.img, (f % m.cols) * m.w, Math.floor(f / m.cols) * m.h, m.w, m.h, 0, 0, m.w, m.h);
+    g.globalCompositeOperation = 'source-atop';
+    if (kind === 'ice') {
+      const grd = g.createLinearGradient(0, 0, 0, m.h);
+      grd.addColorStop(0, 'rgba(235,250,255,0.85)'); grd.addColorStop(1, 'rgba(140,210,255,0.8)');
+      g.fillStyle = grd;
+    } else g.fillStyle = 'rgba(120,255,40,0.75)';
+    g.fillRect(0, 0, m.w, m.h);
+    if (this._tint.size > 600) this._tint.clear();
+    this._tint.set(key, c);
+    return c;
+  },
+  drawTinted(ctx, name, f, x, y, s, kind, alpha) {
+    const m = this.data[name];
+    if (!m || !m.img || alpha <= 0.01) return;
+    const k = m.scale * s;
+    ctx.globalAlpha = Math.min(1, alpha);
+    ctx.drawImage(this.tinted(name, f, kind), x - m.ax * k, y - m.ay * k, m.w * k, m.h * k);
+    ctx.globalAlpha = 1;
+  },
   _wreck: new Map(),
   // charred copy of a frame for wrecks
   wreck(name, f) {

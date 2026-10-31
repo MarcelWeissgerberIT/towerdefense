@@ -484,6 +484,7 @@ export class Renderer {
       ctx.globalAlpha = 0.9 * pop;
       if (!Models.drawShadow(ctx, t.def.model, Models.frameFor(t.def.model, t.ang), t.wx, t.wy, TS)) ctx.drawImage(fx.shadow, t.wx - 66, t.wy - 22, 132, 58);
     }
+    for (const p of game.puddles) this.drawPuddle(ctx, p);
     for (const e of game.enemies) {
       const m = Models.meta(e.def.model);
       const s = (m ? m.w * m.scale * 0.6 : 60) * e.def.scale;
@@ -533,6 +534,7 @@ export class Renderer {
 
     this.drawBeams(ctx, game);
     this.drawShots(ctx, game.shots);
+    this.drawStrikes(ctx, game);
     game.fx.draw(ctx);
     for (const e of game.enemies) this.drawHp(ctx, e);
     for (const t of game.towers) if (t.hp < t.stats.hp) this.drawTowerHp(ctx, t);
@@ -547,6 +549,53 @@ export class Renderer {
       ctx.fillRect(0, 0, this.vw, this.vh);
       ctx.globalCompositeOperation = 'source-over';
     }
+  }
+
+  // orbital strike: targeting reticle + beam from the sky that thickens until impact
+  drawStrikes(ctx, game) {
+    for (const st of game.strikes) {
+      const c = toWorld(st.gx, st.gy);
+      const k = 1 - st.t / st.dur;
+      const rx = 1.7 * HW * Math.SQRT2, ry = 1.7 * HH * Math.SQRT2;
+      ctx.save();
+      ctx.strokeStyle = `rgba(255,70,50,${0.5 + 0.4 * Math.sin(this.time * 20)})`;
+      ctx.lineWidth = 3;
+      ctx.setLineDash([14, 10]); ctx.lineDashOffset = -this.time * 60;
+      ctx.beginPath(); ctx.ellipse(c.x, c.y, rx * (1.15 - 0.15 * k), ry * (1.15 - 0.15 * k), 0, 0, Math.PI * 2); ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.beginPath(); ctx.moveTo(c.x - 30, c.y); ctx.lineTo(c.x + 30, c.y); ctx.moveTo(c.x, c.y - 15); ctx.lineTo(c.x, c.y + 15); ctx.stroke();
+      ctx.globalCompositeOperation = 'lighter';
+      const top = c.y - 1400;
+      ctx.globalAlpha = 0.25 + 0.6 * k;
+      ctx.strokeStyle = 'rgba(255,90,60,1)'; ctx.lineWidth = 4 + 26 * k * k;
+      ctx.beginPath(); ctx.moveTo(c.x, top); ctx.lineTo(c.x, c.y); ctx.stroke();
+      ctx.strokeStyle = 'rgba(255,240,220,1)'; ctx.lineWidth = 1.5 + 8 * k * k;
+      ctx.beginPath(); ctx.moveTo(c.x, top); ctx.lineTo(c.x, c.y); ctx.stroke();
+      const g = 60 + 160 * k;
+      ctx.drawImage(Assets.fx.red, c.x - g / 2, c.y - g / 2, g, g);
+      ctx.restore();
+    }
+  }
+
+  // acid puddle: glowing pool with bubbles, fades out at the end
+  drawPuddle(ctx, p) {
+    const c = toWorld(p.gx, p.gy);
+    const fade = Math.min(1, p.t / 0.6, (p.life - p.t) / 0.15 + 0.2);
+    const rx = p.r * HW * Math.SQRT2, ry = p.r * HH * Math.SQRT2;
+    ctx.save();
+    ctx.globalAlpha = 0.75 * fade;
+    const g = ctx.createRadialGradient(c.x, c.y, 0, c.x, c.y, rx);
+    g.addColorStop(0, 'rgba(150,255,60,0.7)'); g.addColorStop(0.6, 'rgba(70,170,20,0.55)'); g.addColorStop(1, 'rgba(40,90,10,0)');
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.ellipse(c.x, c.y, rx, ry, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.globalCompositeOperation = 'lighter';
+    for (let i = 0; i < 4; i++) {
+      const ph = (this.time * 1.3 + p.seed + i * 0.37) % 1;
+      const bx = c.x + Math.sin(p.seed * 7 + i * 2.1) * rx * 0.55, by = c.y + Math.cos(p.seed * 5 + i * 1.7) * ry * 0.5;
+      ctx.globalAlpha = fade * (1 - ph) * 0.8;
+      ctx.drawImage(Assets.fx.green, bx - 5 - ph * 6, by - 5 - ph * 6, 10 + ph * 12, 10 + ph * 12);
+    }
+    ctx.restore();
   }
 
   // red edge markers pointing at enemies outside the view (big maps)
@@ -723,6 +772,19 @@ export class Renderer {
         ctx.fillStyle = t.level === 3 ? '#ffd34d' : '#d0d6dc'; ctx.fill(); ctx.strokeStyle = 'rgba(0,0,0,0.7)'; ctx.lineWidth = 1; ctx.stroke();
       }
     }
+    if (t.rank) {
+      // veteran stars: bronze, silver, gold, gold with glow
+      const col = ['#c98b4a', '#d6dde3', '#ffd34d', '#ffe680'][t.rank - 1];
+      const bx = t.wx - 36, by = t.wy + 16;
+      for (let i = 0; i < t.rank; i++) {
+        const cx = bx - i * 9, cy = by - i * 4;
+        ctx.beginPath();
+        for (let j = 0; j < 10; j++) { const r = j % 2 ? 2.4 : 5.6, a = -Math.PI / 2 + j * Math.PI / 5; ctx.lineTo(cx + Math.cos(a) * r, cy + Math.sin(a) * r); }
+        ctx.closePath();
+        ctx.fillStyle = col; ctx.fill(); ctx.strokeStyle = 'rgba(0,0,0,0.7)'; ctx.lineWidth = 1; ctx.stroke();
+      }
+      if (t.rank === 4) { ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = 0.5; ctx.drawImage(Assets.fx.yellow, bx - 30, by - 22, 40, 40); ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over'; }
+    }
     if (t.hp < t.stats.hp * 0.4 && Math.random() < 0.08) this.game.fx.smoke(t.wx + (Math.random() - 0.5) * 30, t.wy - 40, 1, 18, 1.4, true);
   }
 
@@ -814,6 +876,14 @@ export class Renderer {
     return { bob, roll, dx };
   }
 
+  // hoarfrost (grows with frost, solid when frozen) and acid corrosion tint on the body
+  drawStatus(ctx, e, name, f, x, y) {
+    const s = e.def.scale;
+    if (e.frozenT > 0) Models.drawTinted(ctx, name, f, x, y, s, 'ice', 0.78);
+    else if (e.frost > 4) Models.drawTinted(ctx, name, f, x, y, s, 'ice', e.frost / 100 * 0.6);
+    if (e.acidN > 0) Models.drawTinted(ctx, name, f, x, y, s, 'acid', 0.1 + 0.07 * e.acidN + 0.05 * Math.sin(this.time * 6 + e.id));
+  }
+
   drawEnemy(ctx, e, ghost = false) {
     const def = e.def, name = def.model;
     const m = Models.meta(name);
@@ -833,11 +903,26 @@ export class Renderer {
       ctx.translate(x, y);
       ctx.rotate(pose.roll);
       Models.draw(ctx, name, f, 0, 0, def.scale);
+      this.drawStatus(ctx, e, name, f, 0, 0);
       if (e.flash > 0) { ctx.globalCompositeOperation = 'lighter'; Models.draw(ctx, name, f, 0, 0, def.scale, Math.min(1, e.flash / 0.06) * 0.55); ctx.globalCompositeOperation = 'source-over'; }
       ctx.restore();
     } else {
       Models.draw(ctx, name, f, x, y, def.scale);
+      this.drawStatus(ctx, e, name, f, x, y);
       if (e.flash > 0) { ctx.globalCompositeOperation = 'lighter'; Models.draw(ctx, name, f, x, y, def.scale, Math.min(1, e.flash / 0.06) * 0.55); ctx.globalCompositeOperation = 'source-over'; }
+    }
+    if (e.frozenT > 0) {
+      // ice crust: frosted block around the legs and a cold glint
+      const r = m.w * m.scale * def.scale * 0.36;
+      ctx.fillStyle = 'rgba(190,235,255,0.35)';
+      ctx.strokeStyle = 'rgba(235,250,255,0.75)'; ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(x - r, y); ctx.lineTo(x - r * 0.8, y - r * 0.9); ctx.lineTo(x - r * 0.2, y - r * 1.2); ctx.lineTo(x + r * 0.5, y - r * 1.05); ctx.lineTo(x + r, y - r * 0.4); ctx.lineTo(x + r * 0.7, y + r * 0.35); ctx.lineTo(x - r * 0.6, y + r * 0.4);
+      ctx.closePath(); ctx.fill(); ctx.stroke();
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.globalAlpha = 0.5 + 0.3 * Math.sin(this.time * 7 + e.id);
+      ctx.drawImage(Assets.fx.white, x + r * 0.3 - 9, y - r - 9, 18, 18);
+      ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
     }
     const cy = y - m.centerPx * def.scale;
     if (e.slowT > 0) {
@@ -885,6 +970,28 @@ export class Renderer {
   drawBeams(ctx, game) {
     ctx.globalCompositeOperation = 'lighter';
     for (const t of game.towers) {
+      if (!t.firing || t.def.kind !== 'cryo' || !t.target) continue;
+      const m = game.muzzle(t), a = game.aimPoint(t.target);
+      const lw = 1 + 0.35 * (t.level - 1);
+      const wob = Math.sin(this.time * 30 + t.id) * 2;
+      ctx.lineCap = 'round';
+      ctx.globalAlpha = 0.35;
+      ctx.strokeStyle = 'rgba(120,210,255,1)';
+      ctx.lineWidth = 16 * lw;
+      ctx.beginPath(); ctx.moveTo(m.x, m.y); ctx.lineTo(a.x, a.y + wob); ctx.stroke();
+      ctx.globalAlpha = 0.7;
+      ctx.strokeStyle = 'rgba(190,240,255,1)';
+      ctx.lineWidth = 6 * lw;
+      ctx.beginPath(); ctx.moveTo(m.x, m.y); ctx.lineTo(a.x, a.y - wob); ctx.stroke();
+      ctx.globalAlpha = 1;
+      ctx.strokeStyle = 'rgba(255,255,255,1)';
+      ctx.lineWidth = 2 * lw;
+      ctx.beginPath(); ctx.moveTo(m.x, m.y); ctx.lineTo(a.x, a.y); ctx.stroke();
+      const s = 46 + 10 * t.level;
+      ctx.drawImage(Assets.fx.cyan, a.x - s / 2, a.y - s / 2, s, s);
+      ctx.drawImage(Assets.fx.white, m.x - 12, m.y - 12, 24, 24);
+    }
+    for (const t of game.towers) {
       if (!t.firing || t.def.kind !== 'laser' || !t.target) continue;
       const m = game.muzzle(t), a = game.aimPoint(t.target);
       const heat = t.beamT / t.def.rampTime;
@@ -926,6 +1033,12 @@ export class Renderer {
       } else if (s.k === 'ebullet' || s.k === 'flak') {
         ctx.globalCompositeOperation = 'lighter';
         ctx.drawImage(fx.yellow, s.x - 9, s.y - 9, 18, 18);
+        ctx.globalCompositeOperation = 'source-over';
+      } else if (s.k === 'acid') {
+        ctx.fillStyle = '#2d6e10';
+        ctx.beginPath(); ctx.arc(s.x, s.y, 5, 0, Math.PI * 2); ctx.fill();
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.drawImage(fx.green, s.x - 15, s.y - 15, 30, 30);
         ctx.globalCompositeOperation = 'source-over';
       } else if (s.k === 'shell') {
         ctx.fillStyle = '#1c1c1e';

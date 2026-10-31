@@ -69,5 +69,11 @@
  "enemy_mothership": {
   "image_url": "https://cdn.openart.ai/openart-ai/production/2026-10/create-image/wRD6PTxSzjxZwjWN69MC/gpt-image-2-1_1793441790676_c850ec0f.png",
   "polycount": 60000
+ },
+ "tower_cryo": {
+  "image_url": "https://cdn.openart.ai/openart-ai/production/2026-10/create-image/wRD6PTxSzjxZwjWN69MC/gpt-image-2-1_1793459453363_832baf4d.png"
+ },
+ "tower_acid": {
+  "image_url": "https://cdn.openart.ai/openart-ai/production/2026-10/create-image/wRD6PTxSzjxZwjWN69MC/gpt-image-2-1_1793459445533_36ffe445.png"
  }
 }

@@ -109,6 +109,42 @@ const SFX = {
     const t = ctx.currentTime;
     tone(t, 0.18, { type: 'sawtooth', f0: 1400 + Math.random() * 200, f1: 1200, gain: 0.03 });
   },
+  cryo() {
+    if (!throttle('cry', 120)) return;
+    const t = ctx.currentTime;
+    noise(t, 0.22, { freq: 5200, q: 0.6, type: 'highpass', gain: 0.07, attack: 0.03 });
+    tone(t, 0.2, { type: 'sine', f0: 2400 + Math.random() * 300, f1: 2100, gain: 0.012 });
+  },
+  freeze() {
+    if (!throttle('frz', 90)) return;
+    const t = ctx.currentTime;
+    noise(t, 0.12, { freq: 3800, q: 2.5, gain: 0.25 });
+    noise(t + 0.05, 0.25, { freq: 6000, type: 'highpass', gain: 0.12 });
+    tone(t, 0.3, { type: 'triangle', f0: 1800, f1: 2600, gain: 0.04 });
+  },
+  acid() {
+    if (!throttle('acd', 120)) return;
+    const t = ctx.currentTime;
+    tone(t, 0.16, { type: 'sine', f0: 220, f1: 90, gain: 0.25 });
+    noise(t, 0.12, { freq: 900, q: 1.2, gain: 0.12 });
+  },
+  acidHit() {
+    if (!throttle('ach', 80)) return;
+    const t = ctx.currentTime;
+    noise(t, 0.35, { freq: 1400, q: 0.5, type: 'lowpass', gain: 0.18, sweepTo: 300 });
+    noise(t + 0.08, 0.5, { freq: 4500, type: 'highpass', gain: 0.05, attack: 0.05 });
+  },
+  orbital() {
+    const t = ctx.currentTime;
+    tone(t, 1.2, { type: 'sawtooth', f0: 1800, f1: 120, gain: 0.08, attack: 0.3 });
+    noise(t, 1.2, { freq: 3000, q: 0.5, sweepTo: 200, gain: 0.08, attack: 0.4 });
+  },
+  rankUp() {
+    const t = ctx.currentTime;
+    tone(t, 0.12, { type: 'square', f0: 660, gain: 0.05 });
+    tone(t + 0.1, 0.12, { type: 'square', f0: 880, gain: 0.05 });
+    tone(t + 0.2, 0.25, { type: 'square', f0: 1320, gain: 0.05 });
+  },
   flame() {
     if (!throttle('flm', 110)) return;
     noise(ctx.currentTime, 0.2, { freq: 700, q: 0.4, type: 'lowpass', gain: 0.12, attack: 0.02 });

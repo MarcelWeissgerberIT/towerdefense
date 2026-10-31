@@ -208,5 +208,23 @@
   "size": 1.9,
   "yaw0": 180,
   "P": 128
+ },
+ "tower_cryo": {
+  "mode": "tower",
+  "frames": 32,
+  "size": 0.8,
+  "cut": 0.42,
+  "P": 136,
+  "capR": 0.26,
+  "shadow": true
+ },
+ "tower_acid": {
+  "mode": "tower",
+  "frames": 32,
+  "size": 0.8,
+  "cut": 0.42,
+  "P": 136,
+  "capR": 0.26,
+  "shadow": true
  }
 }

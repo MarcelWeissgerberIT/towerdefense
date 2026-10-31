@@ -37,7 +37,7 @@ function play(levelIdx, skill = 1) {
   const g = new Game(levelIdx);
   const types = C.TOWER_ORDER.filter(k => g.unlocked(k));
   // build order: mix of the unlocked towers, anti-air if drones show up
-  const weighted = ['gatling', 'missile', 'plasma', 'gatling', 'emp', 'flak', 'flame', 'missile', 'rail', 'plasma', 'laser', 'mortar', 'flame']
+  const weighted = ['gatling', 'missile', 'plasma', 'gatling', 'emp', 'flak', 'flame', 'missile', 'rail', 'acid', 'plasma', 'laser', 'cryo', 'mortar', 'flame']
     .filter(k => types.includes(k));
   const order = [];
   for (let i = 0; i < 80; i++) order.push(weighted[i % weighted.length]);
