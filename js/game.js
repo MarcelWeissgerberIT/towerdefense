@@ -619,7 +619,7 @@ export class Game {
     const gain = this.mods.noRewards ? 0 : Math.max(1, Math.round(e.reward * (this.mods.reward || 1) * (1 + this.perk.reward))) * (this.buffs.gold > 0 ? 3 : 1);
     this.credits += gain;
     if (this.buffs.gold > 0) this.fx.text(e.wx, this.bodyY(e) - 50, `+${gain} ×3`, '#ffd34d');
-    if (this.nuke.on && !this.nuke.used && !this._nuking) this.nuke.charge = Math.min(this.nuke.need, this.nuke.charge + e.reward);
+    if (this.nuke.on && !this.nuke.state && !this._nuking) this.nuke.charge = Math.min(this.nuke.need, this.nuke.charge + e.reward);
     // power-up crate: bosses always, others rarely (spaced out)
     if (!e.air || e.def.boss) {
       if (!this.mods.noAbilities && (e.def.boss || (Math.random() < DROP.chance * (1 + this.perk.drops) && this.time - this.lastDrop > DROP.gap && this.drops.length < 2))) this.spawnDrop(e.gx, e.gy);
@@ -1183,11 +1183,35 @@ export class Game {
   }
 
   // ---- nuclear strike ----
-  nukeReady() { return this.nuke.on && !this.nuke.used && this.nuke.charge >= this.nuke.need; }
+  // nuke.state: undefined = charging/ready, 'broken' = launch pad damaged, 'repair' = being repaired
+  nukeReady() { return this.nuke.on && !this.nuke.state && this.nuke.charge >= this.nuke.need; }
+  nukeRepairCost() { return NUKE.repairCost(this.level.number, this.nuke.uses || 1); }
+  repairNuke(free = false) {
+    const n = this.nuke;
+    if (n.state !== 'broken') return false;
+    const c = free ? 0 : this.nukeRepairCost();
+    if (this.credits < c) { this.emit('toast', { text: `Reparatur der Abschussrampe kostet ${c} Credits`, bad: true }); sfx('error'); return false; }
+    this.credits -= c;
+    n.state = 'repair'; n.repairT = 0;
+    n.repairDur = NUKE.repairTime * (this.mods.cd || 1) * (1 - this.perk.cd);
+    sfx('upgradeStart');
+    return true;
+  }
+  updateNukeRepair(dt) {
+    const n = this.nuke;
+    if (n.state !== 'repair') return;
+    n.repairT += dt;
+    if (n.repairT >= n.repairDur) {
+      n.state = undefined; n.charge = n.need;
+      this.emit('nukeRepaired', {});
+      sfx('powerup');
+    }
+  }
   nukeStrike(gx, gy) {
     if (!this.nukeReady()) return false;
     this.nuke.charge = 0;
-    if (NUKE.once) this.nuke.used = true;
+    this.nuke.state = 'broken';
+    this.nuke.uses = (this.nuke.uses || 0) + 1;
     this.nukes.push({ gx, gy, t: NUKE.delay, dur: NUKE.delay });
     sfx('siren');
     return true;
@@ -1306,7 +1330,7 @@ export class Game {
 
   // ---- power-up crates ----
   spawnDrop(gx, gy) {
-    const pool = Object.entries(POWERUPS).filter(([k]) => k !== 'atom' || (this.nuke.on && !this.nuke.used));
+    const pool = Object.entries(POWERUPS).filter(([k]) => k !== 'atom' || this.nuke.on);
     let r = Math.random() * pool.reduce((a, [, p]) => a + p.w, 0), type = pool[0][0];
     for (const [k, p] of pool) { r -= p.w; if (r <= 0) { type = k; break; } }
     const w = toWorld(gx, gy);
@@ -1320,7 +1344,13 @@ export class Game {
     if (!this.drops.includes(drop)) return false;
     this.drops = this.drops.filter(d => d !== drop);
     const p = POWERUPS[drop.type];
-    if (drop.type === 'atom') this.nuke.charge = Math.min(this.nuke.need, this.nuke.charge + this.nuke.need * 0.5);
+    if (drop.type === 'atom') {
+      // atom crate: +50 % charge, or a free repair start, or half of the remaining repair time
+      const n = this.nuke;
+      if (n.state === 'broken') this.repairNuke(true);
+      else if (n.state === 'repair') n.repairT += (n.repairDur - n.repairT) * 0.5;
+      else n.charge = Math.min(n.need, n.charge + n.need * 0.5);
+    }
     else this.buffs[drop.type] = p.dur;
     if (drop.type === 'repair') for (const t of this.towers) { t.hp = t.stats.hp; this.fx.add({ k: 'glow', x: t.wx, y: t.wy - 40, s: 120, life: 0.5, spr: 'green' }); }
     this.fx.add({ k: 'glow', x: drop.wx, y: drop.wy - 30, s: 220, life: 0.45, spr: 'white' });
@@ -1375,6 +1405,7 @@ export class Game {
     this.updateHoles(dt);
     this.updateDrops(dt);
     this.updateWeather(dt);
+    this.updateNukeRepair(dt);
     while (this.queue.length && this.queue[0].t <= this.time) {
       const s = this.queue.shift();
       const e = this.spawn(s.type, s.route, s.hpMul, s.rewardMul);

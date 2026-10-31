@@ -49,6 +49,7 @@ function useAbilities(g) {
   if (g.orbital.on && g.orbital.cd <= 0) { const e = densest(g, 1.7, 4); if (e) g.orbitalStrike(e.gx, e.gy); }
   if (g.hole.on && g.hole.cd <= 0) { const e = densest(g, C.HOLE.radius, 7); if (e) g.holeStrike(e.gx, e.gy); }
   if (g.nukeReady()) { const e = densest(g, C.NUKE.radius, 9); if (e) g.nukeStrike(e.gx, e.gy); }
+  if (g.nuke.state === 'broken' && g.credits > g.nukeRepairCost() + 250) g.repairNuke();
 }
 const MODS = C.mergeMods(process.env.DIFF ? C.DIFFICULTY.find(d => d.id === process.env.DIFF).mods : {}, process.env.MODS ? JSON.parse(process.env.MODS) : {});
 if (process.env.FREE === '1') MODS.unlockAll = true;

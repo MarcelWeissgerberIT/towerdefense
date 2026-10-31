@@ -316,7 +316,9 @@ export const NUKE = {
   // fallout: the area stays contaminated - share of max HP per second, shrinking slowly;
   // irradiated machines take extra damage from everything for a while
   radT: 45, radR: 3.2, radDps: 0.03, radAir: 0.5, radVuln: 1.2, radLinger: 2.5,
-  once: true,                                 // one warhead per mission
+  // after every launch the launch pad is damaged: repairing it costs credits (more each time) and takes time
+  repairCost: (lv, uses) => Math.round((420 + 20 * lv) * (1 + 0.4 * Math.max(0, uses - 1))),
+  repairTime: 80,
 };
 // power-up crates dropped by destroyed machines (tap to activate)
 export const POWERUPS = {

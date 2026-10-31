@@ -488,8 +488,14 @@ button {
 #btn-nuke.arming { background: conic-gradient(#ff3020 360deg, #ff3020 0); animation: obarm 0.4s infinite alternate; }
 @keyframes nkpulse { 0%,100% { box-shadow: 0 0 0 0 rgba(232,255,58,0.7); } 50% { box-shadow: 0 0 0 10px rgba(232,255,58,0); } }
 #btn-nuke.under-drawer { display: none; }
-#btn-nuke.spent { background: rgba(255,255,255,0.08); animation: none; opacity: 0.55; }
-#btn-nuke.spent .ob-icon { filter: grayscale(1) brightness(0.6); }
+#btn-nuke.spent { background: rgba(255,255,255,0.08); animation: none; }
+#btn-nuke.spent .ob-icon, #btn-nuke.repairing .ob-icon { filter: grayscale(1) brightness(0.6); }
+#btn-nuke.spent .ob-cd { color: #ff9a80; }
+#btn-nuke.spent.affordable { animation: nkfix 1.4s infinite; }
+#btn-nuke.spent.affordable .ob-cd { color: #ffd27a; }
+#btn-nuke.repairing { background: conic-gradient(#ffb21e calc(var(--p, 0) * 360deg), rgba(255,255,255,0.12) 0); }
+#btn-nuke.repairing .ob-cd { color: #ffd27a; }
+@keyframes nkfix { 0%,100% { box-shadow: 0 0 0 0 rgba(255,178,30,0.6); } 50% { box-shadow: 0 0 0 8px rgba(255,178,30,0); } }
 
 /* ---------- power-ups ---------- */
 #buffs { position: fixed; z-index: 6; top: calc(62px + var(--sat)); left: 50%; transform: translateX(-50%); display: flex; gap: 6px; pointer-events: none; }
