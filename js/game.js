@@ -1,8 +1,8 @@
 // Core simulation: grid, routes, towers (turret aiming), enemies (attack towers), projectiles, waves.
 import {
-  TOWERS, ENEMIES, BIOMES, ELEV_PX, ELEV_RANGE, MAX_LEVEL, TOWER_SCALE, UPGRADE_TIME, WAVE_GAP, SELL_RATE, FULL_REFUND_TIME, towerStats, upgradeCost, totalInvested,
+  TOWERS, ENEMIES, BIOMES, EFFECT, ELEV_PX, ELEV_RANGE, MAX_LEVEL, TOWER_SCALE, UPGRADE_TIME, WAVE_GAP, SELL_RATE, FULL_REFUND_TIME, towerStats, upgradeCost, totalInvested,
 } from './config.js';
-import { getLevel, makeWaves, hpMultiplier, NEW_ENEMY_TIP } from './levels.js';
+import { getLevel, makeWaves, hpMultiplier } from './levels.js';
 import { toWorld, rand, mulberry32 } from './iso.js';
 import { FX } from './fx.js';
 import { sfx } from './audio.js';
@@ -278,6 +278,7 @@ export class Game {
     const nR = this.routes.length;
     let k = 0;
     const tips = [];
+    const fresh = [];
     const n = this.wave;
     this.waveLeft[n] = 0;
     // a called-early wave starts right after the previous one finished spawning
@@ -287,8 +288,9 @@ export class Game {
         this.queue.push({ t: t0 + g.delay + i * g.gap, type: g.type, route: (k++) % nR, hpMul: hpMul * (g.hpScale || 1), rewardMul, wave: n });
         this.waveLeft[n]++;
       }
-      if (!this.seen.has(g.type)) { this.seen.add(g.type); if (NEW_ENEMY_TIP[g.type] && this.level.number > 1) tips.push(NEW_ENEMY_TIP[g.type]); }
+      if (!this.seen.has(g.type)) { this.seen.add(g.type); fresh.push(g.type); if (ENEMIES[g.type].spawns) fresh.push(ENEMIES[g.type].spawns.type); }
     }
+    if (fresh.length) this.emit('newTypes', { types: fresh });
     this.queue.sort((a, b) => a.t - b.t);
     this.state = 'wave';
     this.nextWaveIn = -1;
@@ -330,7 +332,15 @@ export class Game {
   // ---------------- damage to enemies ----------------
   damage(e, raw, opts = {}) {
     if (!e.alive) return 0;
-    let dmg = raw;
+    // tower effectiveness against the enemy class (light / armoured / heavy / air)
+    const src = opts.src;
+    const mult = src && src.type && EFFECT[src.type] ? (EFFECT[src.type][e.def.cls] ?? 1) : 1;
+    let dmg = raw * mult;
+    if (src && (mult >= 1.35 || mult <= 0.6) && this.time > (src.fbT || 0) && this.time > (this._fbG || 0)) {
+      src.fbT = this.time + 7; this._fbG = this.time + 0.9;
+      const good = mult >= 1.35;
+      this.fx.text(e.wx, this.bodyY(e) - 34, good ? '▲ EFFEKTIV' : '▼ SCHWACH', good ? '#ffb43c' : '#9aa4ad');
+    }
     if (e.shield > 0) {
       const sMul = opts.shieldMul || 1;
       const sd = Math.min(e.shield, dmg * sMul);

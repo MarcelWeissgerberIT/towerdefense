@@ -1,6 +1,6 @@
 // Iron Sentinel – app controller: screens, HUD, build drawer, tower menu, game loop.
-import { TOWERS, ENEMIES, TOWER_ORDER, MAX_LEVEL, BIOMES, BIOME_ORDER, UPGRADE_TIME, ELEV_RANGE, upgradeCost, towerStats } from './config.js';
-import { LEVEL_SPECS, LEVEL_COUNT, getLevel, makeWaves } from './levels.js';
+import { TOWERS, ENEMIES, TOWER_ORDER, MAX_LEVEL, BIOMES, BIOME_ORDER, UPGRADE_TIME, ELEV_RANGE, CLASS_NAME, EFFECT, effectOf, upgradeCost, towerStats } from './config.js';
+import { LEVEL_SPECS, LEVEL_COUNT, getLevel, makeWaves, hpMultiplier } from './levels.js';
 import { Assets, Models } from './assets.js';
 import { Renderer } from './render.js';
 import { Input } from './input.js';
@@ -127,6 +127,18 @@ function openBuildMenu(cx, cy) {
   requestAnimationFrame(() => ensureCellVisible(cx, cy));
   sfx('click');
 }
+// "strong vs / weak vs" for a tower, by enemy class
+function vsLine(k) {
+  const e = EFFECT[k], def = TOWERS[k];
+  const good = [], bad = [];
+  for (const c of ['light', 'armored', 'heavy', 'air']) {
+    if (c === 'air' ? !def.air : !def.ground) continue;
+    if (e[c] >= 1.2) good.push(CLASS_NAME[c]); else if (e[c] <= 0.6) bad.push(CLASS_NAME[c]);
+  }
+  if (!def.air) bad.push('trifft keine Luftziele');
+  if (!def.ground) bad.push('nur Luftziele');
+  return (good.length ? `<span class="vs-good">▲ ${good.join(', ')}</span>` : '') + (bad.length ? `<span class="vs-bad">▼ ${bad.join(', ')}</span>` : '');
+}
 function chooseTower(k) {
   if (!game || !ui.buildCell) return;
   const def = TOWERS[k];
@@ -137,7 +149,8 @@ function chooseTower(k) {
   const hgt = game.heightAt(ui.buildCell.x, ui.buildCell.y);
   const dmg = def.dps ? `${Math.round(s.dps)}/s` : def.kind === 'hitscan' || def.kind === 'flak' ? `${Math.round(s.dmg * s.rate)}/s` : Math.round(s.dmg);
   $('bd-info').innerHTML = `<b>${def.name}</b> <span class="bd-role">${ROLE[k]}</span><br><small>${def.desc}</small>` +
-    `<div class="bd-chips"><span>💥 ${dmg}</span><span>📡 ${s.range.toFixed(1)}${hgt ? ` <em class="hg">▲+${Math.round(hgt * ELEV_RANGE * 100)}%</em>` : ''}</span><span>🛡 ${s.hp}</span></div>`;
+    `<div class="bd-chips"><span>💥 ${dmg}</span><span>📡 ${s.range.toFixed(1)}${hgt ? ` <em class="hg">▲+${Math.round(hgt * ELEV_RANGE * 100)}%</em>` : ''}</span><span>🛡 ${s.hp}</span></div>` +
+    `<div class="bd-vs">${vsLine(k)}</div>`;
   const bb = $('bd-build');
   bb.textContent = `BAUEN · ⚡${def.cost}`;
   bb.disabled = game.credits < def.cost;
@@ -243,6 +256,106 @@ function positionMenus() {
   }
 }
 
+// ---------------- enemy intel ----------------
+const enemyIcons = {};
+function enemyIcon(type) {
+  if (enemyIcons[type]) return enemyIcons[type];
+  const def = ENEMIES[type], m = Models.meta(def.model);
+  if (!m) return '';
+  const c = document.createElement('canvas');
+  c.width = 132; c.height = 132;
+  const g = c.getContext('2d');
+  const sc = Math.min(116 / m.h, 124 / m.w);
+  let f = Models.frameFor(def.model, Math.PI / 4 - 0.25);
+  if (m.af) f = f * m.af + 2;
+  const x = 66 - (m.w / 2 - m.ax) * sc, y = 66 + (m.h / 2 - (m.h - m.ay)) * sc;
+  g.drawImage(m.img, (f % m.cols) * m.w, Math.floor(f / m.cols) * m.h, m.w, m.h, x - m.ax * sc, y - m.ay * sc, m.w * sc, m.h * sc);
+  return (enemyIcons[type] = c.toDataURL('image/png'));
+}
+const SPEED_WORD = (v) => v < 0.6 ? 'langsam' : v < 1.0 ? 'mittel' : v < 1.5 ? 'schnell' : 'sehr schnell';
+function intelHTML(type) {
+  const def = ENEMIES[type];
+  const lv = game ? game.level.number : 1, wv = game ? Math.max(1, game.wave) : 1;
+  const hp = Math.round(def.hp * hpMultiplier(lv, wv) / 10) * 10;
+  const ab = [];
+  if (def.air) ab.push('✈ Fliegt – nur Türme mit Luftabwehr können sie treffen');
+  if (def.shield) ab.push(`🔷 Energieschild (${def.shield}) – EMP ×4, Plasma ×2 gegen den Schild`);
+  if (def.heal) ab.push('➕ Repariert Maschinen im Umkreis');
+  if (def.dive) ab.push('💥 Stürzt sich auf Türme und explodiert');
+  if (def.spawns) ab.push(`🛸 Setzt laufend ${ENEMIES[def.spawns.type].name}n aus`);
+  if (def.atk) ab.push(`🎯 Beschießt Türme (Reichweite ${String(def.atk.range).replace('.', ',')})`);
+  if (def.boss) ab.push('☠ Boss – durchbricht er die Linie, kostet das viele Leben');
+  const unlocked = TOWER_ORDER.filter(k => !game || game.unlocked(k));
+  const num = (v) => String(v).replace('.', ',');
+  const vs = unlocked.map(k => {
+    const m = effectOf(k, type);
+    // shield breakers: EMP x4 / plasma x2 against energy shields
+    const sh = def.shield && m ? ({ emp: 4, plasma: 2 })[k] : 0;
+    return { k, m, sh, rank: sh ? Math.max(m, 1.2 + sh / 10) : m };
+  });
+  const chip = (o) => `<span class="vs-t"><img src="${icons[o.k] || ''}" alt=""><b>${TOWERS[o.k].name}</b><i>${!o.m ? 'trifft nicht' : o.sh ? (o.m !== 1 ? '×' + num(o.m) + ' · ' : '') + 'Schild ×' + o.sh : '×' + num(o.m)}</i></span>`;
+  const good = vs.filter(o => o.rank >= 1.2).sort((a, b) => b.rank - a.rank);
+  const bad = vs.filter(o => o.m <= 0.6).sort((a, b) => a.m - b.m);
+  return `<div class="intel">
+    <img class="intel-img" src="${enemyIcon(type)}" alt="">
+    <div class="intel-body">
+      <div class="intel-name">${def.name} <span class="cls cls-${def.cls}">${CLASS_NAME[def.cls]}</span></div>
+      <div class="intel-desc">${def.info}</div>
+      <div class="intel-stats"><span>❤ ${hp}</span><span>🛡 ${def.armor}</span><span>➤ ${SPEED_WORD(def.speed)}</span><span>⚡ +${def.reward}</span></div>
+    </div>
+  </div>
+  ${ab.length ? `<ul class="intel-abil">${ab.map(a => `<li>${a}</li>`).join('')}</ul>` : ''}
+  <div class="intel-vs">
+    ${good.length ? `<div class="vs-row good"><div class="vs-h">EFFEKTIV</div>${good.map(chip).join('')}</div>` : ''}
+    ${bad.length ? `<div class="vs-row bad"><div class="vs-h">SCHWACH</div>${bad.map(chip).join('')}</div>` : ''}
+  </div>`;
+}
+// queue of intel cards; the game pauses while one is open
+const intelQueue = [];
+let intelOpen = false;
+function showIntel(type, fresh, onClose) {
+  intelQueue.push({ type, fresh, onClose });
+  if (!intelOpen) nextIntel();
+}
+async function nextIntel() {
+  const it = intelQueue.shift();
+  if (!it) { intelOpen = false; return; }
+  intelOpen = true;
+  await Assets.loadModel(ENEMIES[it.type].model);
+  const wasPaused = paused;
+  paused = true;
+  sfx(it.fresh ? 'alarm' : 'click');
+  modal(it.fresh ? 'NEUE BEDROHUNG' : 'FEINDAUFKLÄRUNG', it.fresh ? 'warn intel-title' : 'intel-title', intelHTML(it.type), 0, [
+    [it.fresh ? 'VERSTANDEN' : 'OK', 'primary', () => {
+      closeModal();
+      paused = intelQueue.length ? true : (it.fresh ? false : wasPaused);
+      if (it.onClose) it.onClose();
+      nextIntel();
+    }],
+  ]);
+  $('modal').classList.add('intel-modal');
+}
+function enemyAt(p) {
+  let best = null, bd = Math.max(26, 44 * renderer.cam.zoom);
+  for (const e of game.enemies) {
+    if (!e.alive) continue;
+    const s = renderer.worldToScreen(e.wx, game.bodyY(e));
+    const d = Math.hypot(s.x - p.x, s.y - p.y);
+    if (d < bd) { bd = d; best = e; }
+  }
+  return best;
+}
+function openCatalog() {
+  const seen = Object.keys(ENEMIES).filter(k => save.data.intel && save.data.intel[k]);
+  Assets.loadModels(seen.map(k => ENEMIES[k].model)).then(() => {
+    modal('FEINDKATALOG', 'intel-title', seen.length
+      ? `<div class="catalog">${seen.map(k => `<button class="cat-item" data-k="${k}"><img src="${enemyIcon(k)}" alt=""><span>${ENEMIES[k].name}</span><i class="cls cls-${ENEMIES[k].cls}">${CLASS_NAME[ENEMIES[k].cls]}</i></button>`).join('')}</div>`
+      : 'Noch keine Gegner aufgeklärt.', 0, [['ZURÜCK', 'primary', () => openPause()]]);
+    $('modal').classList.add('intel-modal');
+    for (const b of document.querySelectorAll('.cat-item')) b.onclick = () => { sfx('click'); closeModal(); showIntel(b.dataset.k, false, () => openCatalog()); };
+  });
+}
+
 // ---------------- map interaction ----------------
 function onTap(p) {
   unlockAudio();
@@ -251,6 +364,10 @@ function onTap(p) {
   const inMap = c.x >= 0 && c.y >= 0 && c.x < game.N && c.y < game.N;
   const t = inMap ? game.towerAt(c.x, c.y) : null;
   if (t) { if (ui.selected === t) closeTowerMenu(); else openTowerMenu(t); return; }
+  if (!(inMap && game.canBuild(c.x, c.y))) {
+    const e = enemyAt(p);
+    if (e) { closeBuildMenu(); closeTowerMenu(); showIntel(e.type, false); return; }
+  }
   if (ui.buildCell && inMap && game.canBuild(c.x, c.y) && (c.x !== ui.buildCell.x || c.y !== ui.buildCell.y)) {
     const keep = ui.previewType;
     openBuildMenu(c.x, c.y);
@@ -322,7 +439,7 @@ function modal(title, cls, text, stars, buttons) {
     b.onclick = () => { sfx('click'); fn(); };
     box.appendChild(b);
   }
-  $('modal').classList.remove('hidden');
+  $('modal').classList.remove('hidden', 'intel-modal');
 }
 function closeModal() { $('modal').classList.add('hidden'); }
 
@@ -332,6 +449,7 @@ function openPause() {
   sfx('click');
   modal('PAUSE', '', `Einsatz ${game.level.number}: <b>${game.level.name}</b> · Welle ${game.wave}/${game.waves.length}`, 0, [
     ['WEITER', 'primary', () => { paused = false; closeModal(); }],
+    ['FEINDKATALOG', '', () => openCatalog()],
     [`TON: ${soundOn() ? 'AN' : 'AUS'}`, '', () => { toggleSound(); openPause(); }],
     ['NEU STARTEN', '', () => { closeModal(); startLevel(game.levelIdx); }],
     ['EINSATZ VERLASSEN', 'danger', () => { closeModal(); toLevels(); }],
@@ -380,7 +498,11 @@ function processEvents() {
     } else if (ev.type === 'towerLost') {
       if (ui.selected === ev.t) closeTowerMenu();
     } else if (ev.type === 'wave') toast(`WELLE ${ev.n} / ${game.waves.length}`, '', 1600);
-    else if (ev.type === 'won') onWin();
+    else if (ev.type === 'newTypes') {
+      save.data.intel = save.data.intel || {};
+      for (const k of ev.types) if (!save.data.intel[k]) { save.data.intel[k] = true; showIntel(k, true); }
+      save.write();
+    } else if (ev.type === 'won') onWin();
     else if (ev.type === 'lost') onLose();
   }
   game.events.length = 0;

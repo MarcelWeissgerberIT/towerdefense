@@ -15,6 +15,24 @@ function coverage(g, cx, cy, r) {
   return n;
 }
 
+// STRAT: 'mix' (fixed rotation, default) | 'counter' (pick by upcoming enemy classes) | 'mono:<tower>'
+const STRAT = process.env.STRAT || 'mix';
+function counterPick(g, types) {
+  // enemy HP of the next three waves by type, valued with each tower's effectiveness per credit
+  const want = {};
+  for (let w = g.wave; w < Math.min(g.waves.length, g.wave + 3); w++) for (const gr of g.waves[w].groups) want[gr.type] = (want[gr.type] || 0) + gr.count * C.ENEMIES[gr.type].hp;
+  const have = {};
+  for (const t of g.towers) have[t.type] = (have[t.type] || 0) + 1;
+  let best = types[0], bv = -1;
+  for (const k of types) {
+    let v = 0;
+    for (const [e, hp] of Object.entries(want)) v += hp * C.effectOf(k, e);
+    v = v / Math.pow(C.TOWERS[k].cost, 0.8) / (1 + 0.25 * (have[k] || 0));   // diminishing returns: keep a mix
+    if (v > bv) { bv = v; best = k; }
+  }
+  return best;
+}
+
 function play(levelIdx, skill = 1) {
   const g = new Game(levelIdx);
   const types = C.TOWER_ORDER.filter(k => g.unlocked(k));
@@ -32,6 +50,8 @@ function play(levelIdx, skill = 1) {
   if (trace) console.log(g.waves.map((w, i) => (i + 1) + ':' + w.groups.map(x => x.type + 'x' + x.count).join('+')).join('  '));
   while (g.state !== 'won' && g.state !== 'lost' && t < 4000) {
     let type = order[k % order.length];
+    if (STRAT.startsWith('mono:')) type = STRAT.slice(5);
+    else if (STRAT === 'counter') type = counterPick(g, types);
     // don't stall saving for an expensive tower while upgrades eat the credits: take the next affordable one
     if (C.TOWERS[type].cost > g.credits && C.TOWERS[type].cost >= 280 && g.credits >= 180) { k++; type = order[k % order.length]; }
     const cost = C.TOWERS[type].cost;

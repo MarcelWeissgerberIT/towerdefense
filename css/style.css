@@ -394,3 +394,51 @@ button {
   .ltile { min-height: 62px; }
 }
 .bd-chips .hg { color: #7dff9f; font-style: normal; font-size: 0.85em; }
+
+/* ---------- enemy intel ---------- */
+#modal.intel-modal .modal-box { width: min(640px, 96vw); max-width: 640px; max-height: 94vh; overflow-y: auto; padding: 14px 18px 16px; text-align: left; }
+#modal.intel-modal #modal-title { text-align: center; font-size: 22px; }
+#modal-title.warn { color: #ffb21e; }
+#modal.intel-modal #modal-text { font-size: 15px; margin-bottom: 12px; }
+.intel { display: flex; gap: 14px; align-items: center; }
+.intel-img { width: 116px; height: 116px; flex: none; background: radial-gradient(circle at 50% 60%, rgba(255,90,60,0.22), transparent 68%); }
+.intel-name { font-family: var(--font-title); font-size: 21px; font-weight: 800; color: #fff; line-height: 1.1; }
+.cls { display: inline-block; font-size: 11px; font-family: system-ui, sans-serif; font-weight: 700; padding: 2px 7px; margin-left: 6px; vertical-align: middle; font-style: normal; letter-spacing: 0.4px; border-radius: 3px; }
+.cls-light { background: #2f5d3a; color: #c4f7cf; }
+.cls-armored { background: #5c4a1e; color: #ffdc8f; }
+.cls-heavy { background: #62271f; color: #ffb7a6; }
+.cls-air { background: #1f4560; color: #aee0ff; }
+.intel-desc { font-size: 14px; color: #d6d1c5; line-height: 1.3; margin: 5px 0 7px; }
+.intel-stats { display: flex; gap: 14px; flex-wrap: wrap; font-size: 14px; color: #fff; font-weight: 600; }
+.intel-abil { list-style: none; margin: 10px 0 2px; padding: 0; font-size: 13.5px; color: #ebe5d8; }
+.intel-abil li { margin: 3px 0; }
+.intel-vs { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
+.vs-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.vs-h { font-size: 11px; font-weight: 800; letter-spacing: 1px; width: 76px; }
+.vs-row.good .vs-h { color: #ffb43c; }
+.vs-row.bad .vs-h { color: #8f9aa4; }
+.vs-t { display: inline-flex; align-items: center; gap: 5px; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12); padding: 2px 9px 2px 2px; font-size: 12.5px; color: #fff; }
+.vs-t img { width: 30px; height: 30px; }
+.vs-t b { font-weight: 600; }
+.vs-t i { font-style: normal; font-weight: 700; }
+.vs-row.good .vs-t i { color: #ffb43c; }
+.vs-row.bad .vs-t i { color: #9aa4ad; }
+.catalog { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 8px; }
+.cat-item { display: flex; flex-direction: column; align-items: center; gap: 2px; background: rgba(255,255,255,0.05); border: 1px solid var(--line); color: #fff; padding: 6px 4px 8px; font: inherit; font-size: 12.5px; cursor: pointer; }
+.cat-item img { width: 70px; height: 70px; }
+.cat-item .cls { margin: 2px 0 0; }
+.bd-vs { margin-top: 3px; font-size: 11.5px; display: flex; gap: 10px; flex-wrap: wrap; line-height: 1.2; }
+.vs-good { color: #ffb43c; }
+.vs-bad { color: #9aa4ad; }
+@media (max-height: 430px) {
+  .intel-img { width: 88px; height: 88px; }
+  .intel-name { font-size: 18px; }
+  .intel-desc { font-size: 13px; margin: 3px 0 5px; }
+  .intel-abil { font-size: 12.5px; margin-top: 6px; }
+  .vs-t img { width: 26px; height: 26px; }
+  #modal.intel-modal .modal-box { padding: 10px 14px 12px; }
+}
+@media (max-aspect-ratio: 1/1) {
+  .vs-h { flex-basis: 100%; width: auto; margin-top: 2px; }
+  .intel { align-items: flex-start; }
+}
