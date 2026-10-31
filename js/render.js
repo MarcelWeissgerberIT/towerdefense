@@ -567,6 +567,8 @@ export class Renderer {
       const a = Math.min(1, game.buffs.timestop / 0.5, (6 - game.buffs.timestop) / 0.3 + 0.2);
       ctx.fillStyle = `rgba(90,170,255,${0.14 * a})`; ctx.fillRect(0, 0, this.vw, this.vh);
     }
+    if (game.nukes.length) this.drawNukeAlarm(ctx, game);
+    if (game.fx.blind) this.drawBlind(ctx, game.fx.blind);
     if (game.fx.whiteout > 0) {
       ctx.fillStyle = `rgba(255,252,240,${Math.min(1, game.fx.whiteout)})`;
       ctx.fillRect(0, 0, this.vw, this.vh);
@@ -579,6 +581,57 @@ export class Renderer {
     }
   }
 
+  // nuke countdown: pulsing red alarm around the screen edge + big countdown (screen space)
+  drawNukeAlarm(ctx, game) {
+    const n = game.nukes[0], W = this.vw, H = this.vh;
+    const pul = 0.5 + 0.5 * Math.sin(this.time * Math.PI * 3.2);
+    const g = ctx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.35, W / 2, H / 2, Math.hypot(W, H) * 0.6);
+    g.addColorStop(0, 'rgba(255,0,0,0)');
+    g.addColorStop(1, `rgba(255,20,10,${0.22 + 0.3 * pul})`);
+    ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+    ctx.save();
+    ctx.textAlign = 'center';
+    const y = Math.max(124, H * 0.26);
+    ctx.font = '800 16px "Orbitron", "Rajdhani", system-ui, sans-serif';
+    ctx.fillStyle = `rgba(255,${120 + 100 * pul},60,1)`;
+    ctx.shadowColor = 'rgba(0,0,0,0.9)'; ctx.shadowBlur = 6;
+    ctx.fillText('☢  ATOMSCHLAG  ☢', W / 2, y);
+    const sec = Math.max(1, Math.ceil(n.t));
+    const k = n.t - Math.floor(n.t);           // pops at every new second
+    ctx.font = `900 ${Math.round(54 + 26 * k * k)}px "Orbitron", "Rajdhani", system-ui, sans-serif`;
+    ctx.fillStyle = `rgba(255,${60 + 160 * k},40,${0.75 + 0.25 * k})`;
+    ctx.fillText(String(sec), W / 2, y + 62);
+    ctx.restore();
+  }
+  // nuclear flash: short double flash, solid white-out, then a burned-in glow around ground zero (real time)
+  drawBlind(ctx, b) {
+    const t = b.t, W = this.vw, H = this.vh;
+    let a;
+    if (t < 0.07) a = 1;
+    else if (t < 0.14) a = 0.55;
+    else if (t < 0.6) a = 1;
+    else a = Math.pow(Math.max(0, 1 - (t - 0.6) / 1.1), 1.6);
+    const sp = this.worldToScreen(b.x, b.y);
+    // glow first, so the white-out sits on top while it lasts
+    const ga = 0.95 * Math.pow(Math.max(0, 1 - t / 3.2), 1.3);
+    if (ga > 0.01) {
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      const R = Math.max(W, H) * (0.8 + 0.35 * t);
+      const g = ctx.createRadialGradient(sp.x, sp.y, 0, sp.x, sp.y, R);
+      g.addColorStop(0, `rgba(255,250,235,${ga})`);
+      g.addColorStop(0.18, `rgba(255,225,160,${ga * 0.8})`);
+      g.addColorStop(0.5, `rgba(255,150,60,${ga * 0.35})`);
+      g.addColorStop(1, 'rgba(255,120,40,0)');
+      ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+      ctx.restore();
+    }
+    if (a > 0.003) {
+      const warm = Math.min(1, Math.max(0, (t - 0.6) / 1.1));
+      ctx.fillStyle = `rgba(255,${Math.round(255 - 30 * warm)},${Math.round(255 - 90 * warm)},${a})`;
+      ctx.fillRect(0, 0, W, H);
+    }
+  }
   // orbital strike: targeting reticle + beam from the sky that thickens until impact
   drawStrikes(ctx, game) {
     for (const st of game.strikes) {

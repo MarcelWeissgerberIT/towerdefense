@@ -3,6 +3,7 @@
 
 let ctx = null, master = null, noiseBuf = null;
 let sprite = null, spriteMap = null, spriteLoading = null;
+let sirenH = null;
 let enabled = true;
 const last = {};
 
@@ -204,11 +205,20 @@ const SFX = {
     noise(t, 1.2, { freq: 3000, q: 0.5, sweepTo: 200, gain: 0.08, attack: 0.4 });
   },
   siren() {
-    if (play('siren', { gain: 0.7, dur: 2.9, fadeOut: 0.35 })) return;
+    sirenH = play('siren', { gain: 1, dur: 4, fadeOut: 0.3 });
+    if (sirenH) return;
     const t = ctx.currentTime;
     for (let i = 0; i < 3; i++) tone(t + i * 0.8, 0.78, { type: 'sawtooth', f0: 420, f1: 880, gain: 0.07, attack: 0.05 });
   },
   nuke() {
+    if (sirenH) {
+      // the siren dies with the flash
+      const t = ctx.currentTime;
+      try { sirenH.g.gain.cancelScheduledValues(t); sirenH.g.gain.setValueAtTime(sirenH.g.gain.value, t); sirenH.g.gain.linearRampToValueAtTime(0, t + 0.08); } catch (e) { /* ignore */ }
+      sirenH = null;
+    }
+    // flash crack
+    noise(ctx.currentTime, 0.35, { freq: 2500, q: 0.4, type: 'highpass', gain: 0.6, attack: 0.002 });
     if (play('nuke', { gain: 1 })) {
       // extra sub-bass weight under the recording
       const t = ctx.currentTime;

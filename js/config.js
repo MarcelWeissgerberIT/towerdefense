@@ -228,7 +228,7 @@ export const BIOME_ORDER = ['wasteland', 'jungle', 'desert', 'ice', 'volcano', '
 // ---- special abilities ----
 // nuclear strike: charged by the credits earned from kills (from mission 5)
 export const NUKE = {
-  unlock: 5, need: (lv) => 650 + 60 * lv, delay: 2.6,
+  unlock: 5, need: (lv) => 650 + 60 * lv, delay: 3.6,
   radius: 3.4, outer: 5.2, dmg: 2600, bossFrac: 0.3,
   towerRadius: 1.3, towerDmg: 0.65,           // own towers at ground zero get hurt
   radT: 10, radR: 2.3, radDps: 0.04,          // radiation zone: share of max HP per second

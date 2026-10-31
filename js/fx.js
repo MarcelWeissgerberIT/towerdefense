@@ -5,8 +5,8 @@ import { rand } from './iso.js';
 const MAX_PARTICLES = 900;
 
 export class FX {
-  constructor() { this.p = []; this.shake = 0; this.flash = 0; this.whiteout = 0; }
-  clear() { this.p.length = 0; this.shake = 0; this.flash = 0; this.whiteout = 0; }
+  constructor() { this.p = []; this.shake = 0; this.flash = 0; this.whiteout = 0; this.blind = null; }
+  clear() { this.p.length = 0; this.shake = 0; this.flash = 0; this.whiteout = 0; this.blind = null; }
 
   add(o) {
     if (this.p.length >= MAX_PARTICLES) {
@@ -196,7 +196,8 @@ export class FX {
   }
   // nuclear detonation: white-out, mushroom cloud, shock waves, a ring of dust and burning debris
   nuke(x, y) {
-    this.whiteout = 1.35;
+    // blinding flash (real time, drawn by the renderer): double flash, white-out, burn-in glow around ground zero
+    this.blind = { t: 0, x, y: y - 120 };
     this.flash = 1;
     this.shake = 36;
     this.boom(x, y + 20, 820, 6.5, Assets.vfx.nuke ? 'nuke' : 'heavy');
@@ -311,6 +312,7 @@ export class FX {
     this.shake = Math.max(0, this.shake - dt * 18);
     this.flash = Math.max(0, this.flash - dt * 1.6);
     this.whiteout = Math.max(0, this.whiteout - dt * 1.6);
+    if (this.blind && (this.blind.t += dt) > 3.2) this.blind = null;
   }
 
   draw(ctx) {

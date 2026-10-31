@@ -30,7 +30,7 @@ function showScreen(id) { for (const s of document.querySelectorAll('.screen')) 
 function hideScreens() { for (const s of document.querySelectorAll('.screen')) s.classList.add('hidden'); }
 function setInGameUI(on) {
   for (const id of ['hud', 'btn-wave']) $(id).classList.toggle('hidden', !on);
-  if (!on) { closeBuildMenu(); closeTowerMenu(); endAim(); }
+  if (!on) { closeBuildMenu(); closeTowerMenu(); endAim(); $('nuke-flash').style.opacity = 0; hudCache.nukeFlash = 0; }
 }
 function starsHTML(n) { let s = ''; for (let i = 0; i < 3; i++) s += i < n ? '★' : '<span class="off">★</span>'; return s; }
 
@@ -445,7 +445,7 @@ const AIM = {
   orbital: { name: 'ORBITALSCHLAG', icon: 'orbital', btn: 'btn-orbital', r: 1.7,
     fire: (a) => game.orbitalStrike(a.x, a.y) && toast('ORBITALSCHLAG EINGELEITET', 'warn', 1400) },
   nuke: { name: 'ATOMSCHLAG', icon: 'nuke', btn: 'btn-nuke', r: NUKE.outer,
-    fire: (a) => game.nukeStrike(a.x, a.y) && toast('ATOMSCHLAG – EINSCHLAG IN 3 SEKUNDEN', 'bad', 2400) },
+    fire: (a) => game.nukeStrike(a.x, a.y) && toast('ATOMSCHLAG EINGELEITET – IN DECKUNG!', 'bad', 2200) },
   hole: { name: 'SCHWARZES LOCH', icon: 'hole', btn: 'btn-hole', r: HOLE.radius,
     fire: (a) => game.holeStrike(a.x, a.y) && toast('SCHWARZES LOCH GEÖFFNET', 'warn', 1600) },
 };
@@ -905,6 +905,10 @@ function frame(now) {
     game.advanceCinematic(dt);
     game.fx.realtimeScreen = true;
     game.fx.screen(dt);
+    // the nuclear flash also blinds the HUD: double flash, white-out, quick fade (the map keeps glowing longer)
+    const b = game.fx.blind, bt = b ? b.t : 9;
+    const ha = bt < 0.07 ? 1 : bt < 0.14 ? 0.5 : bt < 0.55 ? 1 : Math.max(0, 1 - (bt - 0.55) / 0.5);
+    if (hudCache.nukeFlash !== ha) { hudCache.nukeFlash = ha; $('nuke-flash').style.opacity = ha.toFixed(3); }
     acc += dt * speed * ts;
     let n = 0;
     while (acc >= STEP && n < 12) { game.update(STEP); acc -= STEP; n++; }

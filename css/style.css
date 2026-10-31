@@ -614,3 +614,6 @@ body.aiming #btn-wave { display: none; }
 .ltile .ldiff { position: absolute; top: 3px; right: 6px; font-family: var(--font-title); font-weight: 800; font-size: 7.5px; letter-spacing: 0.06em; padding: 1px 4px; }
 .ltile .ldiff.d1 { background: #c97f00; color: #1a1206; }
 .ltile .ldiff.d2 { background: #b3200f; color: #fff; }
+
+/* nuclear flash over the HUD as well (opacity driven by the game loop) */
+#nuke-flash { position: fixed; inset: 0; z-index: 12; pointer-events: none; background: #fffdf4; opacity: 0; }
