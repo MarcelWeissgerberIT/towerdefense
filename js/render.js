@@ -5,6 +5,7 @@ import { Assets, Models, drawIcon } from './assets.js';
 import { CELL } from './game.js';
 
 const BAR_SCALE = 1.3;
+const BOMBER_SCALE = 1.0, ALT = 170;    // napalm bombers: sprite scale and flying height (world px)
 
 // convex hull (monotone chain) of {x, y} points, counter-clockwise
 function convexHull(pts) {
@@ -786,29 +787,43 @@ export class Renderer {
     }
     ctx.globalAlpha = 1;
   }
-  // three bombers in a V sweep along the road at height, their shadows racing over the ground
+  // three old-school propeller bombers in a V sweep along the road at height (3D model sprite, 32 headings),
+  // their shadows racing over the ground; bombs drop onto the stretch that is about to burn
   drawBombers(ctx, game) {
+    const M = Models.meta('ally_bomber');
     for (const n of game.napalms) {
       const span = n.pts.length * 0.07, t0 = NAPALM.delay - 0.9, u = (n.t - t0) / (span + 1.8);
+      // falling bombs: from the plane's height down to each patch just before it ignites
+      for (const p of n.pts) {
+        const k = 1 - (p.t0 - n.t) / 0.45;
+        if (k < 0 || k >= 1) continue;
+        const w = toWorld(p.gx, p.gy), y = w.y - ALT * (1 - k * k);
+        ctx.fillStyle = '#1d1f22';
+        ctx.beginPath(); ctx.ellipse(w.x, y, 3.5, 7, 0, 0, Math.PI * 2); ctx.fill();
+      }
       if (u < 0 || u > 1) continue;
       const a = n.pts[0], b = n.pts[n.pts.length - 1];
       const dx = Math.cos(n.ang), dy = Math.sin(n.ang), ext = 6;
       const gx = a.gx - dx * ext + (b.gx - a.gx + dx * 2 * ext) * u, gy = a.gy - dy * ext + (b.gy - a.gy + dy * 2 * ext) * u;
       const w0 = toWorld(gx, gy), w1 = toWorld(gx + dx, gy + dy), sa = Math.atan2(w1.y - w0.y, w1.x - w0.x);
-      for (const [off, back] of [[0, 0], [-0.9, -0.8], [0.9, -0.8]]) {
+      const f = M ? Models.frameFor('ally_bomber', n.ang) : 0;
+      for (const [off, back] of [[0, 0], [-1.1, -1.0], [1.1, -1.0]]) {
         const px = gx - dy * off + dx * back, py = gy + dx * off + dy * back, w = toWorld(px, py);
-        // shadow on the ground
-        ctx.save(); ctx.translate(w.x + 20, w.y + 6); ctx.rotate(sa); ctx.scale(1.3, 0.65);
-        ctx.fillStyle = 'rgba(0,0,0,0.3)'; this.jetPath(ctx, 1.0); ctx.fill(); ctx.restore();
-        // the jet
-        ctx.save(); ctx.translate(w.x, w.y - 150); ctx.rotate(sa); ctx.scale(1.3, 1.3);
-        ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = 0.8;
-        ctx.drawImage(Assets.fx.orange, -58, -16, 32, 32);
-        ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1;
-        ctx.fillStyle = '#3a4048'; ctx.strokeStyle = '#11151a'; ctx.lineWidth = 1.5;
-        this.jetPath(ctx, 1.0); ctx.fill(); ctx.stroke();
-        ctx.fillStyle = '#7fd0ff'; ctx.beginPath(); ctx.ellipse(14, 0, 6, 2.5, 0, 0, Math.PI * 2); ctx.fill();
-        ctx.restore();
+        const bob = Math.sin(this.time * 2.2 + off * 3) * 3;
+        if (M) {
+          // shadow: the silhouette of the plane, flattened onto the ground
+          ctx.save(); ctx.translate(w.x + 18, w.y + 10); ctx.scale(1, 0.55);
+          Models.drawTinted(ctx, 'ally_bomber', f, 0, 0, BOMBER_SCALE, 'shadow', 0.28);
+          ctx.restore();
+          Models.draw(ctx, 'ally_bomber', f, w.x, w.y - ALT + bob, BOMBER_SCALE);
+          // spinning propellers: a faint flicker over the wings
+          ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = 0.12 + 0.08 * Math.sin(this.time * 60 + off);
+          ctx.drawImage(Assets.fx.white, w.x - M.w * M.scale * BOMBER_SCALE * 0.4, w.y - ALT + bob - M.centerPx * M.scale * BOMBER_SCALE - 10, M.w * M.scale * BOMBER_SCALE * 0.8, 20);
+          ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1;
+        } else {
+          ctx.save(); ctx.translate(w.x, w.y - ALT); ctx.rotate(sa); ctx.scale(1.3, 1.3);
+          ctx.fillStyle = '#3a4048'; this.jetPath(ctx, 1.0); ctx.fill(); ctx.restore();
+        }
       }
     }
   }
