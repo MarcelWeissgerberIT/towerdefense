@@ -790,11 +790,14 @@ export class Game {
       u.t += dt;
       u.spark -= dt;
       if (u.spark <= 0) {
-        // welding sparks somewhere on the tower
-        u.spark = 0.09 + Math.random() * 0.12;
-        const x = t.wx + rand(-34, 34), y = t.wy - rand(10, 70);
-        this.fx.sparks(x, y, 4, Math.random() < 0.5 ? '#9fe8ff' : '#ffd27a', 150);
-        this.fx.add({ k: 'glow', x, y, s: 26, life: 0.08, spr: 'white' });
+        // welding sparks where the construction drones' beams touch the tower
+        u.spark = 0.07 + Math.random() * 0.1;
+        const d = upgradeDrones(t, this.time).filter(d => d.weld);
+        if (d.length) {
+          const { tx: x, ty: y } = d[Math.floor(Math.random() * d.length)];
+          this.fx.sparks(x, y, 4, Math.random() < 0.5 ? '#9fe8ff' : '#ffd27a', 140);
+          this.fx.add({ k: 'glow', x, y, s: 22, life: 0.07, spr: 'white' });
+        }
       }
       if (u.t >= u.dur) this.finishUpgrade(t);
       t.firing = false;
@@ -2092,6 +2095,22 @@ export class Game {
 }
 
 const SNAP_V = 1;
+// two construction drones circle a tower that is being upgraded and weld it in bursts
+// (shared by the welding sparks above and the renderer, both on game time)
+export function upgradeDrones(t, time) {
+  const out = [];
+  for (let i = 0; i < 2; i++) {
+    const a = time * 1.05 + t.id * 1.7 + i * Math.PI;
+    const h = 52 + 12 * Math.sin(time * 1.3 + i * 2.1 + t.id);
+    const ca = Math.cos(a), sa = Math.sin(a);
+    out.push({
+      x: t.wx + ca * 50, y: t.wy - h + sa * 24, gy: t.wy + sa * 24, back: sa < 0,
+      tx: t.wx + ca * 13, ty: t.wy - h + 14 + sa * 6, weld: Math.sin(time * 4.2 + i * 2.3 + t.id) > -0.25, i,
+    });
+  }
+  return out;
+}
+
 const SNAP_KEYS = ['time', 'credits', 'lives', 'maxLives', 'wave', 'queue', 'state', 'nextWaveIn', 'waveLeft', 'kills', 'lost',
   'orbital', 'strikes', 'nuke', 'nukes', 'nukeBlasts', 'weather', 'strikesW', 'hole', 'radZones', 'drops', 'lastDrop', 'buffs', 'puddles',
   '_elevHint', '_dmgHint', 'barricades', 'ion', 'rod', 'napalm', 'ionCharge', 'rods', 'napalms'];

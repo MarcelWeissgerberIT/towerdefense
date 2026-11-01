@@ -133,6 +133,10 @@ export const Models = {
       const grd = g.createLinearGradient(0, 0, 0, m.h);
       grd.addColorStop(0, 'rgba(235,250,255,0.85)'); grd.addColorStop(1, 'rgba(140,210,255,0.8)');
       g.fillStyle = grd;
+    } else if (kind === 'holo') {
+      const grd = g.createLinearGradient(0, 0, 0, m.h);
+      grd.addColorStop(0, 'rgba(170,245,255,0.95)'); grd.addColorStop(1, 'rgba(50,150,255,0.9)');
+      g.fillStyle = grd;
     } else if (kind === 'heat' || kind === 'radglow') {
       // glowing hot (nuclear blast) / glowing green (radiation) just before the machine crumbles
       const grd = g.createLinearGradient(0, 0, 0, m.h);

@@ -2,7 +2,7 @@
 import { HW, HH, TOWERS, BIOMES, TOWER_SCALE, ELEV_PX, NUKE, POWERUPS, HOLE, WEATHER, ROD, NAPALM } from './config.js';
 import { toWorld, toGrid, mulberry32, clamp } from './iso.js';
 import { Assets, Models, drawIcon } from './assets.js';
-import { CELL } from './game.js';
+import { CELL, upgradeDrones } from './game.js';
 
 const BAR_SCALE = 1.3;
 const BOMBER_SCALE = 1.0, ALT = 170;    // napalm bombers: sprite scale and flying height (world px)
@@ -472,9 +472,12 @@ export class Renderer {
     const bz = ui.buildCell ? game.heightAt(ui.buildCell.x, ui.buildCell.y) * ELEV_PX : 0;
     if (ui.buildCell && !bz) this.drawBuildPreview(ctx, ui, 0);
     const selBar = ui.selected && ui.selected.kind === 'barricade';
-    if (selBar) this.drawRoutes(ctx, game.routes, '255,80,55', 0.8);
-    // maps with detours / standing barricades: while building (or before the first wave) the way the machines take
-    else if ((game.level.links || game.barricades.length) && ui.previewType !== 'barricade' && (ui.buildCell || game.state === 'build')) this.drawRoutes(ctx, game.routes, '255,80,55', ui.buildCell ? 0.6 : 0.45);
+    // the enemy routes: always before a wave (mission start and the countdown between waves) - they fade out
+    // when the wave rolls in; while placing a tower / with a barricade selected they show up as well
+    const preWave = game.state === 'build' || (game.state === 'wave' && game.queue.length === 0 && game.nextWaveIn > 0 && game.wave < game.waves.length);
+    this.routeA = (this.routeA || 0) + ((preWave ? 1 : 0) - (this.routeA || 0)) * Math.min(1, (dt || 0) * 3);
+    if (selBar) this.drawRoutes(ctx, game.routes, '255,80,55', 0.8, true);
+    else if (ui.previewType !== 'barricade' && (ui.buildCell || this.routeA > 0.02)) this.drawRoutes(ctx, game.routes, '255,80,55', Math.max(ui.buildCell ? 0.6 : 0, 0.62 * this.routeA), true);
     if (ui.selected && !selBar && !ui.selected.z) this.drawRange(ctx, ui.selected.gx, ui.selected.gy, ui.selected.stats.range, TOWERS[ui.selected.type].color, true, TOWERS[ui.selected.type].minRange);
 
     const fx = Assets.fx;
@@ -1384,7 +1387,7 @@ export class Renderer {
     }
   }
   // the ways the machines take (gate -> HQ): moving chevrons along the route
-  drawRoutes(ctx, routes, rgb, alpha) {
+  drawRoutes(ctx, routes, rgb, alpha, arrows = false) {
     ctx.save();
     ctx.lineCap = 'round'; ctx.lineJoin = 'round';
     for (const r of routes) {
@@ -1399,7 +1402,30 @@ export class Renderer {
       ctx.strokeStyle = `rgba(${rgb},${alpha})`; ctx.lineWidth = 5; ctx.stroke();
       ctx.setLineDash([]);
     }
+    if (arrows) this.drawRouteArrows(ctx, routes, rgb, alpha);
     ctx.restore();
+  }
+  // chevrons gliding along the routes in the direction the enemies walk (one every ~1.7 tiles)
+  drawRouteArrows(ctx, routes, rgb, alpha) {
+    // positions are anchored to the map (not to each route), so routes sharing a road draw the same chevrons
+    const SP = 1.7, T = this.time * 1.1;
+    ctx.lineWidth = 4;
+    for (const r of routes) {
+      let acc = 0;
+      for (const s of r.seg) {
+        const c0 = s.ax * s.dx + s.ay * s.dy;
+        for (let d = (((T - c0) % SP) + SP) % SP; d < s.len; d += SP) {
+          if (acc + d < 0.6) continue;               // not on top of the spawn gate
+          // a flat chevron on the ground: built in grid space, then projected
+          const gx = s.ax + s.dx * d, gy = s.ay + s.dy * d, Lg = 0.3, Bg = 0.22;
+          const p = toWorld(gx, gy), w1 = toWorld(gx - s.dx * Lg - s.dy * Bg, gy - s.dy * Lg + s.dx * Bg), w2 = toWorld(gx - s.dx * Lg + s.dy * Bg, gy - s.dy * Lg - s.dx * Bg);
+          ctx.beginPath(); ctx.moveTo(w1.x, w1.y); ctx.lineTo(p.x, p.y); ctx.lineTo(w2.x, w2.y);
+          ctx.strokeStyle = `rgba(0,0,0,${0.45 * alpha})`; ctx.lineWidth = 8; ctx.stroke();
+          ctx.strokeStyle = `rgba(255,170,110,${Math.min(1, alpha * 1.35)})`; ctx.lineWidth = 4; ctx.stroke();
+        }
+        acc += s.len;
+      }
+    }
   }
   drawBarricade(ctx, b, ui) {
     const hit = this.game.time - b.hitT < 0.12;
@@ -1498,6 +1524,7 @@ export class Renderer {
     const TS = TOWER_SCALE * (1 + 0.08 * ((t.level || 1) - 1));
     if (t.z && !t.ghost) { ctx.globalAlpha = 0.9 * pop; Models.drawShadow(ctx, name, Models.frameFor(name, t.ang), t.wx, t.wy, TS); ctx.globalAlpha = 1; }
     this.drawLevelRing(ctx, t);
+    if (t.upgrading && !t.ghost) this.drawUpgradeBack(ctx, t);
     if (m.baseImg) Models.drawBase(ctx, name, t.wx, y, TS);
     const f = Models.frameFor(name, t.ang);
     const rc = (t.recoil || 0) * 4;
@@ -1526,7 +1553,7 @@ export class Renderer {
       ctx.drawImage(Assets.fx.violet, t.wx - s / 2, y - m.topPx * TS + 10 - s / 2, s, s);
       ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
     }
-    if (t.upgrading) this.drawUpgrade(ctx, t, m, f, y);
+    if (t.upgrading) this.drawUpgrade(ctx, t, m, f, y, name);
     const bf = this.game.buffs;
     if (bf.overdrive > 0) {
       // overdrive: red-hot glow on the gun
@@ -1569,46 +1596,89 @@ export class Renderer {
     if (t.hp < t.stats.hp * 0.4 && Math.random() < 0.08) this.game.fx.smoke(t.wx + (Math.random() - 0.5) * 30, t.wy - 40, 1, 18, 1.4, true);
   }
 
-  // construction: scaffold poles, a hologram of the next stage and a progress bar
-  drawUpgrade(ctx, t, m, f, y) {
+  // upgrade (part 1, under the tower): construction zone on the ground with a progress ring, drones behind it
+  drawUpgradeBack(ctx, t) {
+    const u = t.upgrading, k = Math.min(1, u.t / u.dur);
+    const rx = 58, ry = 29, cy = t.wy + 6;
+    ctx.save();
+    ctx.fillStyle = 'rgba(255,190,60,0.07)';
+    ctx.beginPath(); ctx.ellipse(t.wx, cy, rx, ry, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.setLineDash([7, 7]); ctx.lineDashOffset = -this.time * 22;
+    ctx.strokeStyle = 'rgba(255,196,70,0.55)'; ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.strokeStyle = t.level === 2 ? 'rgba(255,214,90,0.95)' : 'rgba(110,255,170,0.95)'; ctx.lineWidth = 4; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.ellipse(t.wx, cy, rx + 5, ry + 2.5, 0, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * k); ctx.stroke();
+    ctx.restore();
+    for (const d of upgradeDrones(t, this.game.time)) if (d.back) this.drawConstructionDrone(ctx, d, true);
+  }
+  // upgrade (part 2, over the tower): the next stage materialises from the bottom up - a hologram above the
+  // build line, a glowing slice at the line - plus the drones in front and a compact label
+  drawUpgrade(ctx, t, m, f, y, name) {
     const u = t.upgrading;
     const k = Math.min(1, u.t / u.dur);
     const nextTS = TOWER_SCALE * (1 + 0.08 * t.level);
-    // hologram of the upgraded tower
+    const top = (m.topPx || 80) * nextTS;
+    const lineY = y - top * (0.06 + 0.94 * k);
+    const flick = 0.75 + 0.25 * Math.sin(this.time * 23 + t.id) * Math.sin(this.time * 7);
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
-    ctx.globalAlpha = 0.18 + 0.12 * Math.sin(this.time * 10);
-    Models.draw(ctx, t.def.model, f, t.wx, y, nextTS);
+    // hologram of the upgraded tower above the build line
+    ctx.save();
+    ctx.beginPath(); ctx.rect(t.wx - 160, y - top - 80, 320, lineY - (y - top - 80)); ctx.clip();
+    Models.drawTinted(ctx, name, f, t.wx, y, nextTS, 'holo', 0.32 * flick);
     ctx.restore();
-    // scaffold
-    const H = 92;
-    const corners = [toWorld(t.cx + 0.1, t.cy + 0.1), toWorld(t.cx + 0.9, t.cy + 0.1), toWorld(t.cx + 0.9, t.cy + 0.9), toWorld(t.cx + 0.1, t.cy + 0.9)];
-    if (t.z) for (const c of corners) c.y -= t.z;
-    ctx.lineWidth = 2.2;
-    ctx.strokeStyle = 'rgba(230,180,40,0.9)';
-    ctx.beginPath();
-    for (const c of corners) { ctx.moveTo(c.x, c.y); ctx.lineTo(c.x, c.y - H); }
-    for (const h of [H * 0.35, H * 0.75]) {
-      ctx.moveTo(corners[0].x, corners[0].y - h);
-      for (let i = 1; i <= 4; i++) { const c = corners[i % 4]; ctx.lineTo(c.x, c.y - h); }
-    }
-    ctx.stroke();
-    ctx.strokeStyle = 'rgba(30,30,30,0.8)'; ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.moveTo(corners[3].x, corners[3].y - H * 0.35); ctx.lineTo(corners[2].x, corners[2].y - H * 0.75); ctx.stroke();
-    // blinking warning light
-    if (Math.sin(this.time * 8) > 0) {
+    // glowing slice of the tower at the build line
+    ctx.save();
+    ctx.beginPath(); ctx.rect(t.wx - 160, lineY - 2.5, 320, 5); ctx.clip();
+    Models.drawTinted(ctx, name, f, t.wx, y, nextTS, 'holo', 0.85);
+    ctx.restore();
+    ctx.restore();
+    for (const d of upgradeDrones(t, this.game.time)) if (!d.back) this.drawConstructionDrone(ctx, d, false);
+    // compact label above the tower
+    const label = `UPGRADE ${t.level === 1 ? 'II' : 'III'} · ${Math.ceil(u.dur - u.t)}s`;
+    ctx.font = '700 12px "Rajdhani", system-ui, sans-serif'; ctx.textAlign = 'center';
+    const w = ctx.measureText(label).width + 16, ly = y - top - 22;
+    ctx.fillStyle = 'rgba(10,14,18,0.78)';
+    ctx.beginPath(); ctx.roundRect ? ctx.roundRect(t.wx - w / 2, ly - 11, w, 16, 8) : ctx.rect(t.wx - w / 2, ly - 11, w, 16); ctx.fill();
+    ctx.strokeStyle = t.level === 2 ? 'rgba(255,210,90,0.8)' : 'rgba(110,255,170,0.8)'; ctx.lineWidth = 1; ctx.stroke();
+    ctx.fillStyle = '#fff'; ctx.fillText(label, t.wx, ly + 1);
+  }
+  // small quadcopter with a blinking light; it welds the tower with a short cyan beam
+  drawConstructionDrone(ctx, d, back) {
+    const { x, y } = d;
+    ctx.save();
+    ctx.fillStyle = 'rgba(0,0,0,0.22)';
+    ctx.beginPath(); ctx.ellipse(x, d.gy + 4, 9, 4, 0, 0, Math.PI * 2); ctx.fill();
+    if (d.weld) {
       ctx.globalCompositeOperation = 'lighter';
-      ctx.drawImage(Assets.fx.orange, corners[0].x - 10, corners[0].y - H - 10, 20, 20);
+      const a = 0.55 + 0.45 * Math.random();
+      ctx.strokeStyle = `rgba(150,235,255,${a})`; ctx.lineWidth = 1.6;
+      ctx.beginPath(); ctx.moveTo(x, y + 4); ctx.lineTo(d.tx, d.ty); ctx.stroke();
+      const g = 16 + Math.random() * 10;
+      ctx.drawImage(Assets.fx.cyan, d.tx - g / 2, d.ty - g / 2, g, g);
+      ctx.drawImage(Assets.fx.white, d.tx - 5, d.ty - 5, 10, 10);
       ctx.globalCompositeOperation = 'source-over';
     }
-    // progress bar
-    const bw = 64, bx = t.wx - bw / 2, by = t.wy - H - 18;
-    ctx.fillStyle = 'rgba(0,0,0,0.75)'; ctx.fillRect(bx - 2, by - 2, bw + 4, 9);
-    ctx.fillStyle = t.level === 2 ? '#ffd34d' : '#6dff9d'; ctx.fillRect(bx, by, bw * k, 5);
-    ctx.font = '700 12px "Rajdhani", system-ui, sans-serif'; ctx.textAlign = 'center';
-    ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,0.8)';
-    const label = `UPGRADE ${t.level === 1 ? 'II' : 'III'} · ${Math.ceil(u.dur - u.t)}s`;
-    ctx.strokeText(label, t.wx, by - 5); ctx.fillStyle = '#fff'; ctx.fillText(label, t.wx, by - 5);
+    if (back) ctx.globalAlpha = 0.9;
+    // rotor discs
+    ctx.fillStyle = 'rgba(205,220,232,0.30)';
+    for (const ox of [-10, 10]) { ctx.beginPath(); ctx.ellipse(x + ox, y - 4, 7.5, 2.6, 0, 0, Math.PI * 2); ctx.fill(); }
+    ctx.strokeStyle = '#1d2227'; ctx.lineWidth = 2.2;
+    ctx.beginPath(); ctx.moveTo(x - 10, y - 3); ctx.lineTo(x + 10, y - 3); ctx.stroke();
+    // body
+    const grd = ctx.createLinearGradient(0, y - 6, 0, y + 4);
+    grd.addColorStop(0, '#8a939b'); grd.addColorStop(1, '#2a3036');
+    ctx.fillStyle = grd;
+    ctx.beginPath(); ctx.ellipse(x, y, 6.5, 4.5, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = 'rgba(0,0,0,0.6)'; ctx.lineWidth = 1; ctx.stroke();
+    // blinking beacon
+    const on = Math.sin(this.time * 9 + d.i * 2) > 0;
+    ctx.fillStyle = on ? '#ffb53a' : '#5a3a12';
+    ctx.beginPath(); ctx.arc(x, y - 4.5, 1.6, 0, Math.PI * 2); ctx.fill();
+    if (on) { ctx.globalCompositeOperation = 'lighter'; ctx.drawImage(Assets.fx.orange, x - 7, y - 11.5, 14, 14); }
+    ctx.restore();
   }
 
   // per-type locomotion: walk-cycle frames (rigged models) or procedural gait / hover / track motion

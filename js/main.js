@@ -1059,7 +1059,7 @@ function startNukeCam(gx, gy) {
   setCam(nukeCam.to);   // the switch happens under the white flash
   document.body.classList.add('nukecine');
 }
-const NUKE_CAM_HOLD = NUKE.cine.freeze + 4.4, NUKE_CAM_BACK = 1.2;
+const NUKE_CAM_HOLD = NUKE.cine.freeze + 6.4, NUKE_CAM_BACK = 1.4;
 function updateNukeCam(dt) {
   const nc = nukeCam;
   if (!nc) return;
@@ -1560,7 +1560,12 @@ function frame(now) {
       updateNukeCam(dt);
       acc += dt * speed * ts;
       let n = 0;
-      while (acc >= STEP && n < 12) { game.update(STEP); acc -= STEP; n++; }
+      while (acc >= STEP && n < 12) {
+        game.update(STEP); acc -= STEP; n++;
+        // a nuke went off in this step: the world freezes right now - no catch-up steps (2x speed, a hitch),
+        // otherwise the blast wave and the mushroom cloud would play hidden behind the flash
+        if (game.cine && game.timeScale() === 0) { acc = 0; break; }
+      }
       if (n === 12) acc = 0;
       processEvents();
       updateHUD();
