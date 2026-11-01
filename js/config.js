@@ -231,6 +231,27 @@ export const ENEMIES = {
   magma: { cls: 'heavy', biome: 'volcano', info: 'Glühender Lava-Läufer. Feuer schadet ihm kaum, und seine Hitze setzt Türmen am Straßenrand zu.', motion: 'walker', stride: 0.7, name: 'Magma-Läufer', model: 'enemy_magma', hp: 820, speed: 0.45, armor: 6, reward: 40, leak: 3, cost: 13, scale: 0.85,
     burnImmune: true, heat: { range: 1.35, dps: 10 } },
   ram: { cls: 'heavy', biome: 'city', info: 'Gepanzerter Rammbock. Nimmt den direkten Weg und walzt Barrikaden in Sekunden nieder.', motion: 'tracks', name: 'Rammbock', model: 'enemy_ram', hp: 640, speed: 0.58, armor: 8, reward: 36, leak: 3, cost: 12, scale: 0.85, ram: 12 },
+  // ---- Dimensionsriss: supernatural enemies (faction), rift: from the n-th mission of their world on ----
+  zombie: { cls: 'light', faction: 'undead', rift: 1, info: 'Verwesender Untoter. Langsam, aber er kommt in Horden – und jeder Nekromant ruft neue herbei.', motion: 'biped', stride: 0.36, cycle: 1.0, plural: 'Zombies', name: 'Zombie', model: 'enemy_zombie', hp: 180, speed: 0.7, armor: 1, reward: 7, leak: 1, cost: 1.6, scale: 0.9 },
+  ghoulhound: { cls: 'light', faction: 'undead', rift: 1, info: 'Verfaulter Seuchenhund. Schnell und in Rudeln unterwegs.', motion: 'walker', stride: 0.42, plural: 'Seuchenhunde', name: 'Seuchenhund', model: 'enemy_ghoulhound', hp: 110, speed: 1.45, armor: 0, reward: 7, leak: 1, cost: 2, scale: 0.85 },
+  skeleton: { cls: 'armored', faction: 'undead', rift: 2, info: 'Gepanzerter Skelettkrieger. Fällt er, setzt er sich nach kurzer Zeit wieder zusammen – außer Feuer oder Plasma haben ihn erledigt.', motion: 'biped', stride: 0.4, cycle: 0.85, plural: 'Skelettkrieger', name: 'Skelettkrieger', model: 'enemy_skeleton', hp: 220, speed: 0.85, armor: 3, reward: 14, leak: 1, cost: 4, scale: 0.9,
+    revive: { hp: 0.6, delay: 2.2 } },
+  necromancer: { cls: 'armored', faction: 'undead', rift: 3, info: 'Schwebender Totenbeschwörer. Ruft unterwegs ständig neue Zombies aus dem Boden – zuerst ausschalten!', motion: 'hover', plural: 'Nekromanten', name: 'Nekromant', model: 'enemy_necromancer', hp: 380, speed: 0.6, armor: 2, reward: 30, leak: 2, cost: 9, scale: 0.62, lift: 10,
+    spawns: { type: 'zombie', every: 4.5, count: 2 } },
+  wraith: { cls: 'air', faction: 'undead', rift: 4, info: 'Fliegender Geist. Wird immer wieder unsichtbar und spukt in Türmen, die dann nicht mehr feuern – solange er spukt, ist er sichtbar.', motion: 'hover', plural: 'Gespenster', name: 'Gespenst', model: 'enemy_wraith', hp: 170, speed: 1.05, armor: 0, reward: 15, leak: 1, cost: 4, scale: 0.64, air: true, lift: 46, cloak: { on: 3.5, off: 1.8 }, hack: { range: 1.5, max: 7, cd: 4, haunt: true } },
+  lich: { cls: 'heavy', faction: 'undead', info: 'Der Lichkönig – uralter Herrscher der Toten. Schleudert Seelenblitze auf Türme und erweckt laufend Skelettkrieger.', motion: 'hover', name: 'Lichkönig', model: 'enemy_lich', hp: 4200, speed: 0.42, armor: 9, reward: 300, leak: 8, cost: 80, scale: 0.68, boss: true, lift: 16,
+    atk: { dmg: 26, range: 3.0, rate: 0.9, kind: 'plasma' }, spawns: { type: 'skeleton', every: 7, count: 2 }, escort: ['skeleton', 'zombie', 'skeleton', 'zombie', 'ghoulhound', 'skeleton'] },
+  imp: { cls: 'light', faction: 'inferno', rift: 1, info: 'Flinker kleiner Dämon. Wirft Feuerkugeln auf nahe Türme.', motion: 'biped', stride: 0.3, plural: 'Imps', name: 'Imp', model: 'enemy_imp', hp: 110, speed: 1.3, armor: 0, reward: 8, leak: 1, cost: 2, scale: 0.85,
+    atk: { dmg: 8, range: 2.0, rate: 0.8, kind: 'laser' } },
+  hellhound: { cls: 'armored', faction: 'inferno', rift: 1, info: 'Höllenhund mit Flammenmähne. Schnell, zäh und hitzefest – Flammenwerfer machen ihm kaum etwas.', motion: 'walker', stride: 0.5, plural: 'Höllenhunde', name: 'Höllenhund', model: 'enemy_hellhound', hp: 300, speed: 1.2, armor: 3, reward: 18, leak: 2, cost: 5, scale: 0.85, burnImmune: true },
+  demon: { cls: 'heavy', faction: 'inferno', rift: 2, info: 'Gehörnter Dämonen-Koloss. Schleudert Feuerbälle auf Türme und gerät angeschlagen in Raserei.', motion: 'biped', stride: 0.5, cycle: 1.1, plural: 'Dämonen', name: 'Dämon', model: 'enemy_demon', hp: 820, speed: 0.5, armor: 8, reward: 42, leak: 3, cost: 13, scale: 0.9,
+    atk: { dmg: 30, range: 2.0, rate: 0.5, kind: 'cannon' }, enrage: { at: 0.5, speed: 1.5 } },
+  gargoyle: { cls: 'heavy', faction: 'inferno', rift: 3, info: 'Steinerner Wasserspeier. Erstarrt immer wieder zu Stein – dann ist er unverwundbar und bleibt stehen.', motion: 'walker', stride: 0.5, plural: 'Gargoyles', name: 'Gargoyle', model: 'enemy_gargoyle', hp: 520, speed: 0.62, armor: 6, reward: 30, leak: 2, cost: 9, scale: 0.85,
+    petrify: { every: 6, dur: 2.4 } },
+  fallen: { cls: 'air', faction: 'inferno', rift: 4, info: 'Gefallener Engel. Fliegt gepanzert heran, wirft Flammenspeere auf Türme und hüllt Verbündete in dunkle Schutzschilde.', motion: 'hover', plural: 'Gefallene Engel', name: 'Gefallener Engel', model: 'enemy_fallen', hp: 420, speed: 0.75, armor: 4, reward: 32, leak: 2, cost: 10, scale: 0.85, air: true, lift: 62,
+    project: { every: 4, range: 1.8, shield: 90 }, atk: { dmg: 14, range: 2.6, rate: 0.55, kind: 'missile' } },
+  archangel: { cls: 'air', faction: 'inferno', info: 'Der gefallene Erzengel – Herrscher des Abgrunds. Schirmt sein Heer ab, ruft Imps herbei und schleudert Flammenschwerter auf Türme.', motion: 'hover', name: 'Erzengel des Abgrunds', model: 'enemy_archangel', hp: 3200, speed: 0.4, armor: 6, reward: 300, leak: 8, cost: 80, scale: 0.78, boss: true, air: true, lift: 86,
+    atk: { dmg: 34, range: 3.4, rate: 0.8, kind: 'missile' }, project: { every: 5, range: 2.2, shield: 140 }, spawns: { type: 'imp', every: 6.5, count: 3 }, escort: ['fallen', 'imp', 'fallen', 'imp', 'imp', 'fallen'] },
   mothership: { cls: 'air', info: 'Fliegende Festung. Setzt unterwegs laufend Kamikaze-Drohnen aus.', motion: 'hover', name: 'Mutterschiff',  model: 'enemy_mothership', hp: 3000, speed: 0.42, armor: 6, reward: 280, leak: 8, cost: 80, scale: 0.78, boss: true, air: true, lift: 84,
     atk: { dmg: 30, range: 3.2, rate: 1.1, kind: 'missile' }, spawns: { type: 'kamikaze', every: 6.5, count: 2 } },
 };
@@ -248,6 +269,10 @@ export const ENEMY_UNLOCK = {
   infiltrator: 14, brood: 17, saboteur: 19, bomber: 21, aegis: 23,
   // signature machines (only in their own area, from its first missions on)
   scavenger: 3, climber: 6, burrower: 11, icebreaker: 16, magma: 21, ram: 26,
+};
+export const FACTIONS = {
+  undead: { name: 'Totenreich', boss: 'lich', death: 'rad' },
+  inferno: { name: 'Himmel & Hölle', boss: 'archangel', death: 'ember' },
 };
 export const BIOME_ENEMY = { wasteland: 'scavenger', jungle: 'climber', desert: 'burrower', ice: 'icebreaker', volcano: 'magma', city: 'ram' };
 
@@ -316,6 +341,27 @@ BIOMES.city = {
   slab: ['#55565c', '#212227', '#3c3d42', '#111215'],
   bg: ['#151a26', '#0b0e15', '#040508'], ambient: 'embers', roadEdge: 'rgba(8,8,10,0.4)',
 };
+// ---- Dimensionsriss worlds: the enemies come out of rift portals ----
+BIOMES.necro = {
+  name: 'Totenreich', ground: 'necro_ground', road: 'necro_road', gate: 'p3d_portal', gateGlow: 'green',
+  props: ['prop_n_graves', 'prop_n_tree', 'prop_n_crypt', 'prop_n_bones', 'prop_n_obelisk'],
+  decor: [['prop_n_graves', 0.45, 0.65, 4], ['prop_n_bones', 0.4, 0.6, 3], ['prop_n_tree', 0.5, 0.7, 2]], decorDensity: 0.14,
+  lip: ['#5d6158', '#2a2c28'], cliff: ['#4d5049', '#1c1d1b', '#363833', '#101110'],
+  theme: { camp: ['prop_crates', 'prop_barrier'], spawn: ['prop_n_obelisk', 'prop_n_bones'], landmark: ['prop_n_crypt', ['prop_n_graves', 'prop_n_obelisk']], nature: ['prop_n_tree', 'prop_n_graves', 'prop_n_tree', 'prop_n_bones'], plateau: 0.9 },
+  grade: { screen: 'rgba(20,40,30,0.35)', multiply: 'rgb(200,222,205)' },
+  slab: ['#3c403a', '#161815', '#2a2d28', '#0b0c0a'],
+  bg: ['#0e1a14', '#08100c', '#030605'], ambient: 'fireflies', roadEdge: 'rgba(6,10,8,0.45)',
+};
+BIOMES.inferno = {
+  name: 'Himmel & Hölle', ground: 'inferno_ground', road: 'inferno_road', gate: 'p3d_portal', gateGlow: 'red',
+  props: ['prop_h_statue', 'prop_h_column', 'prop_h_spire', 'prop_h_crystal', 'prop_h_gate'],
+  decor: [['prop_h_crystal', 0.4, 0.6, 3], ['prop_h_column', 0.45, 0.65, 3], ['prop_h_spire', 0.4, 0.55, 2]], decorDensity: 0.13,
+  lip: ['#c8b89a', '#4a1e10'], cliff: ['#4a3a36', '#1a1010', '#352826', '#0e0808'],
+  theme: { camp: ['prop_crates', 'prop_barrier'], spawn: ['prop_h_spire', 'prop_h_crystal'], landmark: ['prop_h_gate', ['prop_h_statue', 'prop_h_column']], nature: ['prop_h_spire', 'prop_h_statue', 'prop_h_column', 'prop_h_crystal'], plateau: 1.1 },
+  grade: { screen: 'rgba(48,10,6,0.3)', multiply: 'rgb(255,220,205)' },
+  slab: ['#3a2826', '#120a09', '#2a1c19', '#080505'],
+  bg: ['#2a0a08', '#150605', '#060202'], ambient: 'embers', roadEdge: 'rgba(12,4,2,0.45)', lava: true,
+};
 export const BIOME_ORDER = ['wasteland', 'jungle', 'desert', 'ice', 'volcano', 'city'];
 
 // weather events: from wave 3, a wave can bring weather that lasts dur seconds
@@ -326,7 +372,7 @@ export const WEATHER = {
   blizzard:  { name: 'Schneesturm', icon: 'frost', color: '#e8f6ff', desc: 'Gegner −25 % Tempo, Türme feuern 15 % langsamer', speed: 0.75, rate: 0.85 },
   meteor:    { name: 'Meteorschauer', icon: 'nuke', color: '#ff8a4a', desc: 'Glühende Brocken schlagen ein – Maschinen wie Türme. Auf die Warnkreise achten!', bolt: { every: [2.2, 4], r: 1.1, dmg: 520, towerDmg: 0.3, towerChance: 0.3, delay: 1.1 } },
 };
-export const BIOME_WEATHER = { wasteland: ['sandstorm', 'storm'], jungle: ['storm', 'fog'], desert: ['sandstorm', 'storm'], ice: ['blizzard', 'fog'], volcano: ['meteor', 'storm'], city: ['storm', 'fog'] };
+export const BIOME_WEATHER = { necro: ['fog', 'storm'], inferno: ['meteor', 'storm'], wasteland: ['sandstorm', 'storm'], jungle: ['storm', 'fog'], desert: ['sandstorm', 'storm'], ice: ['blizzard', 'fog'], volcano: ['meteor', 'storm'], city: ['storm', 'fog'] };
 export const WEATHER_CFG = { from: 3, chance: 0.3, dur: 55 };
 
 // ---- special abilities ----

@@ -97,6 +97,13 @@ export class FX {
     const m = Models.meta(name);
     const heavy = e.def.cost >= 7 || e.def.boss;
     const s0 = (m ? m.scale : 0.7) * e.def.scale;
+    if (kind === 'ember') {
+      // demon / fallen angel: burns away into glowing embers that rise into the sky
+      this.add({ k: 'glow', x, y, s: 110 * Math.min(scale, 2), life: 0.55, spr: 'orange' });
+      if (m && m.img) this.disintegrate(e, { mode: 'nuke', frame, s0, from: { x: x + rand(-20, 20), y: y + 260 }, hold: 0.12 });
+      if (e.def.boss) this.bigExplosion(x, y, scale, 'fire');
+      return;
+    }
     if (kind === 'nuke' || kind === 'rad') {
       // caught by the nuclear blast / killed by radiation: the machine glows and crumbles to dust
       const nuke = kind === 'nuke';

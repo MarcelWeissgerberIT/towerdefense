@@ -138,5 +138,97 @@
  "ally_bomber": {
   "image_url": "https://cdn.openart.ai/openart-ai/production/2026-11/create-image/wRD6PTxSzjxZwjWN69MC/gpt-image-2-1_1793553405812_978122d0.png",
   "polycount": 40000
+ },
+ "enemy_zombie": {
+  "image_url": "https://cdn.openart.ai/openart-ai/production/2026-11/create-image/wRD6PTxSzjxZwjWN69MC/gpt-image-2-1_1793557065308_9812116c.png",
+  "polycount": 40000
+ },
+ "enemy_ghoulhound": {
+  "image_url": "https://cdn.openart.ai/openart-ai/production/2026-11/create-image/wRD6PTxSzjxZwjWN69MC/gpt-image-2-1_1793557077233_1b31a8a9.png",
+  "polycount": 40000
+ },
+ "enemy_skeleton": {
+  "image_url": "https://cdn.openart.ai/openart-ai/production/2026-11/create-image/wRD6PTxSzjxZwjWN69MC/gpt-image-2-1_1793557070072_672b6aba.png",
+  "polycount": 40000
+ },
+ "enemy_necromancer": {
+  "image_url": "https://cdn.openart.ai/openart-ai/production/2026-11/create-image/wRD6PTxSzjxZwjWN69MC/gpt-image-2-1_1793557077770_633f6996.png",
+  "polycount": 40000
+ },
+ "enemy_wraith": {
+  "image_url": "https://cdn.openart.ai/openart-ai/production/2026-11/create-image/wRD6PTxSzjxZwjWN69MC/gpt-image-2-1_1793557070883_05ac77e1.png",
+  "polycount": 40000
+ },
+ "enemy_lich": {
+  "image_url": "https://cdn.openart.ai/openart-ai/production/2026-11/create-image/wRD6PTxSzjxZwjWN69MC/gpt-image-2-1_1793557077515_122be232.png",
+  "polycount": 40000
+ },
+ "enemy_imp": {
+  "image_url": "https://cdn.openart.ai/openart-ai/production/2026-11/create-image/wRD6PTxSzjxZwjWN69MC/gpt-image-2-1_1793557092078_a7db9c42.png",
+  "polycount": 40000
+ },
+ "enemy_hellhound": {
+  "image_url": "https://cdn.openart.ai/openart-ai/production/2026-11/create-image/wRD6PTxSzjxZwjWN69MC/gpt-image-2-1_1793557094541_be1f5106.png",
+  "polycount": 40000
+ },
+ "enemy_demon": {
+  "image_url": "https://cdn.openart.ai/openart-ai/production/2026-11/create-image/wRD6PTxSzjxZwjWN69MC/gpt-image-2-1_1793557104668_8bc19ed9.png",
+  "polycount": 40000
+ },
+ "enemy_gargoyle": {
+  "image_url": "https://cdn.openart.ai/openart-ai/production/2026-11/create-image/wRD6PTxSzjxZwjWN69MC/gpt-image-2-1_1793557099406_1948fbdf.png",
+  "polycount": 40000
+ },
+ "enemy_fallen": {
+  "image_url": "https://cdn.openart.ai/openart-ai/production/2026-11/create-image/wRD6PTxSzjxZwjWN69MC/gpt-image-2-1_1793557105834_1e05f0a4.png",
+  "polycount": 40000
+ },
+ "enemy_archangel": {
+  "image_url": "https://cdn.openart.ai/openart-ai/production/2026-11/create-image/wRD6PTxSzjxZwjWN69MC/gpt-image-2-1_1793557107638_52a0d383.png",
+  "polycount": 40000
+ },
+ "p3d_prop_n_graves": {
+  "image_url": "https://cdn.openart.ai/openart-ai/production/2026-11/create-image/wRD6PTxSzjxZwjWN69MC/gpt-image-2-1_1793557057504_9d8c2dc5.png",
+  "polycount": 25000
+ },
+ "p3d_prop_n_tree": {
+  "image_url": "https://cdn.openart.ai/openart-ai/production/2026-11/create-image/wRD6PTxSzjxZwjWN69MC/gpt-image-2-1_1793557057650_5e4390b4.png",
+  "polycount": 30000
+ },
+ "p3d_prop_n_crypt": {
+  "image_url": "https://cdn.openart.ai/openart-ai/production/2026-11/create-image/wRD6PTxSzjxZwjWN69MC/gpt-image-2-1_1793557064296_6dd176da.png",
+  "polycount": 30000
+ },
+ "p3d_prop_n_bones": {
+  "image_url": "https://cdn.openart.ai/openart-ai/production/2026-11/create-image/wRD6PTxSzjxZwjWN69MC/gpt-image-2-1_1793557066897_e84026b1.png",
+  "polycount": 25000
+ },
+ "p3d_prop_n_obelisk": {
+  "image_url": "https://cdn.openart.ai/openart-ai/production/2026-11/create-image/wRD6PTxSzjxZwjWN69MC/gpt-image-2-1_1793557202392_f0554e15.png",
+  "polycount": 25000
+ },
+ "p3d_portal": {
+  "image_url": "https://cdn.openart.ai/openart-ai/production/2026-11/create-image/wRD6PTxSzjxZwjWN69MC/gpt-image-2-1_1793557206769_9bbbb99c.png",
+  "polycount": 40000
+ },
+ "p3d_prop_h_statue": {
+  "image_url": "https://cdn.openart.ai/openart-ai/production/2026-11/create-image/wRD6PTxSzjxZwjWN69MC/gpt-image-2-1_1793557205284_a99e5548.png",
+  "polycount": 30000
+ },
+ "p3d_prop_h_column": {
+  "image_url": "https://cdn.openart.ai/openart-ai/production/2026-11/create-image/wRD6PTxSzjxZwjWN69MC/gpt-image-2-1_1793557210300_e4d54fa0.png",
+  "polycount": 25000
+ },
+ "p3d_prop_h_spire": {
+  "image_url": "https://cdn.openart.ai/openart-ai/production/2026-11/create-image/wRD6PTxSzjxZwjWN69MC/gpt-image-2-1_1793557208158_158670f1.png",
+  "polycount": 25000
+ },
+ "p3d_prop_h_crystal": {
+  "image_url": "https://cdn.openart.ai/openart-ai/production/2026-11/create-image/wRD6PTxSzjxZwjWN69MC/gpt-image-2-1_1793557211168_a28e7996.png",
+  "polycount": 25000
+ },
+ "p3d_prop_h_gate": {
+  "image_url": "https://cdn.openart.ai/openart-ai/production/2026-11/create-image/wRD6PTxSzjxZwjWN69MC/gpt-image-2-1_1793557293770_2f5ac121.png",
+  "polycount": 40000
  }
 }

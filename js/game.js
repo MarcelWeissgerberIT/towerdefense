@@ -1,6 +1,6 @@
 // Core simulation: grid, routes, towers (turret aiming), enemies (attack towers), projectiles, waves.
 import {
-  HW, TOWERS, ENEMIES, BIOMES, BOSS, BAR, resistOf, ION, ROD, NAPALM, SPECS, PERKS, WEATHER, BIOME_WEATHER, WEATHER_CFG, TOWER_DMG, specCost, EFFECT, FROST, SHATTER, THERMAL, ACID_ARMOR, NUKE, POWERUPS, DROP, HOLE, ELEV_PX, ELEV_RANGE, MAX_LEVEL, TOWER_SCALE, UPGRADE_TIME, WAVE_GAP, SELL_RATE, FULL_REFUND_TIME, towerStats, upgradeCost, totalInvested,
+  HW, TOWERS, ENEMIES, BIOMES, BOSS, BAR, resistOf, ION, ROD, NAPALM, FACTIONS, SPECS, PERKS, WEATHER, BIOME_WEATHER, WEATHER_CFG, TOWER_DMG, specCost, EFFECT, FROST, SHATTER, THERMAL, ACID_ARMOR, NUKE, POWERUPS, DROP, HOLE, ELEV_PX, ELEV_RANGE, MAX_LEVEL, TOWER_SCALE, UPGRADE_TIME, WAVE_GAP, SELL_RATE, FULL_REFUND_TIME, towerStats, upgradeCost, totalInvested,
 } from './config.js';
 import { getLevel, makeWaves, makeBossRush, hpMultiplier } from './levels.js';
 import { toWorld, rand, mulberry32 } from './iso.js';
@@ -56,6 +56,8 @@ export function routePos(route, d) {
   return { x: s.ax + s.dx * t, y: s.ay + s.dy * t, dx: s.dx, dy: s.dy };
 }
 const DIR4 = [[1, 0], [0, 1], [-1, 0], [0, -1]];
+// out of reach for towers: burrowed (sand burrower), lying in pieces (skeleton), turned to stone (gargoyle)
+const untouchable = (e) => !!(e.burrowed || e.down > 0 || e.stone);
 // drop points in the middle of straight stretches (a U-turn keeps its turning point)
 function straighten(pts) {
   const out = [pts[0]];
@@ -478,7 +480,7 @@ export class Game {
       const t = e.hacking;
       if (!this.towers.includes(t) || stopped || e.vortex) { this.endHack(e); return; }
       e.hackT += dt;
-      if (Math.random() < dt * 10) this.fx.sparks(t.wx + rand(-20, 20), t.wy - rand(20, 70), 2, '#ffb060', 90);
+      if (Math.random() < dt * 10) this.fx.sparks(t.wx + rand(-20, 20), t.wy - rand(20, 70), 2, H.haunt ? '#b8ffd8' : '#ffb060', 90);
       if (e.hackT >= H.max) { this.endHack(e); e.hackCd = H.cd; }
       return;
     }
@@ -492,8 +494,8 @@ export class Game {
     }
     if (!best) return;
     e.hacking = best; e.hackT = 0; best.hackedBy = e;
-    this.fx.text(best.wx, best.wy - 110, 'GEHACKT!', '#ffb060');
-    this.fx.add({ k: 'ring', x: best.wx, y: best.wy, r0: 10, r1: 80, life: 0.45, c: '255,160,60' });
+    this.fx.text(best.wx, best.wy - 110, H.haunt ? 'HEIMGESUCHT!' : 'GEHACKT!', H.haunt ? '#b8ffd8' : '#ffb060');
+    this.fx.add({ k: 'ring', x: best.wx, y: best.wy, r0: 10, r1: 80, life: 0.45, c: H.haunt ? '160,255,210' : '255,160,60' });
     this.emit('hack', { t: best, e });
     sfx('emp');
   }
@@ -525,7 +527,7 @@ export class Game {
     this.fx.add({ k: 'glow', x: e.wx, y: y, s: 300, life: 0.4, spr: 'red' });
     this.fx.shake = Math.max(this.fx.shake, 16);
     this.fx.text(e.wx, y - 90, 'WUTPHASE!', '#ff5a3c');
-    const list = e.air ? R.escort.air : R.escort.ground;
+    const list = e.def.escort || (e.air ? R.escort.air : R.escort.ground);
     list.forEach((type, i) => {
       const c = this.spawn(type, e.route, e.hpMul * 0.9, 0.5, Math.max(0, e.d - 0.3 - i * 0.35));
       c.off = rand(-0.32, 0.32);
@@ -582,7 +584,7 @@ export class Game {
   // ---------------- damage to enemies ----------------
   damage(e, raw, opts = {}) {
     if (!e.alive) return 0;
-    if (e.burrowed && !opts.ignoreArmor) return 0;               // under the sand: only special weapons reach it
+    if (untouchable(e) && !opts.ignoreArmor) return 0;            // under the sand / in pieces / stone: only special weapons reach it
     if (e.cloaked && !opts.dot) e.revealT = Math.max(e.revealT, 0.8);
     // tower effectiveness against the enemy class (light / armoured / heavy / air)
     const src = opts.src;
@@ -614,13 +616,13 @@ export class Game {
     if (opts.acid) this.corrode(e, opts.acid, opts.src);
     e.hp -= dmg;
     if (e.flashCd <= 0) { e.flash = 0.06; e.flashCd = 0.2; }
-    if (e.hp <= 0) this.kill(e, opts.src);
+    if (e.hp <= 0) this.kill(e, opts.src, opts.fire);
     return dmg;
   }
 
   // frost build-up: slows, at 100 % the machine freezes solid (bosses only slow down)
   chill(e, amt) {
-    if (!e.alive || e.frozenT > 0 || e.def.frostImmune || e.burrowed) return;
+    if (!e.alive || e.frozenT > 0 || e.def.frostImmune || untouchable(e)) return;
     e.frost = Math.min(FROST.max, e.frost + amt * (e.freezeImm > 0 ? 0.4 : 1));
     e.frostHit = this.time;
     if (e.frost >= FROST.max && !e.def.boss && e.freezeImm <= 0) {
@@ -638,7 +640,20 @@ export class Game {
     e.acidSrc = src || e.acidSrc;
   }
 
-  kill(e, src) {
+  kill(e, src, fire = false) {
+    // skeleton warrior: falls apart and pulls itself together once - unless fire, plasma or the nuke got it
+    const R = e.def.revive;
+    if (R && !e.revived && !this._nuking) {
+      const sk0 = src && src.def ? src.def.kind : null;
+      if (sk0 !== 'flame' && sk0 !== 'plasma' && !fire && !(e.burnT > 0)) {
+        e.revived = true; e.down = R.delay;
+        e.hp = Math.round(e.maxHp * R.hp); e.acidN = 0; e.acidT = 0; e.frost = 0; e.frozenT = 0;
+        this.fx.debris(e.wx, this.bodyY(e), 8, 140);
+        this.fx.text(e.wx, this.bodyY(e) - 40, 'ZERFÄLLT …', '#cfd8c0');
+        sfx('hit');
+        return;
+      }
+    }
     e.alive = false;
     this.kills++;
     if (e.def.burst && !e.air) {
@@ -690,7 +705,9 @@ export class Game {
     const kind = this._nuking ? 'nuke' : !sk && e.radT > 0 && !(e.burnT > 0) && !(e.acidT > 0) ? 'rad'
       : e.frozenT > 0 || sk === 'cryo' ? 'ice' : sk === 'acid' || (!sk && e.acidT > 0) ? 'acid'
       : sk === 'plasma' || sk === 'emp' || sk === 'laser' || sk === 'rail' ? 'plasma' : (!sk && e.burnT > 0) || sk === 'flame' ? 'burn' : 'fire';
-    this.deathFx(e, kind, this._nuking);
+    // supernatural creatures don't explode: the dead dissolve into green soul dust, demons burn away into embers
+    const F = e.def.faction && FACTIONS[e.def.faction];
+    this.deathFx(e, F && kind !== 'nuke' ? F.death : kind, this._nuking);
     if (kind !== 'nuke') this.fx.text(e.wx, y - 30 * big, `+${e.reward}`);
     if (!e.air) this.decals.push({ x: e.wx, y: e.wy, s: 70 * Math.min(big, 2.4) });
     sfx('explosion', big >= 1.6);
@@ -712,7 +729,7 @@ export class Game {
 
   // cloak cycle: on for `on` seconds, flickers off for `off` seconds
   cloakOff(e) { const c = e.def.cloak; return !c || (e.cloakT % (c.on + c.off)) > c.on; }
-  visible(e) { return !e.cloaked || e.revealT > 0 || this.cloakOff(e); }
+  visible(e) { return !e.cloaked || e.revealT > 0 || this.cloakOff(e) || !!e.hacking; }
   enemiesInRange(gx, gy, r, air, ground, minR = 0) {
     const r2 = r * r, m2 = minR * minR, out = [];
     for (const e of this.enemies) {
@@ -803,9 +820,9 @@ export class Game {
     // EMP towers expose cloaked infiltrators in their range
     if (def.kind === 'emp') for (const e of this.enemiesInRange(t.gx, t.gy, s.range, true, true)) if (e.cloaked) e.revealT = Math.max(e.revealT, 0.4);
     if (t.target && t.target.cloaked && t.target.revealT <= 0 && !this.cloakOff(t.target)) t.target = null;
-    if (t.target && t.target.burrowed) t.target = null;
+    if (t.target && untouchable(t.target)) t.target = null;
     if (!t.target || t.retarget <= 0) {
-      const list = this.enemiesInRange(t.gx, t.gy, s.range, def.air, def.ground, def.minRange || 0).filter(e => !e.burrowed && (!e.cloaked || e.revealT > 0 || this.cloakOff(e)));
+      const list = this.enemiesInRange(t.gx, t.gy, s.range, def.air, def.ground, def.minRange || 0).filter(e => !untouchable(e) && this.visible(e));
       const nt = this.pickTarget(t, list);
       if (nt !== t.target) { t.target = nt; t.beamT = 0; }
       t.retarget = 0.25;
@@ -1027,7 +1044,7 @@ export class Game {
     const def = e.def;
     if (e.burnT > 0) {
       e.burnT -= dt;
-      this.damage(e, e.burnDps * dt, { ignoreArmor: true });
+      this.damage(e, e.burnDps * dt, { ignoreArmor: true, fire: true });
       if (Math.random() < dt * 10) this.fx.burn(e.wx + rand(-10, 10), this.bodyY(e) + rand(-8, 8));
       if (!e.alive) return;
     }
@@ -1041,7 +1058,7 @@ export class Game {
       if (!e.alive) return;
     }
     // acid puddles on the road
-    if (!e.air && !e.burrowed && this.puddles.length) {
+    if (!e.air && !untouchable(e) && this.puddles.length) {
       e.puddleCd -= dt;
       if (e.puddleCd <= 0) for (const p of this.puddles) {
         if ((e.gx - p.gx) ** 2 + (e.gy - p.gy) ** 2 <= p.r * p.r) { this.corrode(e, p.dps, p.src); e.puddleCd = 0.8; break; }
@@ -1103,6 +1120,32 @@ export class Game {
     if (this.buffs.timestop > 0) sp *= def.boss ? 0.3 : 0;
     if (e.holeSlow) { sp *= 1 - e.holeSlow; e.holeSlow = 0; }
     if (this.weather) { const W = WEATHER[this.weather.type]; sp *= (e.air ? W.airSpeed : W.speed) || 1; }
+    // skeleton in pieces: lies still, then pulls itself together again
+    if (e.down > 0) {
+      e.down -= dt; sp = 0;
+      if (Math.random() < dt * 5) this.fx.add({ k: 'glow', x: e.wx + rand(-12, 12), y: e.wy - rand(4, 18), s: 26, life: 0.5, spr: 'green' });
+      if (e.down <= 0) {
+        e.down = 0;
+        this.fx.add({ k: 'glow', x: e.wx, y: this.bodyY(e), s: 120, life: 0.5, spr: 'green' });
+        this.fx.text(e.wx, this.bodyY(e) - 50, 'ERHEBT SICH!', '#9dffb5');
+      }
+    }
+    // gargoyle: turns to stone every few seconds - stops and cannot be hurt
+    if (def.petrify) {
+      e.petT = (e.petT ?? def.petrify.every * 0.7) - dt;
+      if (e.petT <= 0) {
+        e.stone = !e.stone; e.petT = e.stone ? def.petrify.dur : def.petrify.every;
+        this.fx.dust(e.wx, e.wy, e.stone ? 0.8 : 1.1);
+        if (e.stone) { e.frost = 0; e.frozenT = 0; e.burnT = 0; }
+      }
+      if (e.stone) sp = 0;
+    }
+    // demon: frenzy when badly hurt
+    if (def.enrage && !e.enraged && e.hp < e.maxHp * def.enrage.at) {
+      e.enraged = true; e.rage = true; e.speedMul *= def.enrage.speed; e.atkMul = (e.atkMul || 1) * 1.5;
+      this.fx.add({ k: 'glow', x: e.wx, y: this.bodyY(e), s: 160, life: 0.45, spr: 'red' });
+      this.fx.text(e.wx, this.bodyY(e) - 60, 'RASEREI!', '#ff5a3c');
+    }
     // sand burrower: digs in every few seconds - faster and out of reach underground
     if (def.burrow) {
       e.burrowT = (e.burrowT ?? def.burrow.every * 0.6) - dt;
@@ -1783,7 +1826,7 @@ export class Game {
         for (const e of this.enemiesInRange(p.gx, p.gy, NAPALM.w, false, true)) {
           if (e.napalmT === this.time) continue;      // one patch per unit and frame
           e.napalmT = this.time;
-          this.damage(e, NAPALM.dps * hpm * dt * (e.def.burnImmune ? 0.4 : 1), { ignoreArmor: true, dot: true });
+          this.damage(e, NAPALM.dps * hpm * dt * (e.def.burnImmune ? 0.4 : 1), { ignoreArmor: true, dot: true, fire: true });
           if (!e.def.burnImmune) { e.burnT = Math.max(e.burnT, 2.5); e.burnDps = Math.max(e.burnDps, NAPALM.dps * 0.25 * hpm); }
         }
       }

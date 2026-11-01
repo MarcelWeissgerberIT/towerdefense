@@ -268,5 +268,115 @@
   "P": 128,
   "pad": 0.04,
   "shadow": true
+ },
+ "p3d_portal": {
+  "url": "glb/p3d_portal.glb",
+  "mode": "prop",
+  "frames": 4,
+  "size": 1.85,
+  "yaw0": 0,
+  "P": 128,
+  "pad": 0.04,
+  "shadow": true
+ },
+ "p3d_prop_n_graves": {
+  "url": "glb/p3d_prop_n_graves.glb",
+  "mode": "prop",
+  "frames": 4,
+  "size": 1.0,
+  "yaw0": 0,
+  "P": 128,
+  "pad": 0.04,
+  "shadow": true
+ },
+ "p3d_prop_n_tree": {
+  "url": "glb/p3d_prop_n_tree.glb",
+  "mode": "prop",
+  "frames": 4,
+  "size": 1.2,
+  "yaw0": 0,
+  "P": 128,
+  "pad": 0.04,
+  "shadow": true
+ },
+ "p3d_prop_n_crypt": {
+  "url": "glb/p3d_prop_n_crypt.glb",
+  "mode": "prop",
+  "frames": 4,
+  "size": 1.15,
+  "yaw0": 0,
+  "P": 128,
+  "pad": 0.04,
+  "shadow": true
+ },
+ "p3d_prop_n_bones": {
+  "url": "glb/p3d_prop_n_bones.glb",
+  "mode": "prop",
+  "frames": 4,
+  "size": 0.8,
+  "yaw0": 0,
+  "P": 128,
+  "pad": 0.04,
+  "shadow": true
+ },
+ "p3d_prop_n_obelisk": {
+  "url": "glb/p3d_prop_n_obelisk.glb",
+  "mode": "prop",
+  "frames": 4,
+  "size": 0.9,
+  "yaw0": 0,
+  "P": 128,
+  "pad": 0.04,
+  "shadow": true
+ },
+ "p3d_prop_h_statue": {
+  "url": "glb/p3d_prop_h_statue.glb",
+  "mode": "prop",
+  "frames": 4,
+  "size": 0.95,
+  "yaw0": 0,
+  "P": 128,
+  "pad": 0.04,
+  "shadow": true
+ },
+ "p3d_prop_h_column": {
+  "url": "glb/p3d_prop_h_column.glb",
+  "mode": "prop",
+  "frames": 4,
+  "size": 1.0,
+  "yaw0": 0,
+  "P": 128,
+  "pad": 0.04,
+  "shadow": true
+ },
+ "p3d_prop_h_spire": {
+  "url": "glb/p3d_prop_h_spire.glb",
+  "mode": "prop",
+  "frames": 4,
+  "size": 0.9,
+  "yaw0": 0,
+  "P": 128,
+  "pad": 0.04,
+  "shadow": true
+ },
+ "p3d_prop_h_crystal": {
+  "url": "glb/p3d_prop_h_crystal.glb",
+  "mode": "prop",
+  "frames": 4,
+  "size": 0.85,
+  "yaw0": 0,
+  "P": 128,
+  "pad": 0.04,
+  "shadow": true
+ },
+ "p3d_prop_h_gate": {
+  "url": "glb/p3d_prop_h_gate.glb",
+  "mode": "prop",
+  "frames": 4,
+  "size": 1.35,
+  "yaw0": 0,
+  "P": 128,
+  "pad": 0.04,
+  "shadow": true
  }
 }

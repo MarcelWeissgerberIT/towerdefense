@@ -1,5 +1,5 @@
 // Iron Sentinel – app controller: screens, HUD, build drawer, tower menu, game loop.
-import { BAR, ION, ROD, NAPALM, TOWERS, ENEMIES, TOWER_ORDER, MAX_LEVEL, BIOMES, BIOME_ORDER, UPGRADE_TIME, ELEV_RANGE, CLASS_NAME, EFFECT, POWERUPS, NUKE, HOLE, DIFFICULTY, SPECS, PERKS, PERK_COST, WEATHER, TOWER_DMG, SHATTER, FROST, specCost, effectOf, upgradeCost, towerStats } from './config.js';
+import { BAR, ION, ROD, NAPALM, TOWERS, ENEMIES, FACTIONS, TOWER_ORDER, MAX_LEVEL, BIOMES, BIOME_ORDER, UPGRADE_TIME, ELEV_RANGE, CLASS_NAME, EFFECT, POWERUPS, NUKE, HOLE, DIFFICULTY, SPECS, PERKS, PERK_COST, WEATHER, TOWER_DMG, SHATTER, FROST, specCost, effectOf, upgradeCost, towerStats } from './config.js';
 import { LEVEL_SPECS, LEVEL_COUNT, getLevel, makeWaves, hpMultiplier } from './levels.js';
 import { CHAPTERS } from './level_specs.js';
 import { Assets, Models, drawIcon } from './assets.js';
@@ -485,16 +485,22 @@ function intelHTML(type) {
   const def = ENEMIES[type];
   const lv = game ? game.level.power : 1, wv = game ? Math.max(1, game.wave) : 1;
   const hp = Math.round(def.hp * hpMultiplier(lv, wv) / 10) * 10;
+  const num = (v) => String(v).replace('.', ',');
   const ab = [];
   if (def.air) ab.push(`${IC('wave')}Fliegt – nur Türme mit Luftabwehr können sie treffen`);
   if (def.cloak) ab.push(`${IC('lock')}Getarnt – nur EMP-Türme decken ihn auf, Flächenschaden trifft trotzdem`);
   if (def.shield) ab.push(`${IC('lives')}Energieschild (${def.shield}) – EMP ×4, Plasma ×2 gegen den Schild`);
-  if (def.project) ab.push(`${IC('lives')}Lädt die Schilde aller Maschinen im Umkreis auf`);
+  if (def.project) ab.push(def.faction ? `${IC('lives')}Hüllt Verbündete im Umkreis in dunkle Schutzschilde` : `${IC('lives')}Lädt die Schilde aller Maschinen im Umkreis auf`);
   if (def.heal) ab.push(`${IC('repair')}Repariert Maschinen im Umkreis`);
   if (def.dive) ab.push(`${IC('damage')}Stürzt sich auf Türme und explodiert`);
   if (def.bomb) ab.push(`${IC('damage')}Wirft Bombenteppiche auf Türme unter sich`);
-  if (def.spawns) ab.push(`${IC('swarm')}Setzt laufend ${ENEMIES[def.spawns.type].name}n aus`);
-  if (def.burst) ab.push(`${IC('swarm')}Zerplatzt beim Tod in ${def.burst.count} ${ENEMIES[def.burst.type].name}n`);
+  const plural = (t) => ENEMIES[t].plural || ENEMIES[t].name + 'n';
+  if (def.spawns) ab.push(def.faction ? `${IC('swarm')}Ruft laufend ${plural(def.spawns.type)} herbei` : `${IC('swarm')}Setzt laufend ${plural(def.spawns.type)} aus`);
+  if (def.burst) ab.push(`${IC('swarm')}Zerplatzt beim Tod in ${def.burst.count} ${plural(def.burst.type)}`);
+  if (def.hack) ab.push(def.hack.haunt ? `${IC('lock')}Spukt in Türmen: sie feuern bis zu ${def.hack.max} s nicht – solange er spukt, ist er sichtbar` : `${IC('lock')}Hackt Türme: sie feuern bis zu ${def.hack.max} s nicht`);
+  if (def.revive) ab.push(`${IC('repair')}Steht nach ${num(def.revive.delay)} s mit ${Math.round(def.revive.hp * 100)} % Leben wieder auf – außer Flammen oder Plasma haben ihn erledigt`);
+  if (def.petrify) ab.push(`${IC('lock')}Erstarrt alle ${def.petrify.every} s für ${num(def.petrify.dur)} s zu Stein: unverwundbar, bleibt stehen`);
+  if (def.enrage) ab.push(`${IC('fast')}Gerät unter ${Math.round(def.enrage.at * 100)} % Leben in Raserei: schneller und wilder`);
   if (def.atk) ab.push(`${IC('target')}Beschießt Türme (Reichweite ${String(def.atk.range).replace('.', ',')})`);
   if (def.scrap) ab.push(`${IC('swarm')}Sammelt Wracks im Umkreis: alle ${def.scrap.need} Abschüsse baut er ${def.scrap.count} Späher-Spinnen und repariert sich`);
   if (def.climb) ab.push(`${IC('fast')}Klettert über Barrikaden, statt einen Umweg zu nehmen`);
@@ -505,9 +511,9 @@ function intelHTML(type) {
   if (def.heat) ab.push(`${IC('damage')}Seine Hitze beschädigt Türme in ${String(def.heat.range).replace('.', ',')} Feldern Abstand`);
   if (def.ram) ab.push(`${IC('damage')}Nimmt den direkten Weg und zerlegt Barrikaden in Sekunden`);
   if (def.biome) ab.push(`${IC('target')}Kommt nur hier vor: ${BIOMES[def.biome].name}`);
+  if (def.faction) ab.push(`${IC('target')}Kreatur aus dem Dimensionsriss: ${FACTIONS[def.faction].name}`);
   if (def.boss) ab.push(`${IC('skull')}Boss – durchbricht er die Linie, kostet das viele Leben`);
   const unlocked = TOWER_ORDER.filter(k => !game || game.unlocked(k));
-  const num = (v) => String(v).replace('.', ',');
   const vs = unlocked.map(k => {
     const m = effectOf(k, type);
     // shield breakers: EMP x4 / plasma x2 against energy shields
@@ -1292,6 +1298,10 @@ function updateInsets() {
 }
 
 let challenge = null;
+const RIFT_STORY = {
+  undead: ['DIMENSIONSRISS', 'Die Maschinen haben in ihrem Kern ein verbotenes Experiment gestartet: ein Tor in andere Dimensionen. Es ist außer Kontrolle geraten – durch die Risse strömt das <b>Totenreich</b>. Nekromanten wecken die Toten, Zombies und Skelette marschieren, Gespenster ziehen über das Feld.<br><br>Deine Türme und das Arsenal funktionieren auch gegen sie. Merke dir: <b>Feuer und Plasma</b> halten Skelette am Boden. Halte die Linie, Kommandant!'],
+  inferno: ['DER ABGRUND ÖFFNET SICH', 'Der Riss wird größer. Hinter dem Totenreich brennt die <b>Hölle</b>: Imps, Höllenhunde und Dämonen stürmen heran, über ihnen kreisen <b>gefallene Engel</b> – angeführt vom Erzengel des Abgrunds.<br><br>Höllenhunde sind hitzefest, Gargoyles erstarren zu Stein. Schließe den Riss, bevor die Hölle die Welt verschlingt!'],
+};
 async function startLevel(i, ch = null, restored = null) {
   unlockAudio();
   const spec = LEVEL_SPECS[i];
@@ -1305,6 +1315,7 @@ async function startLevel(i, ch = null, restored = null) {
     const d = ENEMIES[gr.type];
     if (d.spawns) types.add(d.spawns.type);
     if (d.burst) types.add(d.burst.type);
+    if (d.escort) for (const t of d.escort) types.add(t);
   }
   const models = [...types].map(t => ENEMIES[t].model);
   musicPreload(['build', 'battle', 'battle2', ...(g.waves.some(w => w.groups.some(gr => ENEMIES[gr.type].boss)) ? ['boss'] : [])]);
@@ -1333,6 +1344,13 @@ async function startLevel(i, ch = null, restored = null) {
     openPause();
     maybeRotateHint();
     return;
+  }
+  // Dimensionsriss: the story is told once, when a rift world is entered for the first time
+  const story = spec.faction && RIFT_STORY[spec.faction];
+  if (story && !ch && !save.data['rift_' + spec.faction]) {
+    save.data['rift_' + spec.faction] = true; save.write();
+    paused = true;
+    modal(story[0], 'warn intel-title', `<p class="story">${story[1]}</p>`, 0, [['ZUM EINSATZ', 'primary', () => { closeModal(); paused = false; }]]);
   }
   if (ch) toast(`CHALLENGE: ${ch.name.toUpperCase()} – ${ch.desc}`, 'warn', 4500);
   else toast(`EINSATZ ${i + 1}: ${spec.name.toUpperCase()} – ${BIOMES[spec.biome].name} · ${DIFFICULTY[game.mods.diff].name}`, game.mods.diff ? 'warn' : '', 2600);

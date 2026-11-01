@@ -483,7 +483,7 @@ export class Renderer {
     for (const p of game.props) if (!p.z) Models.drawShadow(ctx, p.model, p.rot, p.wx, p.wy, p.s);
     for (const p of game.decor) if (!p.z) Models.drawShadow(ctx, p.model, p.rot, p.wx, p.wy, p.s);
     Models.drawShadow(ctx, 'p3d_base_hq', 0, game.baseW.x, game.baseW.y);
-    for (const g of game.gates) Models.drawShadow(ctx, 'p3d_spawn_gate', g.rot, g.x, g.y);
+    for (const g of game.gates) Models.drawShadow(ctx, this.biome.gate || 'p3d_spawn_gate', g.rot, g.x, g.y);
     for (const b of game.barricades) Models.drawShadow(ctx, 'p3d_prop_barrier', b.rot, b.wx, b.wy, BAR_SCALE);
     for (const t of game.towers) {
       if (t.z) continue;
@@ -1437,7 +1437,17 @@ export class Renderer {
   }
   // spawn gate: 3D bunker with a pulsing red glow in its opening (towards the road)
   drawGate(ctx, g) {
-    Models.draw(ctx, 'p3d_spawn_gate', g.rot, g.x, g.y);
+    const portal = this.biome.gate;
+    Models.draw(ctx, portal || 'p3d_spawn_gate', g.rot, g.x, g.y);
+    if (portal) {
+      // the rift: a pulsing glow in the middle of the ring
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.globalAlpha = 0.45 + 0.25 * Math.sin(this.time * 2.6);
+      const s = 130 + 14 * Math.sin(this.time * 3.3);
+      ctx.drawImage(Assets.fx[this.biome.gateGlow === 'red' ? 'red' : 'green'], g.x - s / 2, g.y - 80 - s / 2, s, s);
+      ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
+      return;
+    }
     const a = g.dir * Math.PI / 2, ox = Math.cos(a) * 0.75, oy = Math.sin(a) * 0.75;
     const x = g.x + (ox - oy) * HW, y = g.y + (ox + oy) * HH - 26;
     ctx.globalCompositeOperation = 'lighter';
@@ -1656,6 +1666,7 @@ export class Renderer {
     if (e.radT > 0) Models.drawTinted(ctx, name, f, x, y, s, 'acid', Math.min(1, e.radT) * (0.18 + 0.14 * Math.sin(this.time * 9 + e.id)));
     if (e.rage) Models.drawTinted(ctx, name, f, x, y, s, 'rage', 0.16 + 0.14 * Math.sin(this.time * 7));
     if (e.stunT > 0) Models.drawTinted(ctx, name, f, x, y, s, 'ice', Math.min(1, e.stunT) * (0.3 + 0.25 * Math.abs(Math.sin(this.time * 17 + e.id))));
+    if (e.stone) Models.drawTinted(ctx, name, f, x, y, s, 'stone', 0.9);
   }
 
   // burrowed sand worm: a moving mound of sand with the drill tip breaking through now and then
@@ -1676,6 +1687,15 @@ export class Renderer {
     const m = Models.meta(name);
     if (!m) return;
     if (e.burrowed) { if (!ghost) this.drawBurrow(ctx, e); return; }
+    if (e.down > 0) {
+      if (ghost) return;
+      const k = Math.min(1, e.down / 0.5);
+      ctx.save(); ctx.translate(e.wx, e.wy); ctx.scale(1, 0.35 + 0.65 * (1 - k));
+      Models.draw(ctx, name, Models.unitFrame(e), 0, 0, def.scale, 0.75);
+      ctx.restore();
+      e._top = e.wy - 20;
+      return;
+    }
     const f = Models.unitFrame(e);
     const pose = this.enemyPose(e, m);
     const vx = e.vortex;
@@ -1741,8 +1761,10 @@ export class Renderer {
       const r = m.w * m.scale * def.scale * 0.48;
       const a = 0.25 + 0.35 * Math.min(1, e.shield / Math.max(1, e.maxShield, e.projShield || 0)) + (this.game.time - e.shieldHit < 0.15 ? 0.3 : 0);
       ctx.globalCompositeOperation = 'lighter';
-      ctx.fillStyle = `rgba(80,170,255,${a * 0.25})`;
-      ctx.strokeStyle = `rgba(150,215,255,${a})`;
+      // hellish shields of the fallen angels glow ember red instead of machine blue
+      const hell = def.faction === 'inferno';
+      ctx.fillStyle = hell ? `rgba(255,70,30,${a * 0.22})` : `rgba(80,170,255,${a * 0.25})`;
+      ctx.strokeStyle = hell ? `rgba(255,140,80,${a})` : `rgba(150,215,255,${a})`;
       ctx.lineWidth = 2;
       ctx.beginPath(); ctx.ellipse(e.wx, cy, r, r * 1.05, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
       ctx.globalCompositeOperation = 'source-over';
@@ -1751,7 +1773,7 @@ export class Renderer {
     if (def.project) {
       const r = def.project.range, pul = 0.5 + 0.5 * Math.sin(this.time * 3 + e.id);
       ctx.globalCompositeOperation = 'lighter';
-      ctx.strokeStyle = `rgba(110,220,255,${0.18 + 0.15 * pul})`; ctx.lineWidth = 2;
+      ctx.strokeStyle = def.faction === 'inferno' ? `rgba(255,110,60,${0.16 + 0.14 * pul})` : `rgba(110,220,255,${0.18 + 0.15 * pul})`; ctx.lineWidth = 2;
       ctx.beginPath(); ctx.ellipse(e.wx, e.wy, r * HW * Math.SQRT2, r * HH * Math.SQRT2, 0, 0, Math.PI * 2); ctx.stroke();
       ctx.globalAlpha = 0.5 + 0.3 * pul;
       ctx.drawImage(Assets.fx.cyan, e.wx - 22, cy - m.centerPx * def.scale * 0.9 - 22, 44, 44);
@@ -1768,7 +1790,7 @@ export class Renderer {
 
   drawHp(ctx, e) {
     if (e.def.cloak && !this.game.visible(e)) return;
-    if (e.burrowed) return;
+    if (e.burrowed || e.down > 0) return;
     if (e.hp >= e.maxHp && e.shield >= e.maxShield && !e.def.boss) return;
     const w = e.def.boss ? 110 : 40;
     const x = e.wx - w / 2, y = (e._top ?? e.wy - 80) - 8;
@@ -1800,13 +1822,15 @@ export class Renderer {
       const t = e.hacking;
       if (!t || !e.alive) continue;
       const ax = e.wx, ay = game.bodyY(e) - 6, bx = t.wx, by = t.wy - 45;
-      ctx.strokeStyle = `rgba(255,${140 + Math.random() * 80},40,${0.55 + Math.random() * 0.4})`;
+      const haunt = e.def.hack.haunt;
+      ctx.strokeStyle = haunt ? `rgba(${150 + Math.random() * 60},255,${200 + Math.random() * 40},${0.45 + Math.random() * 0.4})` : `rgba(255,${140 + Math.random() * 80},40,${0.55 + Math.random() * 0.4})`;
       ctx.lineWidth = 2;
       ctx.beginPath(); ctx.moveTo(ax, ay);
       for (let i = 1; i < 6; i++) { const u = i / 6; ctx.lineTo(ax + (bx - ax) * u + (Math.random() - 0.5) * 12, ay + (by - ay) * u + (Math.random() - 0.5) * 12); }
       ctx.lineTo(bx, by); ctx.stroke();
-      ctx.drawImage(Assets.fx.orange, bx - 18, by - 18, 36, 36);
-      ctx.drawImage(Assets.fx.orange, ax - 10, ay - 10, 20, 20);
+      const glow = Assets.fx[haunt ? 'green' : 'orange'];
+      ctx.drawImage(glow, bx - 18, by - 18, 36, 36);
+      ctx.drawImage(glow, ax - 10, ay - 10, 20, 20);
     }
     for (const t of game.towers) {
       if (!t.firing || t.def.kind !== 'cryo' || !t.target) continue;

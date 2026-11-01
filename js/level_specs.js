@@ -49,5 +49,20 @@ export const LEVEL_SPECS = [
   { name: 'Oase',             biome: 'desert', chapter: 'off', power: 26, M: 11, paths: 3, bypass: 3, waves: 24, len: [42, 52], orient: 'LR', seed: 3838, credits: 920 },
   { name: 'Kältekammer',      biome: 'ice', chapter: 'off', power: 26.5, M: 11, paths: 3, bypass: 3, waves: 26, len: [42, 52], orient: 'TB', seed: 3939, credits: 960 },
   { name: 'Kern der Maschine', biome: 'volcano', chapter: 'off', power: 27.5, M: 11, paths: 4, bypass: 3, waves: 30, len: [42, 52], orient: 'LR', seed: 4040, credits: 1000 },
+  // Dimensionsriss: a machine experiment has torn portals into other worlds - only supernatural enemies
+  { name: 'Friedhofstor',     biome: 'necro', chapter: 'undead', faction: 'undead', riftIdx: 1, power: 20, M: 9, paths: 1, bypass: 1, waves: 16, len: [30, 38], orient: 'TB', seed: 4141, credits: 760 },
+  { name: 'Gruftweg',         biome: 'necro', chapter: 'undead', faction: 'undead', riftIdx: 2, power: 21.5, M: 9, paths: 2, bypass: 1, waves: 17, len: [30, 38], orient: 'LR', seed: 4242, credits: 780 },
+  { name: 'Knochenfeld',      biome: 'necro', chapter: 'undead', faction: 'undead', riftIdx: 3, power: 23, M: 10, paths: 2, bypass: 2, waves: 18, len: [36, 44], orient: 'RL', seed: 4343, credits: 820 },
+  { name: 'Geisterwald',      biome: 'necro', chapter: 'undead', faction: 'undead', riftIdx: 4, power: 25.5, M: 10, paths: 3, bypass: 1, waves: 19, len: [36, 44], orient: 'TB', seed: 4444, credits: 860 },
+  { name: 'Thron des Lichs',  biome: 'necro', chapter: 'undead', faction: 'undead', riftIdx: 5, power: 30, M: 11, paths: 3, bypass: 2, waves: 22, len: [42, 52], orient: 'LR', seed: 4545, credits: 900 },
+  { name: 'Höllenpforte',     biome: 'inferno', chapter: 'inferno', faction: 'inferno', riftIdx: 1, power: 22, M: 9, paths: 1, bypass: 1, waves: 17, len: [30, 38], orient: 'LR', seed: 4646, credits: 800 },
+  { name: 'Schwefelfelder',   biome: 'inferno', chapter: 'inferno', faction: 'inferno', riftIdx: 2, power: 24, M: 10, paths: 2, bypass: 1, waves: 18, len: [36, 44], orient: 'TB', seed: 4747, credits: 840 },
+  { name: 'Gefallener Dom',   biome: 'inferno', chapter: 'inferno', faction: 'inferno', riftIdx: 3, power: 26, M: 10, paths: 2, bypass: 2, waves: 19, len: [36, 44], orient: 'RL', seed: 4848, credits: 880 },
+  { name: 'Flammenmeer',      biome: 'inferno', chapter: 'inferno', faction: 'inferno', riftIdx: 4, power: 28.5, M: 11, paths: 3, bypass: 2, waves: 21, len: [42, 52], orient: 'TB', seed: 4949, credits: 920 },
+  { name: 'Abgrund',          biome: 'inferno', chapter: 'inferno', faction: 'inferno', riftIdx: 5, power: 31, M: 11, paths: 4, bypass: 2, waves: 28, len: [42, 52], orient: 'LR', seed: 5050, credits: 980 },
 ];
-export const CHAPTERS = { off: { name: 'Gegenoffensive', tex: 'city', desc: 'Straßennetze mit Umwegen – Barrikaden bestimmen, welchen Weg die Maschinen nehmen' } };
+export const CHAPTERS = {
+  off: { name: 'Gegenoffensive', tex: 'city', desc: 'Straßennetze mit Umwegen – Barrikaden bestimmen, welchen Weg die Maschinen nehmen' },
+  undead: { name: 'Dimensionsriss: Totenreich', tex: 'necro', desc: 'Nekromanten wecken die Toten – Zombies, Skelette, Geister und der Lichkönig' },
+  inferno: { name: 'Dimensionsriss: Himmel & Hölle', tex: 'inferno', desc: 'Dämonen und gefallene Engel strömen aus dem Abgrund' },
+};

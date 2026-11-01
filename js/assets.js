@@ -139,7 +139,7 @@ export const Models = {
       if (kind === 'heat') { grd.addColorStop(0, 'rgba(255,240,200,0.9)'); grd.addColorStop(1, 'rgba(255,120,40,0.85)'); }
       else { grd.addColorStop(0, 'rgba(220,255,190,0.85)'); grd.addColorStop(1, 'rgba(90,230,60,0.8)'); }
       g.fillStyle = grd;
-    } else g.fillStyle = kind === 'shadow' ? 'rgba(0,0,0,1)' : kind === 'rage' ? 'rgba(255,50,20,0.8)' : kind === 'hack' ? 'rgba(255,150,40,0.8)' : 'rgba(120,255,40,0.75)';
+    } else g.fillStyle = kind === 'stone' ? 'rgba(128,124,118,0.92)' : kind === 'shadow' ? 'rgba(0,0,0,1)' : kind === 'rage' ? 'rgba(255,50,20,0.8)' : kind === 'hack' ? 'rgba(255,150,40,0.8)' : 'rgba(120,255,40,0.75)';
     g.fillRect(0, 0, m.w, m.h);
     if (this._tint.size > 600) this._tint.clear();
     this._tint.set(key, c);

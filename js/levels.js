@@ -1,5 +1,5 @@
 // Levels: specs (used by tools/gen_levels.mjs to build the maps) + wave generator.
-import { ENEMIES, ENEMY_UNLOCK, BIOME_ENEMY } from './config.js';
+import { ENEMIES, ENEMY_UNLOCK, BIOME_ENEMY, FACTIONS } from './config.js';
 import { LEVEL_MAPS } from './levels_data.js';
 import { LEVEL_SPECS } from './level_specs.js';
 export { LEVEL_SPECS };
@@ -27,7 +27,7 @@ function rng(seed) {
   };
 }
 
-const GAP = { scavenger: 2.2, climber: 0.7, burrower: 2.0, icebreaker: 2.8, magma: 3.0, ram: 2.6, spider: 0.38, android: 0.8, drone: 0.85, mech: 1.7, tank: 2.1, shield: 1.2, repair: 1.6, kamikaze: 0.55, siege: 2.6, boss: 7, mothership: 7, infiltrator: 0.9, brood: 3.2, bomber: 2.6, aegis: 2.4, saboteur: 1.6 };
+const GAP = { zombie: 0.75, ghoulhound: 0.5, skeleton: 1.0, necromancer: 2.6, wraith: 1.0, lich: 7, imp: 0.55, hellhound: 0.9, demon: 2.4, gargoyle: 1.8, fallen: 2.2, archangel: 7, scavenger: 2.2, climber: 0.7, burrower: 2.0, icebreaker: 2.8, magma: 3.0, ram: 2.6, spider: 0.38, android: 0.8, drone: 0.85, mech: 1.7, tank: 2.1, shield: 1.2, repair: 1.6, kamikaze: 0.55, siege: 2.6, boss: 7, mothership: 7, infiltrator: 0.9, brood: 3.2, bomber: 2.6, aegis: 2.4, saboteur: 1.6 };
 
 export function hpMultiplier(levelNum, wave) {
   const n = wave - 1;
@@ -38,13 +38,17 @@ export function hpMultiplier(levelNum, wave) {
 export function makeWaves(level) {
   const lv = level.number, pw = level.power || lv;
   const r = rng(level.seed * 7 + 3);
-  // area signature machines are not part of the random pool: they come in their own groups (below)
-  const pool = Object.keys(ENEMY_UNLOCK).filter(k => ENEMY_UNLOCK[k] <= lv && !ENEMIES[k].biome);
+  // area signature machines are not part of the random pool: they come in their own groups (below).
+  // Dimensionsriss worlds: only that world's creatures, one more kind with every mission (rift index)
+  const F = level.faction;
+  const pool = F ? Object.keys(ENEMIES).filter(k => ENEMIES[k].faction === F && !ENEMIES[k].boss && (ENEMIES[k].rift || 1) <= (level.riftIdx || 1))
+    : Object.keys(ENEMY_UNLOCK).filter(k => ENEMY_UNLOCK[k] <= lv && !ENEMIES[k].biome);
+  const cheapest = F ? pool.filter(k => !ENEMIES[k].air).sort((a, b) => ENEMIES[a].cost - ENEMIES[b].cost)[0] : null;
   const sig = BIOME_ENEMY[level.biome];
   const sigOn = sig && ENEMY_UNLOCK[sig] <= lv;
   const ground = pool.filter(k => !ENEMIES[k].air);
   const air = pool.filter(k => ENEMIES[k].air);
-  const heavy = pool.filter(k => ['mech', 'tank', 'siege', 'shield', 'brood', 'aegis'].includes(k));
+  const heavy = F ? pool.filter(k => !ENEMIES[k].air && ENEMIES[k].cls !== 'light') : pool.filter(k => ['mech', 'tank', 'siege', 'shield', 'brood', 'aegis'].includes(k));
   const waves = [];
   const W = level.waves;
   for (let w = 1; w <= W; w++) {
@@ -52,7 +56,7 @@ export function makeWaves(level) {
     const budget = (5 + 2.0 * w + 0.06 * w * w) * (1 + 0.045 * (pw - 1)) * routeMul;
     // only units that are cheap relative to the wave budget (no tanks in wave 1)
     const fits = (arr, share) => { const ok = arr.filter(k => ENEMIES[k].cost <= Math.max(2, budget * share * 0.34)); return ok.length ? ok : arr.filter(k => ENEMIES[k].cost <= 2); };
-    const pick = (arr, share = 0.6) => { const a = fits(arr, share); return a[Math.floor(r() * a.length)] || 'android'; };
+    const pick = (arr, share = 0.6) => { const a = fits(arr, share); return a[Math.floor(r() * a.length)] || (F ? cheapest : 'android'); };
     const groups = [];
     const last = w === W;
     let tip = null;
@@ -61,28 +65,32 @@ export function makeWaves(level) {
       let count = Math.max(1, Math.round(budget * share / cost));
       // support / siege units are capped so a wave never consists of a healing or artillery blob
       const cap = { repair: 2 + Math.floor(lv / 8), siege: 2 + Math.floor(w / 8), shield: 4 + Math.floor(lv / 5), kamikaze: 8 + Math.floor(lv / 2),
-        spider: 24 + 2 * Math.floor(lv / 5), brood: 1 + Math.floor(w / 9), aegis: 2 + Math.floor(lv / 12), bomber: 2 + Math.floor(w / 7), infiltrator: 2 + Math.floor(lv / 6) + Math.floor(w / 6), saboteur: 2 + Math.floor(lv / 8) }[type];
+        spider: 24 + 2 * Math.floor(lv / 5), brood: 1 + Math.floor(w / 9), aegis: 2 + Math.floor(lv / 12), bomber: 2 + Math.floor(w / 7), infiltrator: 2 + Math.floor(lv / 6) + Math.floor(w / 6), saboteur: 2 + Math.floor(lv / 8),
+        necromancer: 2 + Math.floor(w / 8), fallen: 2 + Math.floor(w / 6), demon: 2 + Math.floor(w / 6), gargoyle: 3 + Math.floor(w / 6), wraith: 6 + Math.floor(w / 3) }[type];
       if (cap && count > cap) {
         const rest = (count - cap) * cost;
         count = cap;
         // spend the remaining budget on basic infantry
-        const fill = lv >= 3 || type === 'spider' ? 'android' : 'spider';
+        const fill = F ? cheapest : lv >= 3 || type === 'spider' ? 'android' : 'spider';
         groups.push({ type: fill, count: Math.max(1, Math.round(rest / ENEMIES[fill].cost)), gap: GAP[fill], delay: delay + 2 });
       }
       groups.push({ type, count, gap: GAP[type], delay });
     };
     if (last && lv % 5 === 0) {
       // boss finale
-      const bosses = lv >= 20 ? ['boss', 'mothership'] : lv >= 18 ? ['mothership'] : ['boss'];
+      const bosses = F ? [FACTIONS[F].boss] : lv >= 20 ? ['boss', 'mothership'] : lv >= 18 ? ['mothership'] : ['boss'];
       if (lv === 25) bosses.push('boss', 'mothership');
       if (lv === 30) bosses.push('boss', 'mothership', 'boss');
       if (lv === 35) bosses.push('boss');
       if (lv === 40) bosses.push('boss', 'mothership', 'boss', 'mothership');
+      if (F && level.riftIdx >= 5) bosses.push(FACTIONS[F].boss);
+      if (F && level.riftIdx >= 5 && lv >= 50) bosses.push(FACTIONS[F].boss);
       bosses.forEach((b, i) => groups.push({ type: b, count: 1, gap: 1, delay: i * 9 }));
       add(pick(heavy.length ? heavy : ground, 0.5), 0.5, 3);
       add(pick(ground, 0.4), 0.4, 6);
       if (air.length) add(pick(air, 0.3), 0.3, 10);
-      tip = bosses.includes('mothership') && bosses.includes('boss') ? 'FINALE: Kolosse und Mutterschiffe greifen an!'
+      tip = F ? `FINALE: ${ENEMIES[FACTIONS[F].boss].name} ${F === 'undead' ? 'erhebt sich aus der Gruft' : 'steigt aus dem Abgrund herab'}!`
+        : bosses.includes('mothership') && bosses.includes('boss') ? 'FINALE: Kolosse und Mutterschiffe greifen an!'
         : bosses.includes('mothership') ? 'WARNUNG: Ein Mutterschiff nähert sich – Flugabwehr bereit machen!'
         : 'WARNUNG: Ein Koloss wurde gesichtet!';
     } else if (w % 5 === 0 && heavy.length && heavy.some(k => ENEMIES[k].cost <= budget * 0.65 * 0.34)) {
@@ -93,10 +101,10 @@ export function makeWaves(level) {
       add(pick(air, 0.7), 0.7);
       add(pick(ground, 0.3), 0.3, 3);
       tip = 'Luftangriff!';
-    } else if (w % 7 === 3 && pool.includes('spider')) {
-      add('spider', 0.75);
+    } else if (w % 7 === 3 && (F ? !!cheapest : pool.includes('spider'))) {
+      add(F ? cheapest : 'spider', 0.75);
       add(pick(ground, 0.25), 0.25, 4);
-      tip = 'Schwarm von Späher-Spinnen!';
+      tip = F ? (F === 'undead' ? 'Eine Horde Untoter wankt heran!' : 'Ein Schwarm Imps stürmt aus dem Riss!') : 'Schwarm von Späher-Spinnen!';
     } else {
       const a = pick(ground.filter(k => k !== 'repair'), 0.6);
       const b = pick(pool, 0.4);
@@ -109,8 +117,8 @@ export function makeWaves(level) {
       groups.push({ type: sig, count: Math.max(1, Math.round(budget * 0.16 / ENEMIES[sig].cost)), gap: GAP[sig], delay: 2.5 });
     }
     // a mid boss in long late levels
-    if (!last && lv >= 12 && w === Math.round(W * 0.7)) {
-      groups.push({ type: lv >= 18 && r() < 0.5 ? 'mothership' : 'boss', count: 1, gap: 1, delay: 5, hpScale: 0.6 });
+    if (!last && lv >= 12 && w === Math.round(W * 0.7) && (!F || level.riftIdx >= 3)) {
+      groups.push({ type: F ? FACTIONS[F].boss : lv >= 18 && r() < 0.5 ? 'mothership' : 'boss', count: 1, gap: 1, delay: 5, hpScale: 0.6 });
       tip = 'Ein Boss führt diese Welle an!';
     }
     waves.push({ groups, tip, boss: groups.some(g => ENEMIES[g.type].boss) });

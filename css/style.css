@@ -805,3 +805,5 @@ body.xray.glitch #game { transform: translate(7px, -3px) skewX(-3deg); filter: g
   #arsenal .ob-icon { width: 30px !important; height: 30px !important; }
   #arsenal .ars-name { font-size: 9.5px; }
 }
+.story { margin: 4px 2px 6px; line-height: 1.5; font-size: 14px; color: #dfe6ee; text-align: left; }
+.story b { color: #ffcf6a; }

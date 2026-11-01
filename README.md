@@ -2,7 +2,7 @@
 
 Isometrisches Tower Defense im Browser, gebaut für das iPhone (Touch, Safe Areas, Hoch- und Querformat, „Zum Home-Bildschirm“ als Vollbild-App).
 
-**Szenario:** Jahr 2049. Eine KI-Maschinenarmee aus Chrom-Endoskeletten, Spinnendrohnen, Jagdpanzern, Gunships und Mutterschiffen marschiert auf das letzte Hauptquartier der Menschheit. Du verteidigst es mit futuristischen Militärtürmen – in 40 Einsätzen auf 6 Kriegsschauplätzen.
+**Szenario:** Jahr 2049. Eine KI-Maschinenarmee aus Chrom-Endoskeletten, Spinnendrohnen, Jagdpanzern, Gunships und Mutterschiffen marschiert auf das letzte Hauptquartier der Menschheit. Du verteidigst es mit futuristischen Militärtürmen – in 40 Einsätzen auf 6 Kriegsschauplätzen. Danach reißt ein Experiment der Maschinen den **Dimensionsriss** auf: 10 weitere Einsätze im Totenreich (Zombies, Skelette, Nekromanten, Gespenster, Lichkönig) und in Himmel & Hölle (Imps, Höllenhunde, Dämonen, Gargoyles, gefallene Engel, Erzengel des Abgrunds).
 
 ▶ **Spielen:** https://marcelweissgerberit.github.io/towerdefense/
 
@@ -38,3 +38,5 @@ Das Spiel selbst ist reines HTML5 Canvas 2D + ES-Module ohne Build-Schritt und l
 python3 -m http.server 8000
 # http://localhost:8000          (?level=7 startet direkt Einsatz 7)
 ```
+
+**Dimensionsriss (41–50):** `faction` und `riftIdx` in `js/level_specs.js` – die Wellen bestehen nur aus Kreaturen dieser Welt (`faction` in `ENEMIES`), mit jedem Einsatz kommt eine Art dazu (`rift`), Finale und Zwischenbosse sind Lichkönig bzw. Erzengel. Fähigkeiten: `revive` (Skelett), `petrify` (Gargoyle), `enrage` (Dämon), `hack.haunt` (Gespenst), dazu `spawns`/`project`/`atk`. Vierbeiner ohne Rig laufen über `legs.mode: "quad"` im Renderer (Beine über die Höhe erkannt, diagonale Paare im Trab), der Imp über `"biped"`.
