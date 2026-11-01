@@ -25,7 +25,7 @@ Isometrisches Tower Defense im Browser, gebaut für das iPhone (Touch, Safe Area
 
 Das Spiel selbst ist reines HTML5 Canvas 2D + ES-Module ohne Build-Schritt und läuft flüssig auf dem iPhone.
 
-**Offline & Fortsetzen:** `sw.js` (Service Worker) hält alle Spieldateien auf dem Gerät; `tools/gen_sw.mjs` schreibt bei jedem Deploy die Dateiliste mit Inhalts-Hashes hinein (läuft im Pages-Workflow), sodass nach einem Update nur geänderte Dateien neu geladen werden. Eine laufende Mission wird alle paar Sekunden und beim Wechsel in den Hintergrund lokal gespeichert und lässt sich im Hauptmenü fortsetzen.
+**Offline & Fortsetzen:** `sw.js` (Service Worker) hält alle Spieldateien auf dem Gerät; `tools/gen_sw.mjs` schreibt bei jedem Deploy die Dateiliste mit Inhalts-Hashes hinein (läuft im Pages-Workflow), sodass nach einem Update nur geänderte Dateien neu geladen werden. **Musik:** vier mit OpenArt (Wan 3.0, Video mit Tonspur) erzeugte Stücke in d-Moll – Bauphase, zwei Gefechts-Themen im Wechsel pro Welle, Boss. `tools/make_music.py` schneidet daraus nahtlose Schleifen über ganze Takte (Rhythmus- und Harmonie-Abgleich an der Naht, Überblendung, Lautheit), das Spiel blendet je nach Lage über. Eine laufende Mission wird alle paar Sekunden und beim Wechsel in den Hintergrund lokal gespeichert und lässt sich im Hauptmenü fortsetzen.
 
 ## Lokal starten
 ```bash

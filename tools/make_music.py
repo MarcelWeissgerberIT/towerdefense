@@ -102,8 +102,9 @@ def best_loop(x, s0, e_max, min_len=8.0):
         # whole bars only (4/4); a seam counts as clean when rhythm and harmony both line up well -
         # among the clean ones the longest wins (less repetition), otherwise the best match
         if nb % 4: continue
-        clean = r >= 0.6 and h >= 0.55
-        cands.append(((1 if clean else 0, nb if clean else v), e_f, nb, r, h))
+        clean = r >= 0.65 and h >= 0.65
+        phrase = 8 if nb % 16 == 0 else 4 if nb % 8 == 0 else 0      # whole 4- and 2-bar phrases sound natural
+        cands.append(((1 if clean else 0, nb + phrase if clean else v), e_f, nb, r, h))
     cands.sort(reverse=True)
     for v, e_f, nb, r, h in cands[:3]:
         print(f'   seam candidate {e_f * hop / SR:.2f}s: {nb} beats, rhythm {r:.2f}, harmony {h:.2f}')

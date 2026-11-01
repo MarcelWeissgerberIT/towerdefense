@@ -449,7 +449,9 @@ export function audioStatus() { return { state: ctx && ctx.state, sprite: !!spri
 // ---------------- music ----------------
 // Looped tracks (assets/music/<name>.mp3, loop seam crossfaded into the file by tools/make_music.py), switched
 // with crossfades by the game situation. Separate bus: explosions don't pump it and it has its own switch.
-const TRACK_GAIN = { build: 0.85, battle: 1, battle2: 1, boss: 1 };
+// per-track level, matched in the band a phone speaker plays (300-6000 Hz): battle music sits just under the
+// weapons (about -33 dBFS), the build theme a bit lower, the boss theme a bit higher
+const TRACK_GAIN = { build: 0.65, battle: 0.9, battle2: 0.55, boss: 0.7 };
 const MUSIC_VOL = 0.5;
 let musicEnabled = true, musicBus = null, musicLvl = null, musicTarget = 1;
 const tracks = {}, trackLoad = {};
