@@ -334,7 +334,11 @@ export class FX {
     this.sparks(x, y, 12, '#fff2dc', 260);
   }
   text(x, y, str, color = '#ffd34d') { this.add({ k: 'text', x, y, str, c: color, life: 0.9 }); }
-  trail(x, y) { this.add({ k: 'smoke', x, y, vx: rand(-6, 6), vy: rand(-10, -2), s: 9, grow: 22, life: 0.6, a: 0.45 }); }
+  trail(x, y, big = false) { this.add({ k: 'smoke', x, y, vx: rand(-6, 6), vy: rand(-10, -2), s: big ? 10 : 9, grow: big ? 30 : 22, life: big ? 1.0 : 0.6, a: big ? 0.55 : 0.45 }); }
+  // spent brass casing thrown out of a gun: tumbles, bounces on the ground (floor = world y) and lies there briefly
+  casing(x, y, floor, vx, vy, size = 1) {
+    this.add({ k: 'casing', x, y, vx, vy, floor, rot: rand(0, 6.3), vr: rand(-22, 22), s: size, bounce: 0, life: rand(1.4, 2.0) });
+  }
 
   // rt = true advances only the real-time particles (nuclear blast), false only the normal ones
   update(dt, rt = false) {
@@ -365,6 +369,13 @@ export class FX {
           if (o.vy > 0 && o.y >= o.floor) {
             if (!o.chip && this.splats.length < 300) this.splats.push({ x: o.x, y: o.floor, r: o.r * rand(1.7, 3.0), c: o.c, glow: o.glow });
             o.t = o.life;                              // gone (the stain stays on the ground)
+          }
+          break;
+        case 'casing':
+          o.x += o.vx * dt; o.y += o.vy * dt; o.vy += 900 * dt; o.rot += o.vr * dt;
+          if (o.vy > 0 && o.y >= o.floor) {
+            o.y = o.floor;
+            if (o.bounce++ < 2) { o.vy *= -0.35; o.vx *= 0.5; o.vr *= 0.5; } else { o.vy = 0; o.vx = 0; o.vr = 0; }
           }
           break;
         case 'feather':
@@ -493,6 +504,14 @@ export class FX {
           // stretched along the flight direction
           const sp = Math.hypot(o.vx, o.vy) || 1, st = Math.min(2.6, 1 + sp / 260);
           ctx.beginPath(); ctx.ellipse(o.x, o.y, o.r * st, o.r, Math.atan2(o.vy, o.vx), 0, Math.PI * 2); ctx.fill();
+          break;
+        }
+        case 'casing': {
+          ctx.globalAlpha = Math.min(1, (1 - k) * 4);
+          ctx.save(); ctx.translate(o.x, o.y); ctx.rotate(o.rot);
+          ctx.fillStyle = '#d9a63a'; ctx.fillRect(-2.6 * o.s, -1 * o.s, 5.2 * o.s, 2 * o.s);
+          ctx.fillStyle = '#fff0b8'; ctx.fillRect(-2.6 * o.s, -1 * o.s, 5.2 * o.s, 0.7 * o.s);
+          ctx.restore();
           break;
         }
         case 'feather':

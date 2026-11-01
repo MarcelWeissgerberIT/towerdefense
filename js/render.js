@@ -27,6 +27,8 @@ function makeCanvas(w, h) {
   return c;
 }
 
+// towers whose weapon glows while it charges (glow sprite colour)
+const ENERGY_GLOW = { plasma: 'cyan', rail: 'cyan', laser: 'red', cryo: 'cyan', emp: 'violet', acid: 'green' };
 // props that smoke / steam / glow (k: dark smoke, grey smoke, steam, ember, mist; r: puffs per second)
 const PROP_SMOKE = {
   p3d_prop_wreck: { k: 'dark', r: 0.9, h: 0.6 }, p3d_prop_i_wreck: { k: 'dark', r: 0.6, h: 0.6 }, p3d_prop_j_heli: { k: 'dark', r: 0.9, h: 0.5 },
@@ -594,12 +596,12 @@ export class Renderer {
     const bz = ui.buildCell ? game.heightAt(ui.buildCell.x, ui.buildCell.y) * ELEV_PX : 0;
     if (ui.buildCell && !bz) this.drawBuildPreview(ctx, ui, 0);
     const selBar = ui.selected && ui.selected.kind === 'barricade';
-    // the enemy routes: always before a wave (mission start and the countdown between waves) - they fade out
-    // when the wave rolls in; while placing a tower / with a barricade selected they show up as well
-    const preWave = game.state === 'build' || (game.state === 'wave' && game.queue.length === 0 && game.nextWaveIn > 0 && game.wave < game.waves.length);
+    // the enemy routes: only before the first wave (fading out when it starts) and around barricades
+    // (a selected barricade, the barricade preview draws its own new routes)
+    const preWave = game.state === 'build';
     this.routeA = (this.routeA || 0) + ((preWave ? 1 : 0) - (this.routeA || 0)) * Math.min(1, (dt || 0) * 3);
-    if (selBar) this.drawRoutes(ctx, game.routes, '255,80,55', 0.8, true);
-    else if (ui.previewType !== 'barricade' && (ui.buildCell || this.routeA > 0.02)) this.drawRoutes(ctx, game.routes, '255,80,55', Math.max(ui.buildCell ? 0.6 : 0, 0.62 * this.routeA), true);
+    if (selBar) this.drawRoutes(ctx, game.routes, '255,80,55', 0.8);
+    else if (ui.previewType !== 'barricade' && this.routeA > 0.02) this.drawRoutes(ctx, game.routes, '255,80,55', 0.55 * this.routeA);
     if (ui.selected && !selBar && !ui.selected.z) this.drawRange(ctx, ui.selected.gx, ui.selected.gy, ui.selected.stats.range, TOWERS[ui.selected.type].color, true, TOWERS[ui.selected.type].minRange);
 
     const fx = Assets.fx;
@@ -1513,7 +1515,7 @@ export class Renderer {
     }
   }
   // the ways the machines take (gate -> HQ): moving chevrons along the route
-  drawRoutes(ctx, routes, rgb, alpha, arrows = false) {
+  drawRoutes(ctx, routes, rgb, alpha) {
     ctx.save();
     ctx.lineCap = 'round'; ctx.lineJoin = 'round';
     for (const r of routes) {
@@ -1528,30 +1530,7 @@ export class Renderer {
       ctx.strokeStyle = `rgba(${rgb},${alpha})`; ctx.lineWidth = 5; ctx.stroke();
       ctx.setLineDash([]);
     }
-    if (arrows) this.drawRouteArrows(ctx, routes, rgb, alpha);
     ctx.restore();
-  }
-  // chevrons gliding along the routes in the direction the enemies walk (one every ~1.7 tiles)
-  drawRouteArrows(ctx, routes, rgb, alpha) {
-    // positions are anchored to the map (not to each route), so routes sharing a road draw the same chevrons
-    const SP = 1.7, T = this.time * 1.1;
-    ctx.lineWidth = 4;
-    for (const r of routes) {
-      let acc = 0;
-      for (const s of r.seg) {
-        const c0 = s.ax * s.dx + s.ay * s.dy;
-        for (let d = (((T - c0) % SP) + SP) % SP; d < s.len; d += SP) {
-          if (acc + d < 0.6) continue;               // not on top of the spawn gate
-          // a flat chevron on the ground: built in grid space, then projected
-          const gx = s.ax + s.dx * d, gy = s.ay + s.dy * d, Lg = 0.3, Bg = 0.22;
-          const p = toWorld(gx, gy), w1 = toWorld(gx - s.dx * Lg - s.dy * Bg, gy - s.dy * Lg + s.dx * Bg), w2 = toWorld(gx - s.dx * Lg + s.dy * Bg, gy - s.dy * Lg - s.dx * Bg);
-          ctx.beginPath(); ctx.moveTo(w1.x, w1.y); ctx.lineTo(p.x, p.y); ctx.lineTo(w2.x, w2.y);
-          ctx.strokeStyle = `rgba(0,0,0,${0.45 * alpha})`; ctx.lineWidth = 8; ctx.stroke();
-          ctx.strokeStyle = `rgba(255,170,110,${Math.min(1, alpha * 1.35)})`; ctx.lineWidth = 4; ctx.stroke();
-        }
-        acc += s.len;
-      }
-    }
   }
   drawBarricade(ctx, b, ui) {
     const hit = this.game.time - b.hitT < 0.12;
@@ -1689,6 +1668,21 @@ export class Renderer {
       ctx.globalAlpha = Math.min(1, glowA);
       if (m.baseImg) Models.drawBase(ctx, name, t.wx, y, TS);
       Models.draw(ctx, name, f, t.wx + dx, y + dy, TS);
+      ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
+    }
+    // energy weapons: coils / cells / cores glow up while the next shot charges and flare when it fires
+    const EG = ENERGY_GLOW[def.kind];
+    if (EG && box && !t.upgrading) {
+      let ch;
+      if (def.kind === 'laser') ch = t.firing ? 0.35 + 0.65 * Math.min(1, t.beamT / (def.rampTime || 1)) : 0.12;
+      else if (def.kind === 'cryo') ch = t.firing ? 0.75 : 0.15;
+      else ch = Math.max(0, 1 - Math.max(0, t.cool) * t.stats.rate);
+      const a = (0.1 + 0.42 * ch * ch + 0.5 * (t.recoil || 0)) * (0.88 + 0.12 * Math.sin(this.time * 9 + t.id));
+      ctx.globalCompositeOperation = 'lighter';
+      Models.draw(ctx, name, f, t.wx + dx, y + dy, TS, Math.min(0.85, a * 0.9));
+      ctx.globalAlpha = Math.min(0.7, a * 0.7);
+      const gs = 46 + 26 * ch + t.level * 6;
+      ctx.drawImage(Assets.fx[EG], t.wx - gs / 2, y - m.topPx * TS * 0.62 - gs / 2, gs, gs);
       ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
     }
     if (def.kind === 'emp') {
@@ -2181,15 +2175,29 @@ export class Renderer {
     const fx = Assets.fx;
     for (const s of shots) {
       if (s.k === 'missile' || s.k === 'emissile') {
-        const a = Math.atan2(s.vy, s.vx);
-        ctx.save(); ctx.translate(s.x, s.y); ctx.rotate(a);
-        ctx.fillStyle = s.k === 'missile' ? '#d8d8d0' : '#3a3a3e';
+        const a = Math.atan2(s.vy, s.vx), own = s.k === 'missile', k = own ? 1.45 : 1;
+        ctx.save(); ctx.translate(s.x, s.y); ctx.rotate(a); ctx.scale(k, k);
+        // exhaust flame (flickers), body, fins, nose
+        const fl = 10 + Math.random() * 8;
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.fillStyle = 'rgba(255,170,60,0.85)';
+        ctx.beginPath(); ctx.moveTo(-9, -1.8); ctx.lineTo(-9 - fl, 0); ctx.lineTo(-9, 1.8); ctx.fill();
+        ctx.fillStyle = 'rgba(255,245,200,0.95)';
+        ctx.beginPath(); ctx.moveTo(-9, -1); ctx.lineTo(-9 - fl * 0.45, 0); ctx.lineTo(-9, 1); ctx.fill();
+        ctx.globalCompositeOperation = 'source-over';
+        ctx.fillStyle = own ? '#d8d8d0' : '#3a3a3e';
         ctx.fillRect(-9, -2.2, 14, 4.4);
-        ctx.fillStyle = s.k === 'missile' ? '#c0281e' : '#ff3020';
+        ctx.fillStyle = own ? '#9a9a94' : '#202024';
+        ctx.fillRect(-9, 0.6, 14, 1.6);
+        ctx.fillStyle = own ? '#55575a' : '#151517';
+        ctx.beginPath(); ctx.moveTo(-9, -2.2); ctx.lineTo(-12, -4.6); ctx.lineTo(-6, -2.2); ctx.fill();
+        ctx.beginPath(); ctx.moveTo(-9, 2.2); ctx.lineTo(-12, 4.6); ctx.lineTo(-6, 2.2); ctx.fill();
+        ctx.fillStyle = own ? '#c0281e' : '#ff3020';
         ctx.beginPath(); ctx.moveTo(5, -2.2); ctx.lineTo(10, 0); ctx.lineTo(5, 2.2); ctx.fill();
         ctx.restore();
         ctx.globalCompositeOperation = 'lighter';
-        ctx.drawImage(fx.orange, s.x - Math.cos(a) * 10 - 12, s.y - Math.sin(a) * 10 - 12, 24, 24);
+        const g = own ? 34 : 24;
+        ctx.drawImage(fx.orange, s.x - Math.cos(a) * 16 * k - g / 2, s.y - Math.sin(a) * 16 * k - g / 2, g, g);
         ctx.globalCompositeOperation = 'source-over';
       } else if (s.k === 'plasma' || s.k === 'eplasma') {
         ctx.globalCompositeOperation = 'lighter';

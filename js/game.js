@@ -923,6 +923,7 @@ export class Game {
         if (t.level >= 3) this.fx.tracer(m.x - 4, m.y + 3, aim.x + jy, aim.y + jx, 'rgba(255,140,60,', 2);
         this.fx.muzzle(m.x, m.y, 'yellow', 26 + t.level * 8);
         if (Math.random() < 0.5) this.fx.sparks(aim.x + jx, aim.y + jy, 2, '#ffe3a0', 120);
+        this.ejectCasings(t, m, t.level >= 2 ? 2 : 1, 1);
         sfx('gatling');
         break;
       }
@@ -931,7 +932,8 @@ export class Game {
         const n = t.level, per = s.dmg / n * (1 + 0.12 * (n - 1));
         for (let i = 0; i < n; i++) {
           const spread = (i - (n - 1) / 2) * 0.55;
-          this.shots.push({ k: 'missile', x: m.x + spread * 10, y: m.y - Math.abs(spread) * 4, vx: Math.cos(t.ang - Math.PI / 4 + spread) * 110, vy: -150 - i * 25, sp: 240 - i * 20, target, tx: aim.x, ty: aim.y, tgx: target.gx, tgy: target.gy, dmg: per, splash: s.splash, airBonus: def.airBonus, trail: 0, life: 4, src: t, big: n });
+          // launched steeply upwards, then they turn over and dive onto the target (visible arc)
+          this.shots.push({ k: 'missile', x: m.x + spread * 10, y: m.y - Math.abs(spread) * 4, vx: Math.cos(t.ang - Math.PI / 4 + spread) * 90, vy: -230 - i * 30, sp: 170 - i * 15, age: -i * 0.06, target, tx: aim.x, ty: aim.y, tgx: target.gx, tgy: target.gy, dmg: per, splash: s.splash, airBonus: def.airBonus, trail: 0, life: 4.5, src: t, big: n });
         }
         this.fx.muzzle(m.x, m.y, 'orange', 34 + n * 8);
         this.fx.smoke(m.x, m.y, 2, 16, 0.8);
@@ -955,6 +957,7 @@ export class Game {
           this.shots.push({ k: 'flak', x: m.x, y: m.y, t0: -i * 0.05, dur: lead, sx: m.x, sy: m.y, tx: w.x + rand(-10, 10) + ox, ty: w.y - target.def.lift - 20 + rand(-10, 10) + oy, tgx: p.x, tgy: p.y, dmg: per, splash: s.splash, src: t });
         }
         this.fx.muzzle(m.x, m.y, 'yellow', 28);
+        this.ejectCasings(t, m, nb, 1.6);
         sfx('flak');
         break;
       }
@@ -1029,6 +1032,17 @@ export class Game {
         sfx('mortar');
         break;
       }
+    }
+  }
+
+  // spent casings fly out sideways (perpendicular to the barrel) and drop to the tower's foot
+  ejectCasings(t, m, n, size) {
+    const a = t.ang, ex = toWorld(-Math.sin(a), Math.cos(a)), l = Math.hypot(ex.x, ex.y) || 1;
+    const sx = ex.x / l, sy = ex.y / l;
+    const ox = (m.x - t.wx) * 0.45, oy = (m.y - t.wy) * 0.6;
+    for (let i = 0; i < n; i++) {
+      const v = rand(70, 130);
+      this.fx.casing(t.wx + ox + sx * 8, t.wy + oy, t.wy + rand(4, 16), sx * v + rand(-20, 20), sy * v * 0.5 - rand(120, 200), size);
     }
   }
 
@@ -1629,12 +1643,15 @@ export class Game {
           s.life -= dt;
           if (s.k === 'missile' && s.target && s.target.alive) { const a = this.aimPoint(s.target); s.tx = a.x; s.ty = a.y; s.tgx = s.target.gx; s.tgy = s.target.gy; }
           const dx = s.tx - s.x, dy = s.ty - s.y, d = Math.hypot(dx, dy) || 1;
-          s.sp = Math.min(720, s.sp + 900 * dt);
-          const turn = Math.min(1, dt * 7);
+          s.age = (s.age || 0) + dt;
+          // our missiles: a short boost phase straight up, then they steer harder and harder onto the target
+          const own = s.k === 'missile', boost = own ? Math.max(0, Math.min(1, s.age / 0.35)) : 1;
+          s.sp = Math.min(own ? 640 : 720, s.sp + (own ? 650 : 900) * dt);
+          const turn = Math.min(1, dt * (own ? 1.5 + 7 * boost : 7));
           s.vx += (dx / d * s.sp - s.vx) * turn; s.vy += (dy / d * s.sp - s.vy) * turn;
           s.x += s.vx * dt; s.y += s.vy * dt;
           s.trail -= dt;
-          if (s.trail <= 0) { s.trail = 0.025; this.fx.trail(s.x, s.y); }
+          if (s.trail <= 0) { s.trail = own ? 0.018 : 0.025; this.fx.trail(s.x - s.vx * 0.02, s.y - s.vy * 0.02, own); }
           if (d < 16 || s.life <= 0) {
             s.dead = true;
             const onGround = s.k === 'missile' && s.target && !s.target.air;
