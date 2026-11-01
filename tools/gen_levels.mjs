@@ -131,6 +131,8 @@ function genLevel(spec) {
       p.forEach(c => used.add(K(...c)));
     }
     if (!ok) continue;
+    // newer missions: no attack route much shorter than the main one (a 30-tile dash to the HQ is unfair)
+    if (spec.chapter && routes.some(rt => rt.length < main.length * 0.55)) continue;
     // ---- alternative roads (newer missions): a second way between two points of the main route, so
     // barricades can steer the enemies. Some detours are longer than the main road, some shorter. ----
     const links = [];
