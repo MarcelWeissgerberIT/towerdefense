@@ -3,10 +3,20 @@
 const { Game, CELL } = await import('../js/game.js');
 const C = await import('../js/config.js');
 
+// road tiles the enemies actually walk (detours nobody uses are not worth covering)
+function activeTiles(g) {
+  const key = g.routes.map(r => r.total.toFixed(2)).join('|');
+  if (g._simKey === key) return g._simTiles;
+  const set = new Set();
+  for (const r of g.routes) for (const s of r.seg) for (let k = 0; k <= s.len; k += 0.25) set.add(Math.floor(s.ay + s.dy * k) * g.N + Math.floor(s.ax + s.dx * k));
+  g._simKey = key; g._simTiles = set;
+  return set;
+}
 function coverage(g, cx, cy, r) {
   let n = 0;
+  const act = activeTiles(g);
   for (let y = 0; y < g.N; y++) for (let x = 0; x < g.N; x++) {
-    if (g.cell(x, y) !== CELL.ROAD) continue;
+    if (g.cell(x, y) !== CELL.ROAD || !act.has(y * g.N + x)) continue;
     if ((x - cx) ** 2 + (y - cy) ** 2 > r * r) continue;
     let cov = 0;
     for (const t of g.towers) if ((x - t.cx) ** 2 + (y - t.cy) ** 2 <= t.stats.range ** 2) cov++;
@@ -34,7 +44,7 @@ function counterPick(g, types) {
 }
 
 // DIFF=medium|hard applies a campaign difficulty, MODS='{"hp":1.2}' arbitrary modifiers on top
-// ABIL=0 disables the special weapons (orbital strike, black hole, nuke); FREE=1 plays like free play (everything unlocked)
+// BAR=1 builds barricades for the longest detours; ABIL=0 disables the special weapons (orbital strike, black hole, nuke); FREE=1 plays like free play (everything unlocked)
 const ABIL = process.env.ABIL !== '0';
 function densest(g, r, min) {
   let best = null, bn = 0;
@@ -50,6 +60,21 @@ function useAbilities(g) {
   if (g.hole.on && g.hole.cd <= 0) { const e = densest(g, C.HOLE.radius, 7); if (e) g.holeStrike(e.gx, e.gy); }
   if (g.nukeReady()) { const e = densest(g, C.NUKE.radius, 9); if (e) g.nukeStrike(e.gx, e.gy); }
   if (g.nuke.state === 'broken' && g.credits > g.nukeRepairCost() + 250) g.repairNuke();
+}
+// BAR=1: barricades like a sensible player - one at a time where they force the longest detour (never a dead end)
+const BARS = process.env.BAR === '1';
+function useBarricades(g, start = false) {
+  if (g.barricades.length >= C.BAR.max || g.credits < g.barricadeCost() + (start ? 600 : 150)) return;
+  const base = g.routes.reduce((a, r) => a + r.total, 0);
+  let best = null, bv = 3;     // at least 3 tiles longer in total
+  for (let y = 0; y < g.N; y++) for (let x = 0; x < g.N; x++) {
+    if (!g.canBarricade(x, y)) continue;
+    const pr = g.previewRoutes(x, y);
+    if (pr.through) continue;
+    const v = pr.routes.reduce((a, r) => a + r.total, 0) - base;
+    if (v > bv) { bv = v; best = [x, y]; }
+  }
+  if (best) g.buildBarricade(best[0], best[1]);
 }
 const MODS = C.mergeMods(process.env.DIFF ? C.DIFFICULTY.find(d => d.id === process.env.DIFF).mods : {}, process.env.MODS ? JSON.parse(process.env.MODS) : {});
 if (process.env.FREE === '1') MODS.unlockAll = true;
@@ -90,6 +115,9 @@ function play(levelIdx, skill = 1) {
     for (const tw of g.towers) if (tw.hp < tw.stats.hp * 0.55 && g.credits > g.repairCost(tw) + 50) g.repair(tw);
     if (g.state === 'build') g.startWave();
     if (ABIL && Math.round(t / dt) % 15 === 0) { useAbilities(g); for (const d of [...g.drops]) g.collect(d); }
+    // plan the route first (before the first tower), later only repairs
+    if (BARS && t === 0) { for (let i = 0; i < 2; i++) useBarricades(g, true); }
+    if (BARS && Math.round(t / dt) % 30 === 0) for (const b of g.barricades) if (b.hp < b.maxHp * 0.5 && g.credits > g.barricadeRepairCost(b) + 100) g.repairBarricade(b);
     const before = g.towers.length;
     g.update(dt);
     lost += Math.max(0, before - g.towers.length);
@@ -97,7 +125,7 @@ function play(levelIdx, skill = 1) {
     if (trace && g.wave !== lw) { lw = g.wave; console.log(`  w${g.wave} t=${Math.round(t)} credits ${g.credits} towers ${g.towers.length} (lvl ${g.towers.reduce((a, o) => a + o.level, 0)}) lives ${g.lives} lostTowers ${lost} alive ${g.enemies.length}`); }
     t += dt;
   }
-  return { L: levelIdx + 1, state: g.state, wave: `${g.wave}/${g.waves.length}`, lives: g.lives, towers: g.towers.length, towersLost: lost, time: Math.round(t) };
+  return { L: levelIdx + 1, state: g.state, wave: `${g.wave}/${g.waves.length}`, lives: g.lives, towers: g.towers.length, towersLost: lost, time: Math.round(t), bars: g.barricades.length };
 }
 
 const from = parseInt(process.argv[2] || '1', 10), to = parseInt(process.argv[3] || '25', 10);
@@ -105,7 +133,7 @@ const skills = (process.argv[4] || '1').split(',').map(Number);
 for (let i = from - 1; i < to; i++) {
   for (const s of skills) {
     const r = play(i, s);
-    console.log(`L${String(r.L).padStart(2)} skill ${s}: ${r.state.padEnd(4)} wave ${r.wave.padEnd(5)} lives ${String(r.lives).padStart(2)} towers ${r.towers} lostTowers ${r.towersLost} t=${r.time}s`);
+    console.log(`L${String(r.L).padStart(2)} skill ${s}: ${r.state.padEnd(4)} wave ${r.wave.padEnd(5)} lives ${String(r.lives).padStart(2)} towers ${r.towers} lostTowers ${r.towersLost} t=${r.time}s${BARS ? ' barricades ' + r.bars : ''}`);
   }
 }
 process.exit(0);

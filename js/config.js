@@ -352,4 +352,13 @@ export function mergeMods(a = {}, b = {}) {
 }
 export const DROP = { chance: 0.022, gap: 18, life: 25 };
 // black hole (from mission 8): captures machines in its radius, spirals them in and crushes them; lasts 10 s
+// barricades on the road: enemies take the cheapest way to the HQ - a barricade counts as `detour` extra
+// tiles, so with a free detour they go around it, without one they have to break through (ground units only)
+export const BAR = {
+  cost: 60, step: 30, max: 5,            // price rises with every barricade standing
+  hp: 800, hpLvl: 0.07,                  // hit points, +7 % per mission
+  detour: 40,                            // a detour of up to 40 tiles is preferred over breaking through
+  ram: 4, ramCost: 3, boss: 3,           // damage per second of a blocked unit: (ram + cost * ramCost) * sqrt(hp scale)
+  sell: 0.5, repair: 0.6,
+};
 export const HOLE = { unlock: 8, cd: 210, first: 90, dur: 10, radius: 2.6, pull: 1.4, dps: 0.07, flat: 30, bossSlow: 0.75, bossDps: 0.012, collapse: 0.3 };

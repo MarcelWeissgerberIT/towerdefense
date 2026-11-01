@@ -1,4 +1,4 @@
-// 25 levels: specs (used by tools/gen_levels.mjs to build the maps) + wave generator.
+// Levels: specs (used by tools/gen_levels.mjs to build the maps) + wave generator.
 import { ENEMIES, ENEMY_UNLOCK } from './config.js';
 import { LEVEL_MAPS } from './levels_data.js';
 import { LEVEL_SPECS } from './level_specs.js';
@@ -10,9 +10,9 @@ export function getLevel(i) {
   const spec = LEVEL_SPECS[i];
   // every extra attack route needs its own defence line: more starting credits
   // (and bigger maps need more towers)
-  const base = spec.biome === 'city' ? spec.credits : Math.max(spec.credits, 360 + 30 * i);
+  const base = spec.biome === 'city' && !spec.chapter ? spec.credits : Math.max(spec.credits, 360 + 30 * ((spec.power || i + 1) - 1));
   const credits = base + 70 * (spec.paths - 1) + 80 * Math.max(0, spec.M - 7);
-  return { ...spec, ...LEVEL_MAPS[i], credits, index: i, number: i + 1 };
+  return { ...spec, ...LEVEL_MAPS[i], credits, index: i, number: i + 1, power: spec.power || i + 1 };
 }
 
 // --- waves -----------------------------------------------------------------
@@ -36,7 +36,7 @@ export function hpMultiplier(levelNum, wave) {
 
 // returns [{groups:[{type,count,gap,delay}], boss:bool, tip?}]
 export function makeWaves(level) {
-  const lv = level.number;
+  const lv = level.number, pw = level.power || lv;
   const r = rng(level.seed * 7 + 3);
   const pool = Object.keys(ENEMY_UNLOCK).filter(k => ENEMY_UNLOCK[k] <= lv);
   const ground = pool.filter(k => !ENEMIES[k].air);
@@ -46,7 +46,7 @@ export function makeWaves(level) {
   const W = level.waves;
   for (let w = 1; w <= W; w++) {
     const routeMul = [1, 1, 0.84, 0.74, 0.68][level.paths.length] || 0.68;
-    const budget = (5 + 2.0 * w + 0.06 * w * w) * (1 + 0.045 * (lv - 1)) * routeMul;
+    const budget = (5 + 2.0 * w + 0.06 * w * w) * (1 + 0.045 * (pw - 1)) * routeMul;
     // only units that are cheap relative to the wave budget (no tanks in wave 1)
     const fits = (arr, share) => { const ok = arr.filter(k => ENEMIES[k].cost <= Math.max(2, budget * share * 0.34)); return ok.length ? ok : arr.filter(k => ENEMIES[k].cost <= 2); };
     const pick = (arr, share = 0.6) => { const a = fits(arr, share); return a[Math.floor(r() * a.length)] || 'android'; };
@@ -73,6 +73,8 @@ export function makeWaves(level) {
       const bosses = lv >= 20 ? ['boss', 'mothership'] : lv >= 18 ? ['mothership'] : ['boss'];
       if (lv === 25) bosses.push('boss', 'mothership');
       if (lv === 30) bosses.push('boss', 'mothership', 'boss');
+      if (lv === 35) bosses.push('boss');
+      if (lv === 40) bosses.push('boss', 'mothership', 'boss', 'mothership');
       bosses.forEach((b, i) => groups.push({ type: b, count: 1, gap: 1, delay: i * 9 }));
       add(pick(heavy.length ? heavy : ground, 0.5), 0.5, 3);
       add(pick(ground, 0.4), 0.4, 6);

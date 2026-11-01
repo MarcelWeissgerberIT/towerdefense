@@ -37,4 +37,17 @@ export const LEVEL_SPECS = [
   { name: 'Leitzentrale',     biome: 'city', M: 11, paths: 4, waves: 24, len: [44, 54], orient: 'RL', seed: 2828, credits: 740 },
   { name: 'Brennende Stadt',  biome: 'city', M: 11, paths: 4, waves: 25, len: [44, 54], orient: 'TB', seed: 2929, credits: 760 },
   { name: 'Endzeit',          biome: 'city', M: 11, paths: 4, waves: 28, len: [44, 54], orient: 'LR', seed: 3030, credits: 800 },
+  // Gegenoffensive: road networks with detours - barricades decide which way the machines take.
+  // power: the mission strength the enemies scale with (like missions 22-30; the number keeps counting up)
+  { name: 'Brückenkopf',      biome: 'wasteland', chapter: 'off', power: 20, M: 9, paths: 1, bypass: 2, waves: 18, len: [30, 38], orient: 'TB', seed: 3131, credits: 760 },
+  { name: 'Lianenlabyrinth',  biome: 'jungle', chapter: 'off', power: 23, M: 9, paths: 2, bypass: 2, waves: 19, len: [30, 38], orient: 'LR', seed: 3232, credits: 780 },
+  { name: 'Pipeline',         biome: 'desert', chapter: 'off', power: 24, M: 10, paths: 2, bypass: 2, waves: 20, len: [36, 44], orient: 'RL', seed: 3333, credits: 800 },
+  { name: 'Packeisfront',     biome: 'ice', chapter: 'off', power: 23.5, M: 10, paths: 2, bypass: 3, waves: 20, len: [36, 44], orient: 'TB', seed: 3434, credits: 820 },
+  { name: 'Kraterring',       biome: 'volcano', chapter: 'off', power: 25, M: 10, paths: 3, bypass: 2, waves: 22, len: [36, 44], orient: 'LR', seed: 3535, credits: 860 },
+  { name: 'Häuserkampf',      biome: 'city', chapter: 'off', power: 26, M: 10, paths: 2, bypass: 3, waves: 22, len: [36, 44], orient: 'TB', seed: 3636, credits: 860 },
+  { name: 'Schrottburg',      biome: 'wasteland', chapter: 'off', power: 27, M: 11, paths: 3, bypass: 2, waves: 24, len: [42, 52], orient: 'RL', seed: 3737, credits: 900 },
+  { name: 'Oase',             biome: 'desert', chapter: 'off', power: 27, M: 11, paths: 3, bypass: 3, waves: 24, len: [42, 52], orient: 'LR', seed: 3838, credits: 920 },
+  { name: 'Kältekammer',      biome: 'ice', chapter: 'off', power: 27.5, M: 11, paths: 3, bypass: 3, waves: 26, len: [42, 52], orient: 'TB', seed: 3939, credits: 960 },
+  { name: 'Kern der Maschine', biome: 'volcano', chapter: 'off', power: 29, M: 11, paths: 4, bypass: 3, waves: 30, len: [42, 52], orient: 'LR', seed: 4040, credits: 1000 },
 ];
+export const CHAPTERS = { off: { name: 'Gegenoffensive', tex: 'city', desc: 'Straßennetze mit Umwegen – Barrikaden bestimmen, welchen Weg die Maschinen nehmen' } };

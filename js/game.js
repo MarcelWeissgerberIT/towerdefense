@@ -1,6 +1,6 @@
 // Core simulation: grid, routes, towers (turret aiming), enemies (attack towers), projectiles, waves.
 import {
-  HW, TOWERS, ENEMIES, BIOMES, BOSS, SPECS, PERKS, WEATHER, BIOME_WEATHER, WEATHER_CFG, TOWER_DMG, specCost, EFFECT, FROST, SHATTER, THERMAL, ACID_ARMOR, NUKE, POWERUPS, DROP, HOLE, ELEV_PX, ELEV_RANGE, MAX_LEVEL, TOWER_SCALE, UPGRADE_TIME, WAVE_GAP, SELL_RATE, FULL_REFUND_TIME, towerStats, upgradeCost, totalInvested,
+  HW, TOWERS, ENEMIES, BIOMES, BOSS, BAR, SPECS, PERKS, WEATHER, BIOME_WEATHER, WEATHER_CFG, TOWER_DMG, specCost, EFFECT, FROST, SHATTER, THERMAL, ACID_ARMOR, NUKE, POWERUPS, DROP, HOLE, ELEV_PX, ELEV_RANGE, MAX_LEVEL, TOWER_SCALE, UPGRADE_TIME, WAVE_GAP, SELL_RATE, FULL_REFUND_TIME, towerStats, upgradeCost, totalInvested,
 } from './config.js';
 import { getLevel, makeWaves, makeBossRush, hpMultiplier } from './levels.js';
 import { toWorld, rand, mulberry32 } from './iso.js';
@@ -55,6 +55,19 @@ export function routePos(route, d) {
   const t = Math.min(s.len, Math.max(0, d - s.start));
   return { x: s.ax + s.dx * t, y: s.ay + s.dy * t, dx: s.dx, dy: s.dy };
 }
+const DIR4 = [[1, 0], [0, 1], [-1, 0], [0, -1]];
+// drop points in the middle of straight stretches (a U-turn keeps its turning point)
+function straighten(pts) {
+  const out = [pts[0]];
+  for (let i = 1; i < pts.length - 1; i++) {
+    const a = out[out.length - 1], b = pts[i], c = pts[i + 1];
+    const cross = (b[0] - a[0]) * (c[1] - b[1]) - (b[1] - a[1]) * (c[0] - b[0]);
+    const dot = (b[0] - a[0]) * (c[0] - b[0]) + (b[1] - a[1]) * (c[1] - b[1]);
+    if (Math.abs(cross) > 1e-9 || dot <= 0) out.push(b);
+  }
+  out.push(pts[pts.length - 1]);
+  return out;
+}
 const angDiff = (a, b) => { let d = (b - a) % TAU; if (d > Math.PI) d -= TAU; if (d < -Math.PI) d += TAU; return d; };
 
 export class Game {
@@ -102,7 +115,7 @@ export class Game {
     this.orbital = { cd: 25, max: Math.round(85 * (M.cd || 1) * (1 - this.perk.cd)), on: (L.number >= 2 || M.unlockAll) && !M.noAbilities };
     this.strikes = [];
     // nuclear strike, charged by kills; power-up crates and active buffs
-    this.nuke = { charge: 0, need: Math.round(NUKE.need(L.number) * (M.cd || 1) * (1 - this.perk.cd)), on: (L.number >= NUKE.unlock || M.unlockAll) && !M.noAbilities };
+    this.nuke = { charge: 0, need: Math.round(NUKE.need(L.power) * (M.cd || 1) * (1 - this.perk.cd)), on: (L.number >= NUKE.unlock || M.unlockAll) && !M.noAbilities };
     this.nukes = [];
     this.nukeBlasts = [];
     this.weather = null;
@@ -113,7 +126,10 @@ export class Game {
     this.drops = [];
     this.lastDrop = -99;
     this.buffs = { overdrive: 0, timestop: 0, gold: 0, repair: 0 };
+    this.barricades = [];
     this.setupGrid();
+    // maps with alternative roads: the routes are the shortest ways through the network
+    if (L.links && L.links.length) this.recomputeRoutes(false);
   }
 
   idx(x, y) { return y * this.N + x; }
@@ -125,6 +141,11 @@ export class Game {
     this.height = new Uint8Array(this.N * this.N);
     for (const [x, y, h] of L.elev || []) this.height[this.idx(x, y)] = h;
     for (const p of L.paths) for (const [x, y] of p.cells) this.setCell(x, y, CELL.ROAD);
+    for (const p of L.links || []) for (const [x, y] of p.cells) this.setCell(x, y, CELL.ROAD);
+    // road network for routing: every road tile incl. the first tile of each gate and the HQ tile
+    this.road = new Uint8Array(this.N * this.N);
+    for (const p of [...L.paths, ...(L.links || [])]) for (const [x, y] of p.cells) this.road[this.idx(x, y)] = 1;
+    this.spawnTiles = L.paths.map(p => p.cells[0]);
     for (const p of L.paths) for (let dy = 0; dy < 2; dy++) for (let dx = 0; dx < 2; dx++) this.setCell(p.spawn[0] + dx, p.spawn[1] + dy, CELL.SPAWN);
     for (let dy = 0; dy < 2; dy++) for (let dx = 0; dx < 2; dx++) this.setCell(L.base[0] + dx, L.base[1] + dy, CELL.BASE);
     for (const [sprite, x, y] of L.props) {
@@ -237,7 +258,7 @@ export class Game {
       if (b.t > 0) continue;
       b.done = true;
       const B = WEATHER[b.kind].bolt, p = toWorld(b.gx, b.gy);
-      const dmg = B.dmg * Math.pow(hpMultiplier(this.level.number, Math.max(1, this.wave)), 0.85);
+      const dmg = B.dmg * Math.pow(hpMultiplier(this.level.power, Math.max(1, this.wave)), 0.85);
       for (const e of this.enemiesInRange(b.gx, b.gy, B.r, true, true)) this.damage(e, dmg * (e.def.boss ? 0.35 : 1), { ignoreArmor: true });
       for (const t of [...this.towers]) if (Math.hypot(t.gx - b.gx, t.gy - b.gy) < B.r * 0.75) this.damageTower(t, t.stats.hp * B.towerDmg);
       if (b.kind === 'meteor') {
@@ -404,8 +425,8 @@ export class Game {
     const wv = this.waves[this.wave];
     this.wave++;
     this.maybeWeather(wv);
-    const hpMul = hpMultiplier(this.level.number, this.wave) * (this.mods.hp || 1);
-    const rewardMul = (1 + 0.05 * (this.wave - 1)) * (1 + 0.025 * (this.level.number - 1));
+    const hpMul = hpMultiplier(this.level.power, this.wave) * (this.mods.hp || 1);
+    const rewardMul = (1 + 0.05 * (this.wave - 1)) * (1 + 0.025 * (this.level.power - 1));
     const nR = this.routes.length;
     let k = 0;
     const tips = [];
@@ -496,10 +517,9 @@ export class Game {
     this.fx.add({ k: 'glow', x: e.wx, y: y, s: 300, life: 0.4, spr: 'red' });
     this.fx.shake = Math.max(this.fx.shake, 16);
     this.fx.text(e.wx, y - 90, 'WUTPHASE!', '#ff5a3c');
-    const ri = this.routes.indexOf(e.route);
     const list = e.air ? R.escort.air : R.escort.ground;
     list.forEach((type, i) => {
-      const c = this.spawn(type, ri, e.hpMul * 0.9, 0.5, Math.max(0, e.d - 0.3 - i * 0.35));
+      const c = this.spawn(type, e.route, e.hpMul * 0.9, 0.5, Math.max(0, e.d - 0.3 - i * 0.35));
       c.off = rand(-0.32, 0.32);
       this.fx.add({ k: 'ring', x: c.wx, y: c.wy, r0: 6, r1: 60, life: 0.4, c: '255,120,80' });
     });
@@ -528,7 +548,8 @@ export class Game {
 
   spawn(type, routeIdx, hpMul, rewardMul, startD = 0) {
     const def = ENEMIES[type];
-    const route = this.routes[routeIdx] || this.routes[0];
+    // a gate's route by index, or the route object of the unit that launches / releases this one
+    const route = routeIdx && typeof routeIdx === 'object' ? routeIdx : this.routes[routeIdx] || this.routes[0];
     const hp = Math.round(def.hp * hpMul);
     const p = routePos(route, startD);
     const w = toWorld(p.x, p.y);
@@ -611,8 +632,8 @@ export class Game {
     e.alive = false;
     this.kills++;
     if (e.def.burst && !e.air) {
-      const b = e.def.burst, ri = this.routes.indexOf(e.route);
-      for (let i = 0; i < b.count; i++) { const c = this.spawn(b.type, ri, e.hpMul * 0.7, 0.4, Math.max(0, e.d - 0.15 - i * 0.12)); c.off = rand(-0.35, 0.35); }
+      const b = e.def.burst;
+      for (let i = 0; i < b.count; i++) { const c = this.spawn(b.type, e.route, e.hpMul * 0.7, 0.4, Math.max(0, e.d - 0.15 - i * 0.12)); c.off = rand(-0.35, 0.35); }
       this.fx.add({ k: 'glow', x: e.wx, y: e.wy - 30, s: 140, life: 0.4, spr: 'orange' });
     }
     if (src) {
@@ -1055,6 +1076,17 @@ export class Game {
     if (this.buffs.timestop > 0) sp *= def.boss ? 0.3 : 0;
     if (e.holeSlow) { sp *= 1 - e.holeSlow; e.holeSlow = 0; }
     if (this.weather) { const W = WEATHER[this.weather.type]; sp *= (e.air ? W.airSpeed : W.speed) || 1; }
+    // a barricade in the way (no detour): stop in front of it and smash it
+    e.blocked = false;
+    if (!e.air && sp > 0 && this.barricades.length) {
+      const b = this.barricadeAhead(e);
+      if (b) {
+        sp = 0; e.blocked = true;
+        const dps = (BAR.ram + def.cost * BAR.ramCost) * Math.sqrt(e.hpMul) * (def.boss ? BAR.boss : 1);
+        this.damageBarricade(b, dps * dt);
+        if (Math.random() < dt * 3) this.fx.sparks(b.wx + rand(-26, 26), b.wy - rand(8, 34), 3, '#ffd29a', 150);
+      }
+    }
     e.d += sp * dt;
     // footfalls: two per animation cycle (or per configured stride for unanimated gaits)
     const stepLen = Models.meta(def.model)?.af ? Models.cycleOf(def) / 2 : (def.stride || 0.6);
@@ -1082,7 +1114,7 @@ export class Game {
       return;
     }
     const p = routePos(e.route, e.d);
-    const fade = Math.min(1, e.d / 1.2, (e.route.total - e.d) / 1.2);
+    const fade = Math.min(1, e.route.mid ? 1 : e.d / 1.2, (e.route.total - e.d) / 1.2);
     e.gx = p.x - p.dy * e.off * fade; e.gy = p.y + p.dx * e.off * fade;
     const w = toWorld(e.gx, e.gy);
     const k = Math.min(1, dt * 14);
@@ -1144,7 +1176,7 @@ export class Game {
       if (e.spawnT <= 0) {
         e.spawnT = def.spawns.every;
         for (let i = 0; i < def.spawns.count; i++) {
-          const c = this.spawn(def.spawns.type, this.routes.indexOf(e.route), e.hpMul * 0.8, 0.5, Math.max(0, e.d - 0.2 - i * 0.3));
+          const c = this.spawn(def.spawns.type, e.route, e.hpMul * 0.8, 0.5, Math.max(0, e.d - 0.2 - i * 0.3));
           c.off = rand(-0.3, 0.3);
         }
         this.fx.muzzle(e.wx, e.wy - def.lift, 'red', 80);
@@ -1222,7 +1254,7 @@ export class Game {
   // ---- nuclear strike ----
   // nuke.state: undefined = charging/ready, 'broken' = launch pad damaged, 'repair' = being repaired
   nukeReady() { return this.nuke.on && !this.nuke.state && this.nuke.charge >= this.nuke.need; }
-  nukeRepairCost() { return NUKE.repairCost(this.level.number, this.nuke.uses || 1); }
+  nukeRepairCost() { return NUKE.repairCost(this.level.power, this.nuke.uses || 1); }
   repairNuke(free = false) {
     const n = this.nuke;
     if (n.state !== 'broken') return false;
@@ -1272,7 +1304,7 @@ export class Game {
       n.t -= dt;
       if (n.t > 0) continue;
       n.done = true;
-      const hpm = Math.pow(hpMultiplier(this.level.number, Math.max(1, this.wave)), 0.9);
+      const hpm = Math.pow(hpMultiplier(this.level.power, Math.max(1, this.wave)), 0.9);
       this._nuking = { gx: n.gx, gy: n.gy };
       for (const e of this.enemiesInRange(n.gx, n.gy, NUKE.outer, true, true)) {
         const d = Math.hypot(e.gx - n.gx, e.gy - n.gy);
@@ -1419,7 +1451,7 @@ export class Game {
       if (s.t > 0) continue;
       s.done = true;
       const w = toWorld(s.gx, s.gy);
-      const dmg = 420 * Math.pow(hpMultiplier(this.level.number, Math.max(1, this.wave)), 0.85);
+      const dmg = 420 * Math.pow(hpMultiplier(this.level.power, Math.max(1, this.wave)), 0.85);
       for (const e of this.enemiesInRange(s.gx, s.gy, 1.7, true, true)) {
         const d = Math.hypot(e.gx - s.gx, e.gy - s.gy);
         this.damage(e, dmg * (d < 0.8 ? 1 : 0.6) * (e.air ? 0.6 : 1), { ignoreArmor: true });
@@ -1581,6 +1613,165 @@ export class Game {
     return r >= 0.9 ? 3 : r >= 0.5 ? 2 : 1;
   }
 
+  // ---------------- road network: routing and barricades ----------------
+  isRoad(x, y) { return x >= 0 && y >= 0 && x < this.N && y < this.N && this.road[this.idx(x, y)] === 1; }
+  barricadeAt(x, y) { return this.barricades.find(b => b.cx === x && b.cy === y) || null; }
+  // cost of the cheapest way from every road tile to the HQ (Dijkstra; entering a barricade tile costs extra)
+  computeFlow() {
+    const N = this.N, dist = new Float64Array(N * N).fill(Infinity), done = new Uint8Array(N * N);
+    this._barAt = new Map(this.barricades.filter(b => b.hp > 0).map(b => [this.idx(b.cx, b.cy), b]));
+    const [bx, by] = this.level.base;
+    const open = [this.idx(bx, by)];
+    dist[open[0]] = 0;
+    while (open.length) {
+      let bi = 0;
+      for (let i = 1; i < open.length; i++) if (dist[open[i]] < dist[open[bi]]) bi = i;
+      const u = open[bi]; open[bi] = open[open.length - 1]; open.pop();
+      if (done[u]) continue;
+      done[u] = 1;
+      const ux = u % N, uy = (u / N) | 0;
+      const step = 1 + (this._barAt.has(u) ? BAR.detour : 0);    // what it costs to walk INTO tile u
+      for (const [dx, dy] of DIR4) {
+        const vx = ux + dx, vy = uy + dy;
+        if (!this.isRoad(vx, vy)) continue;
+        const v = this.idx(vx, vy), nd = dist[u] + step;
+        if (nd < dist[v]) { dist[v] = nd; open.push(v); }
+      }
+    }
+    this.flow = dist;
+  }
+  // route from a road tile to the HQ along the cheapest way; `start`: the unit's exact position (mid-road)
+  routeFrom(tx, ty, start = null) {
+    const dist = this.flow, tiles = [[tx, ty]];
+    let cx = tx, cy = ty;
+    for (let guard = 0; dist[this.idx(cx, cy)] > 0 && guard < this.N * this.N; guard++) {
+      let best = null, bv = Infinity;
+      for (const [dx, dy] of DIR4) {
+        const nx = cx + dx, ny = cy + dy;
+        if (!this.isRoad(nx, ny)) continue;
+        const i = this.idx(nx, ny), v = dist[i] + 1 + (this._barAt.has(i) ? BAR.detour : 0);
+        if (v < bv) { bv = v; best = [nx, ny]; }
+      }
+      if (!best || bv === Infinity) break;
+      tiles.push(best); cx = best[0]; cy = best[1];
+    }
+    let pts = tiles.map(([x, y]) => [x + 0.5, y + 0.5]);
+    if (start) {
+      // already past the centre of this tile towards the next one: don't step back to the centre first
+      if (pts.length > 1) {
+        const [ax, ay] = pts[0], [bx, by] = pts[1];
+        if ((start[0] - ax) * (bx - ax) + (start[1] - ay) * (by - ay) > 0) pts.shift();
+      }
+      if (Math.hypot(start[0] - pts[0][0], start[1] - pts[0][1]) > 1e-3) pts.unshift(start);
+    }
+    pts = straighten(pts);
+    if (pts.length < 2) pts = [pts[0], [pts[0][0] + 0.01, pts[0][1]]];
+    const r = buildRoute(pts);
+    if (start) r.mid = true;
+    return r;
+  }
+  // after a barricade went up or down: new gate routes, and every unit on the road picks its way again
+  recomputeRoutes(moveUnits = true) {
+    this.computeFlow();
+    this.routes = this.spawnTiles.map(([x, y]) => this.routeFrom(x, y));
+    if (!moveUnits) return;
+    for (const e of this.enemies) {
+      if (!e.alive || e.air || e.diving || e.vortex) continue;
+      const p = routePos(e.route, e.d);
+      let tx = Math.floor(p.x), ty = Math.floor(p.y);
+      if (!this.isRoad(tx, ty)) {
+        let bd = Infinity;
+        for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+          const x = Math.floor(p.x) + dx, y = Math.floor(p.y) + dy, d = (x + 0.5 - p.x) ** 2 + (y + 0.5 - p.y) ** 2;
+          if (this.isRoad(x, y) && d < bd) { bd = d; tx = x; ty = y; }
+        }
+      }
+      if (!this.isRoad(tx, ty) || this.flow[this.idx(tx, ty)] === Infinity) continue;
+      e.route = this.routeFrom(tx, ty, [p.x, p.y]);
+      e.d = 0;
+    }
+  }
+  // the routes the gates would get with an extra barricade on (cx, cy) - for the build preview
+  previewRoutes(cx, cy) {
+    const tmp = { cx, cy, hp: 1 };
+    this.barricades.push(tmp);
+    this.computeFlow();
+    const routes = this.spawnTiles.map(([x, y]) => this.routeFrom(x, y));
+    const i = this.idx(cx, cy);
+    const through = routes.some(r => r.pts.some(([x, y]) => this.idx(Math.floor(x), Math.floor(y)) === i));
+    this.barricades.pop();
+    this.computeFlow();
+    return { routes, through };
+  }
+  barricadeAhead(e) {
+    const look = 0.5 + (e.id % 5) * 0.11 + (e.def.boss ? 0.45 : 0);    // units queue up instead of piling into one spot
+    const p = routePos(e.route, Math.min(e.route.total, e.d + look));
+    const b = this._barAt && this._barAt.get(this.idx(Math.floor(p.x), Math.floor(p.y)));
+    return b && b.hp > 0 ? b : null;
+  }
+  barricadeCost() { return BAR.cost + BAR.step * this.barricades.length; }
+  // road tiles between the gates and the HQ (not on the gate or HQ tiles themselves)
+  canBarricade(cx, cy) { return this.isRoad(cx, cy) && this.cell(cx, cy) === CELL.ROAD && !this.barricadeAt(cx, cy); }
+  buildBarricade(cx, cy) {
+    const fail = (text) => { this.emit('toast', { text, bad: true }); sfx('error'); return null; };
+    if (!this.canBarricade(cx, cy)) return fail('Hier kann keine Barrikade stehen');
+    if (this.barricades.length >= BAR.max) return fail(`Höchstens ${BAR.max} Barrikaden gleichzeitig`);
+    const c = this.barricadeCost();
+    if (this.credits < c) return fail('Nicht genug Credits');
+    for (const e of this.enemies) if (e.alive && !e.air && Math.abs(e.gx - cx - 0.5) < 0.8 && Math.abs(e.gy - cy - 0.5) < 0.8) return fail('Gegner im Weg – einen Moment warten');
+    this.credits -= c;
+    const w = toWorld(cx + 0.5, cy + 0.5);
+    // across the road: the barrier model's frames 0/2 run along grid y, 1/3 along grid x (checked in the game)
+    const alongX = this.isRoad(cx - 1, cy) || this.isRoad(cx + 1, cy);
+    const hp = Math.round(BAR.hp * (1 + BAR.hpLvl * (this.level.power - 1)));
+    const b = { id: uid++, kind: 'barricade', cx, cy, gx: cx + 0.5, gy: cy + 0.5, wx: w.x, wy: w.y, rot: alongX ? 0 : 1, hp, maxHp: hp, cost: c, hitT: -9, placedAt: this.time, built: 0 };
+    this.barricades.push(b);
+    this.recomputeRoutes();
+    this.fx.dust(w.x, w.y + 6, 1.3);
+    this.fx.add({ k: 'ring', x: w.x, y: w.y + 8, r0: 20, r1: 90, life: 0.45, c: '255,210,120' });
+    this.emit('barricade', { b, detour: !this.routes.some(r => r.pts.some(([x, y]) => Math.floor(x) === cx && Math.floor(y) === cy)) });
+    sfx('build');
+    return b;
+  }
+  damageBarricade(b, dmg) {
+    if (b.hp <= 0) return;
+    b.hp -= dmg; b.hitT = this.time;
+    if (b.hp <= 0) this.removeBarricade(b, true);
+  }
+  removeBarricade(b, destroyed = false) {
+    this.barricades = this.barricades.filter(o => o !== b);
+    b.hp = 0;
+    if (destroyed) {
+      this.fx.bigExplosion(b.wx, b.wy - 20, 1.1, 'ground');
+      this.fx.debris(b.wx, b.wy - 16, 16, 300);
+      this.decals.push({ x: b.wx, y: b.wy, s: 110 });
+      this.emit('toast', { text: 'Barrikade durchbrochen!', bad: true });
+      sfx('explosion', true);
+    } else this.fx.dust(b.wx, b.wy, 1.2);
+    this.emit('barricadeLost', { b });
+    this.recomputeRoutes();
+  }
+  barricadeSellValue(b) { return this.time - b.placedAt < FULL_REFUND_TIME ? b.cost : Math.round(b.cost * BAR.sell * b.hp / b.maxHp); }
+  sellBarricade(b) {
+    const v = this.barricadeSellValue(b);
+    this.credits += v;
+    this.fx.text(b.wx, b.wy - 60, `+${v}`);
+    this.removeBarricade(b);
+    sfx('sell');
+  }
+  barricadeRepairCost(b) { return Math.ceil((1 - b.hp / b.maxHp) * b.cost * BAR.repair); }
+  repairBarricade(b) {
+    const c = this.barricadeRepairCost(b);
+    if (c <= 0) return false;
+    if (this.credits < c) { this.emit('toast', { text: 'Nicht genug Credits', bad: true }); sfx('error'); return false; }
+    this.credits -= c;
+    b.hp = b.maxHp;
+    this.fx.sparks(b.wx, b.wy - 20, 14, '#9dffb5', 160);
+    this.fx.add({ k: 'ring', x: b.wx, y: b.wy + 8, r0: 16, r1: 80, life: 0.45, c: '140,255,170' });
+    sfx('upgradeStart');
+    return true;
+  }
+
   // ---------------- save / resume a running mission ----------------
   // Plain JSON: towers, enemies and black holes are referenced by id, routes by index, unit/tower
   // definitions are looked up again by type. Shots in flight and visual effects are not saved.
@@ -1622,6 +1813,8 @@ export class Game {
   static restore(s) {
     if (!s || s.v !== SNAP_V || !Array.isArray(s.towers)) return null;
     const g = new Game(s.levelIdx, s.mods);
+    // barricades first: the gate routes the units refer to depend on them
+    if (Array.isArray(s.g.barricades) && s.g.barricades.length) { g.barricades = s.g.barricades.map(b => ({ ...b })); g.recomputeRoutes(false); }
     const tw = new Map(), en = new Map(), ho = new Map();
     g.towers = s.towers.filter(o => TOWERS[o.type]).map(o => { const t = { ...o, def: TOWERS[o.type] }; tw.set(o.id, t); return t; });
     g.enemies = s.enemies.filter(o => ENEMIES[o.type]).map(o => { const e = { ...o, def: ENEMIES[o.type] }; en.set(o.id, e); return e; });
@@ -1640,7 +1833,7 @@ export class Game {
       return o;
     };
     for (const list of [g.towers, g.enemies, g.holes]) for (const o of list) for (const k in o) if (k !== 'def') o[k] = dec(o[k]);
-    for (const k of SNAP_KEYS) if (k in s.g) g[k] = dec(s.g[k]);
+    for (const k of SNAP_KEYS) if (k in s.g && k !== 'barricades') g[k] = dec(s.g[k]);
     g.seen = new Set(s.seen || []);
     for (const e of g.enemies) { if (!e.route) e.route = g.routes[0]; e.alive = true; }
     for (const t of g.towers) { g.setCell(t.cx, t.cy, CELL.TOWER); t.target = null; t.beamTarget = null; t.firing = false; }
@@ -1655,4 +1848,4 @@ export class Game {
 const SNAP_V = 1;
 const SNAP_KEYS = ['time', 'credits', 'lives', 'maxLives', 'wave', 'queue', 'state', 'nextWaveIn', 'waveLeft', 'kills', 'lost',
   'orbital', 'strikes', 'nuke', 'nukes', 'nukeBlasts', 'weather', 'strikesW', 'hole', 'radZones', 'drops', 'lastDrop', 'buffs', 'puddles',
-  '_elevHint', '_dmgHint'];
+  '_elevHint', '_dmgHint', 'barricades'];

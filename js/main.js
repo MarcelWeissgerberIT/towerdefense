@@ -1,6 +1,7 @@
 // Iron Sentinel – app controller: screens, HUD, build drawer, tower menu, game loop.
-import { TOWERS, ENEMIES, TOWER_ORDER, MAX_LEVEL, BIOMES, BIOME_ORDER, UPGRADE_TIME, ELEV_RANGE, CLASS_NAME, EFFECT, POWERUPS, NUKE, HOLE, DIFFICULTY, SPECS, PERKS, PERK_COST, WEATHER, TOWER_DMG, SHATTER, FROST, specCost, effectOf, upgradeCost, towerStats } from './config.js';
+import { BAR, TOWERS, ENEMIES, TOWER_ORDER, MAX_LEVEL, BIOMES, BIOME_ORDER, UPGRADE_TIME, ELEV_RANGE, CLASS_NAME, EFFECT, POWERUPS, NUKE, HOLE, DIFFICULTY, SPECS, PERKS, PERK_COST, WEATHER, TOWER_DMG, SHATTER, FROST, specCost, effectOf, upgradeCost, towerStats } from './config.js';
 import { LEVEL_SPECS, LEVEL_COUNT, getLevel, makeWaves, hpMultiplier } from './levels.js';
+import { CHAPTERS } from './level_specs.js';
 import { Assets, Models, drawIcon } from './assets.js';
 import { Renderer } from './render.js';
 import { Input } from './input.js';
@@ -80,6 +81,22 @@ for (const b of document.querySelectorAll('#diff-bar button')) b.onclick = () =>
   save.data.diff = +b.dataset.d; save.write(); sfx('click'); updateDiffBar(); renderLevels();
 };
 function levelUnlocked(i) { return freePlay() || i === 0 || (save.data.stars[i - 1] || 0) > 0; }
+function levelTile(L, i, showBiome) {
+  const stars = save.data.stars[i] || 0;
+  const dw = (save.data.diffWon || {})[i];
+  const locked = !levelUnlocked(i);
+  const btn = document.createElement('button');
+  btn.className = 'ltile' + (locked ? ' locked' : '') + (stars ? ' done' : '');
+  const n = 2 * L.M + 1;
+  btn.innerHTML = `<div class="lnum">${locked ? '🔒' : i + 1}</div><div class="lname">${L.name}</div>`
+    + `<div class="lmeta">${showBiome ? BIOMES[L.biome].name + ' · ' : `${n}×${n} · `}${L.paths} ${L.paths === 1 ? 'Pfad' : 'Pfade'}</div><div class="stars small">${starsHTML(stars)}</div>`
+    + (dw > 0 ? `<div class="ldiff d${dw}">${DIFFICULTY[dw].name}</div>` : '');
+  btn.onclick = () => {
+    if (locked) { sfx('error'); toast('Schließe zuerst den vorherigen Einsatz ab', 'bad'); return; }
+    sfx('click'); startLevel(i);
+  };
+  return { btn, stars };
+}
 function renderLevels() {
   const list = $('level-list');
   list.innerHTML = '';
@@ -92,23 +109,21 @@ function renderLevels() {
     const row = document.createElement('div');
     row.className = 'lrow';
     LEVEL_SPECS.forEach((L, i) => {
-      if (L.biome !== bid) return;
-      const stars = save.data.stars[i] || 0;
-      const dw = (save.data.diffWon || {})[i];
-      total += stars;
-      const locked = !levelUnlocked(i);
-      const btn = document.createElement('button');
-      btn.className = 'ltile' + (locked ? ' locked' : '') + (stars ? ' done' : '');
-      const n = 2 * L.M + 1;
-      btn.innerHTML = `<div class="lnum">${locked ? '🔒' : i + 1}</div><div class="lname">${L.name}</div>`
-        + `<div class="lmeta">${n}×${n} · ${L.paths} ${L.paths === 1 ? 'Pfad' : 'Pfade'}</div><div class="stars small">${starsHTML(stars)}</div>`
-        + (dw > 0 ? `<div class="ldiff d${dw}">${DIFFICULTY[dw].name}</div>` : '');
-      btn.onclick = () => {
-        if (locked) { sfx('error'); toast('Schließe zuerst den vorherigen Einsatz ab', 'bad'); return; }
-        sfx('click'); startLevel(i);
-      };
-      row.appendChild(btn);
+      if (L.biome !== bid || L.chapter) return;
+      const t = levelTile(L, i, false);
+      total += t.stars;
+      row.appendChild(t.btn);
     });
+    sec.appendChild(row);
+    list.appendChild(sec);
+  }
+  for (const [cid, ch] of Object.entries(CHAPTERS)) {
+    const sec = document.createElement('div');
+    sec.className = 'biome-sec';
+    sec.innerHTML = `<div class="biome-head" style="background-image:url(assets/tex/${BIOMES[ch.tex].ground}.jpg)"><span>${ch.name.toUpperCase()}</span><small>${ch.desc}</small></div>`;
+    const row = document.createElement('div');
+    row.className = 'lrow';
+    LEVEL_SPECS.forEach((L, i) => { if (L.chapter === cid) { const t = levelTile(L, i, true); total += t.stars; row.appendChild(t.btn); } });
     sec.appendChild(row);
     list.appendChild(sec);
   }
@@ -145,6 +160,14 @@ function makeIcons() {
     g.drawImage(m.img, (f % m.cols) * m.w, Math.floor(f / m.cols) * m.h, m.w, m.h, x - m.ax * sc, y - m.ay * sc, m.w * sc, m.h * sc);
     icons[k] = c.toDataURL('image/png');
   }
+  const bm = Models.meta('p3d_prop_barrier');
+  if (bm) {
+    const c = document.createElement('canvas');
+    c.width = 96; c.height = 96;
+    const g = c.getContext('2d'), sc = Math.min(88 / bm.w, 80 / bm.h);
+    g.drawImage(bm.img, 0, 0, bm.w, bm.h, 48 - bm.w * sc / 2, 48 - bm.h * sc / 2, bm.w * sc, bm.h * sc);
+    icons.barricade = c.toDataURL('image/png');
+  }
 }
 
 // ---------------- build drawer (bottom sheet) ----------------
@@ -161,6 +184,21 @@ function openBuildMenu(cx, cy) {
   const box = $('bd-cards');
   box.innerHTML = '';
   bmButtons = [];
+  if (game.canBarricade(cx, cy)) {
+    // road: only a barricade fits here - shown right away with the routes the machines would then take
+    ui.buildCell.road = true;
+    const b = document.createElement('button');
+    b.className = 'bd-card';
+    b.innerHTML = `<img src="${icons.barricade || ''}" alt=""><span class="bd-name">Barrikade</span><span class="bd-cost">${IC('credits')}${game.barricadeCost()}</span>`;
+    b.onclick = (e) => { e.stopPropagation(); chooseTower('barricade'); };
+    box.appendChild(b);
+    bmButtons.push({ el: b, k: 'barricade' });
+    $('builddrawer').classList.remove('hidden');
+    for (const id of ['btn-wave', 'btn-orbital', 'btn-nuke', 'btn-hole']) $(id).classList.add('under-drawer');
+    chooseTower('barricade');
+    requestAnimationFrame(() => ensureCellVisible(cx, cy));
+    return;
+  }
   for (const k of TOWER_ORDER.filter(k => game.unlocked(k))) {
     const def = TOWERS[k];
     const b = document.createElement('button');
@@ -199,8 +237,25 @@ function vsLine(k) {
   }[k];
   return (good.length ? `<span class="vs-good">▲ ${good.join(', ')}</span>` : '') + (special ? `<span class="vs-fx">${special}</span>` : '') + (bad.length ? `<span class="vs-bad">▼ ${bad.join(', ')}</span>` : '');
 }
+function chooseBarricade() {
+  const { x, y } = ui.buildCell;
+  if (ui.previewType === 'barricade' && ui.barricadeShown) { buildChosen(); return; }   // second tap builds
+  ui.previewType = 'barricade'; ui.barricadeShown = true;
+  bmButtons.forEach(o => o.el.classList.add('sel'));
+  const pr = game.previewRoutes(x, y), cost = game.barricadeCost(), n = game.barricades.length;
+  const hp = Math.round(BAR.hp * (1 + BAR.hpLvl * (game.level.power - 1)));
+  $('bd-info').innerHTML = `<b>Barrikade</b> <span class="bd-role">Bodentruppen umleiten oder aufhalten</span><br>` +
+    `<small>${pr.through ? '<b class="vs-bad">Kein Umweg:</b> die Maschinen bleiben davor stehen und müssen sie zerstören – Flugeinheiten fliegen drüber.'
+      : '<b class="vs-good">Umweg frei:</b> die Maschinen nehmen den grün markierten Weg.'}</small>` +
+    `<div class="bd-chips"><span>${IC('armor')} ${hp}</span><span>${n}/${BAR.max} gebaut</span></div>`;
+  const bb = $('bd-build');
+  bb.innerHTML = `BAUEN · ${IC('credits')}${cost}`;
+  bb.disabled = game.credits < cost || n >= BAR.max;
+  bb.classList.remove('hidden');
+}
 function chooseTower(k) {
   if (!game || !ui.buildCell) return;
+  if (k === 'barricade') { chooseBarricade(); sfx('click'); return; }
   const def = TOWERS[k];
   if (ui.previewType === k) { buildChosen(); return; }   // second tap on the same card builds
   ui.previewType = k;
@@ -221,12 +276,13 @@ function chooseTower(k) {
 function buildChosen() {
   if (!game || !ui.buildCell || !ui.previewType) return;
   const k = ui.previewType;
+  if (k === 'barricade') { if (game.buildBarricade(ui.buildCell.x, ui.buildCell.y)) closeBuildMenu(); return; }
   if (game.credits < TOWERS[k].cost) { sfx('error'); toast('Nicht genug Credits', 'bad', 1200); return; }
   const t = game.build(k, ui.buildCell.x, ui.buildCell.y);
   if (t) closeBuildMenu();
 }
 function closeBuildMenu() {
-  ui.buildCell = null; ui.previewType = null;
+  ui.buildCell = null; ui.previewType = null; ui.barricadeShown = false;
   $('builddrawer').classList.add('hidden');
   $('btn-wave').classList.remove('under-drawer');
   $('btn-orbital').classList.remove('under-drawer');
@@ -259,9 +315,31 @@ function closeTowerMenu() { ui.selected = null; $('towermenu').classList.add('hi
 
 const MODES = { first: 'Erster', strong: 'Stärkster', near: 'Nächster' };
 let tmCache = '';
+function updateBarricadeMenu(b, force) {
+  const rc = game.barricadeRepairCost(b), sv = game.barricadeSellValue(b);
+  const key = ['bar', b.id, Math.round(b.hp), rc, sv, game.credits >= rc].join('|');
+  if (!force && key === tmCache) return;
+  tmCache = key;
+  setHTML($('tm-name'), 'Barrikade');
+  $('tm-level').textContent = '';
+  $('tm-specs').classList.add('hidden');
+  $('tm-hpfill').style.width = `${Math.max(0, b.hp / b.maxHp) * 100}%`;
+  const blocked = game.enemies.filter(e => e.blocked).length;
+  setHTML($('tm-stats'), `<span>${IC('armor')} ${Math.ceil(b.hp)} / ${b.maxHp}</span>` + (blocked ? `<span class="tm-eff bad">${IC('damage')} ${blocked} Gegner rammen sie</span>` : `<span>rot: Weg der Maschinen</span>`));
+  $('tm-upgrade').classList.add('hidden');
+  $('tm-mode').classList.add('hidden');
+  $('tm-repair-all').classList.add('hidden');
+  const rp = $('tm-repair');
+  rp.classList.toggle('hidden', rc <= 0);
+  setHTML(rp, `${IC('wrench')} ${rc}`);
+  rp.disabled = game.credits < rc;
+  setHTML($('tm-sell'), `${IC('sell')} ABREISSEN +${sv}`);
+}
 function updateTowerMenu(force) {
   const t = ui.selected;
   if (!t || !game) return;
+  if (t.kind === 'barricade') { updateBarricadeMenu(t, force); return; }
+  $('tm-upgrade').classList.remove('hidden');
   const def = TOWERS[t.type];
   const s = t.stats, maxed = t.level >= MAX_LEVEL;
   const cost = maxed ? 0 : upgradeCost(t.type, t.level);
@@ -310,7 +388,7 @@ function updateTowerMenu(force) {
 // finger is replaced while the finger is down (the menu re-renders all the time while the tower takes hits)
 function setHTML(el, html) { if (el._html !== html) { el._html = html; el.innerHTML = html; } }
 function setElText(el, txt) { if (el._html !== txt) { el._html = txt; el.textContent = txt; } }
-$('tm-upgrade').onclick = (e) => { e.stopPropagation(); if (ui.selected && game.upgrade(ui.selected)) updateTowerMenu(true); };
+$('tm-upgrade').onclick = (e) => { e.stopPropagation(); if (ui.selected && !ui.selected.kind && game.upgrade(ui.selected)) updateTowerMenu(true); };
 // specialization: act on lifting the finger (pointerup) - more robust on iPhones than waiting for the
 // click; the click that follows (or a click from a mouse/keyboard) is only a fallback
 let specDown = null, specDone = 0;
@@ -338,7 +416,11 @@ $('tm-specs').onclick = (e) => {
 };
 function repairAllCost() { return game ? game.towers.reduce((a, o) => a + game.repairCost(o), 0) : 0; }
 $('tm-repair-all').onclick = (e) => { e.stopPropagation(); if (game) { const n = game.repairAll(); if (n) toast(`${n} Türme werden repariert`, '', 1500); updateTowerMenu(true); } };
-$('tm-repair').onclick = (e) => { e.stopPropagation(); if (ui.selected && game.repair(ui.selected)) updateTowerMenu(true); };
+$('tm-repair').onclick = (e) => {
+  e.stopPropagation();
+  const t = ui.selected; if (!t) return;
+  if (t.kind === 'barricade' ? game.repairBarricade(t) : game.repair(t)) updateTowerMenu(true);
+};
 $('tm-mode').onclick = (e) => {
   e.stopPropagation();
   const t = ui.selected; if (!t) return;
@@ -347,7 +429,12 @@ $('tm-mode').onclick = (e) => {
   t.target = null;
   sfx('click'); updateTowerMenu(true);
 };
-$('tm-sell').onclick = (e) => { e.stopPropagation(); if (ui.selected) { game.sell(ui.selected); closeTowerMenu(); } };
+$('tm-sell').onclick = (e) => {
+  e.stopPropagation();
+  const t = ui.selected; if (!t) return;
+  if (t.kind === 'barricade') game.sellBarricade(t); else game.sell(t);
+  closeTowerMenu();
+};
 
 function positionMenus() {
   if (!game) return;
@@ -400,7 +487,7 @@ function enemyIcon(type) {
 const SPEED_WORD = (v) => v < 0.6 ? 'langsam' : v < 1.0 ? 'mittel' : v < 1.5 ? 'schnell' : 'sehr schnell';
 function intelHTML(type) {
   const def = ENEMIES[type];
-  const lv = game ? game.level.number : 1, wv = game ? Math.max(1, game.wave) : 1;
+  const lv = game ? game.level.power : 1, wv = game ? Math.max(1, game.wave) : 1;
   const hp = Math.round(def.hp * hpMultiplier(lv, wv) / 10) * 10;
   const ab = [];
   if (def.air) ab.push(`${IC('wave')}Fliegt – nur Türme mit Luftabwehr können sie treffen`);
@@ -505,21 +592,22 @@ function onTap(p) {
     const sp = renderer.worldToScreen(d.wx, d.wy - 46);
     if (Math.hypot(sp.x - p.x, sp.y - p.y) < Math.max(34, 52 * renderer.cam.zoom)) { game.collect(d); return; }
   }
+  // boss marker at the screen edge: look at the boss
+  for (const m of renderer.bossMarks || []) if (Math.hypot(m.x - p.x, m.y - p.y) < 44) { closeBuildMenu(); closeTowerMenu(); lookAtBoss(m.e); return; }
   const c = renderer.screenToCell(p.x, p.y);
   const inMap = c.x >= 0 && c.y >= 0 && c.x < game.N && c.y < game.N;
-  const t = inMap ? game.towerAt(c.x, c.y) : null;
+  const t = inMap ? game.towerAt(c.x, c.y) || game.barricadeAt(c.x, c.y) : null;
   if (t) { if (ui.selected === t) closeTowerMenu(); else openTowerMenu(t); return; }
-  if (!(inMap && game.canBuild(c.x, c.y))) {
-
-  }
-  if (ui.buildCell && inMap && game.canBuild(c.x, c.y) && (c.x !== ui.buildCell.x || c.y !== ui.buildCell.y)) {
-    const keep = ui.previewType;
+  // free ground: towers; road: a barricade
+  const spot = inMap && (game.canBuild(c.x, c.y) || game.canBarricade(c.x, c.y));
+  if (ui.buildCell && spot && (c.x !== ui.buildCell.x || c.y !== ui.buildCell.y)) {
+    const keep = ui.previewType, road = game.canBarricade(c.x, c.y);
     openBuildMenu(c.x, c.y);
-    if (keep) chooseTower(keep);
+    if (keep && (keep === 'barricade') === road) chooseTower(keep);
     return;
   }
   if (ui.buildCell || ui.selected) { closeBuildMenu(); closeTowerMenu(); return; }
-  if (inMap && game.canBuild(c.x, c.y)) openBuildMenu(c.x, c.y);
+  if (spot) openBuildMenu(c.x, c.y);
 }
 // ---------------- long press: hold 5 s for a detailed explanation ----------------
 // (a ring fills around the finger; a normal tap never opens these, so nothing pops up by accident)
@@ -813,9 +901,13 @@ function showBanner(icon, name, desc, color) {
 // a boss arrives: banner + the camera glides over to it and back (cancelled as soon as you touch the map)
 let camTween = null;
 function bossIntro(e) {
-  showBanner('skull', e.def.name.toUpperCase(), e.def.air ? 'Fliegende Festung im Anflug' : 'Boss-Einheit im Anmarsch', '#ff5a3c');
+  showBanner('skull', e.def.name.toUpperCase(), (e.def.air ? 'Fliegende Festung im Anflug' : 'Boss-Einheit im Anmarsch') + ' – roter Pfeil am Rand antippen', '#ff5a3c');
+}
+// camera glides to the boss and stays with it a moment (tap on the boss marker at the screen edge)
+function lookAtBoss(e) {
   const c = renderer.cam;
-  camTween = { e, from: { x: c.x, y: c.y, z: c.zoom }, toZ: Math.min(renderer.maxZoom, Math.max(c.zoom, 0.95)), t: 0 };
+  camTween = { e, from: { x: c.x, y: c.y, z: c.zoom }, toZ: Math.min(renderer.maxZoom, Math.max(c.zoom, 0.95)), t: 0, stay: true };
+  sfx('click');
 }
 function updateCamTween(dt) {
   const tw = camTween;
@@ -826,6 +918,7 @@ function updateCamTween(dt) {
   const to = { x: tw.e.wx, y: tw.e.wy - (tw.e.air ? 160 : 130) };
   let k;
   if (tw.t < 0.8) k = ease(tw.t / 0.8);
+  else if (tw.stay) { camTween = null; return; }
   else if (tw.t < 2.4) k = 1;
   else if (tw.t < 3.2) k = 1 - ease((tw.t - 2.4) / 0.8);
   else { camTween = null; return; }
@@ -929,15 +1022,16 @@ function updateHUD() {
   if (b.disabled === enabled) b.disabled = !enabled;
   b.classList.toggle('attention', game.state === 'build');
   if (ui.buildCell) {
+    const priceOf = (k) => k === 'barricade' ? game.barricadeCost() : TOWERS[k].cost;
     for (const o of bmButtons) {
-      const poor = game.credits < TOWERS[o.k].cost;
+      const poor = game.credits < priceOf(o.k);
       if (o.el._poor !== poor) { o.el._poor = poor; o.el.classList.toggle('poor', poor); }
     }
-    if (ui.previewType) { const bb = $('bd-build'); const poor = game.credits < TOWERS[ui.previewType].cost; if (bb.disabled !== poor) bb.disabled = poor; }
-    if (!game.canBuild(ui.buildCell.x, ui.buildCell.y)) closeBuildMenu();
+    if (ui.previewType) { const bb = $('bd-build'); const poor = game.credits < priceOf(ui.previewType) || (ui.previewType === 'barricade' && game.barricades.length >= BAR.max); if (bb.disabled !== poor) bb.disabled = poor; }
+    if (ui.buildCell.road ? !game.canBarricade(ui.buildCell.x, ui.buildCell.y) : !game.canBuild(ui.buildCell.x, ui.buildCell.y)) closeBuildMenu();
   }
   if (ui.selected) {
-    if (!game.towers.includes(ui.selected)) closeTowerMenu();
+    if (ui.selected.kind === 'barricade' ? !game.barricades.includes(ui.selected) : !game.towers.includes(ui.selected)) closeTowerMenu();
     else updateTowerMenu(false);
   }
   positionMenus();
@@ -1056,6 +1150,8 @@ function processEvents() {
     else if (ev.type === 'bossSpawn') bossIntro(ev.e);
     else if (ev.type === 'towerDamaged') { if (!save.data.dmgHint) { save.data.dmgHint = true; save.write(); toast('Beschädigte Türme schießen schwächer – antippen und reparieren (kostet Credits und ein paar Sekunden)', 'warn', 4200); } }
     else if (ev.type === 'repaired') { if (ui.selected === ev.t) updateTowerMenu(true); }
+    else if (ev.type === 'barricade') toast(ev.detour ? 'Barrikade steht – die Maschinen nehmen den Umweg' : 'Barrikade steht – kein Umweg: Bodentruppen müssen sie durchbrechen', '', 2600);
+    else if (ev.type === 'barricadeLost') { if (ui.selected === ev.b) closeTowerMenu(); }
     else if (ev.type === 'nukeRepaired') toast('ABSCHUSSRAMPE REPARIERT – ATOMBOMBE BEREIT', 'warn', 2400);
     else if (ev.type === 'weather') { const W = WEATHER[ev.w]; showBanner(W.icon, W.name.toUpperCase(), W.desc, W.color); if (ui.selected) updateTowerMenu(true); }
     else if (ev.type === 'weatherEnd') { toast('Das Wetter klart auf', '', 1800); if (ui.selected) updateTowerMenu(true); }
@@ -1151,6 +1247,13 @@ async function startLevel(i, ch = null, restored = null) {
   if (game.orbital.on && !save.data.orbitalHint) {
     save.data.orbitalHint = true; save.write();
     setTimeout(() => toast('Neu: ORBITALSCHLAG – Knopf unten rechts, dann Ziel antippen', 'warn', 4500), 2600);
+  }
+  if (!save.data.barHint) {
+    save.data.barHint = true; save.write();
+    setTimeout(() => toast('Neu: BARRIKADEN – tippe auf die Straße. Gibt es einen Umweg, nehmen die Maschinen ihn, sonst müssen sie sich durchkämpfen', 'warn', 6000), 5200);
+  } else if (game.level.links && !save.data.detourHint) {
+    save.data.detourHint = true; save.write();
+    setTimeout(() => toast('Diese Karte hat Umwege: mit Barrikaden lenkst du die Maschinen auf den Weg, den du willst', 'warn', 5000), 2600);
   }
   maybeRotateHint();
 }

@@ -748,3 +748,6 @@ body.xray.beat #game { filter: grayscale(1) invert(1) brightness(0.8) contrast(3
 
 /* X-ray glitch frames: the picture jumps and tears for a moment */
 body.xray.glitch #game { transform: translate(7px, -3px) skewX(-3deg); filter: grayscale(1) invert(1) brightness(0.6) contrast(3.4) sepia(0.9) hue-rotate(140deg) saturate(4) brightness(1.4); }
+
+/* chapter header (Gegenoffensive): name + short description */
+.biome-head small { display: block; margin-left: 12px; font-family: var(--font); font-size: 12px; letter-spacing: 0.02em; font-weight: 600; opacity: 0.85; text-transform: none; letter-spacing: 0.02em; line-height: 1.1; }

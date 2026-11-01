@@ -4,6 +4,8 @@ import { toWorld, toGrid, mulberry32, clamp } from './iso.js';
 import { Assets, Models, drawIcon } from './assets.js';
 import { CELL } from './game.js';
 
+const BAR_SCALE = 1.3;
+
 // convex hull (monotone chain) of {x, y} points, counter-clockwise
 function convexHull(pts) {
   const p = pts.slice().sort((a, b) => a.x - b.x || a.y - b.y);
@@ -292,7 +294,7 @@ export class Renderer {
     g.beginPath();
     for (let i = 0; i <= N; i++) { g.moveTo(i * T, 0); g.lineTo(i * T, N * T); g.moveTo(0, i * T); g.lineTo(N * T, i * T); }
     g.stroke();
-    const polys = game.routes.map(r => r.pts.map(([x, y]) => [x * T, y * T]));
+    const polys = [...L.paths, ...(L.links || [])].map(r => r.pts.map(([x, y]) => [x * T, y * T]));
     const strokePolys = (ctx, width, style) => {
       ctx.lineJoin = 'round'; ctx.lineCap = 'round'; ctx.strokeStyle = style; ctx.lineWidth = width;
       for (const pl of polys) { ctx.beginPath(); ctx.moveTo(pl[0][0], pl[0][1]); for (let i = 1; i < pl.length; i++) ctx.lineTo(pl[i][0], pl[i][1]); ctx.stroke(); }
@@ -468,7 +470,11 @@ export class Renderer {
 
     const bz = ui.buildCell ? game.heightAt(ui.buildCell.x, ui.buildCell.y) * ELEV_PX : 0;
     if (ui.buildCell && !bz) this.drawBuildPreview(ctx, ui, 0);
-    if (ui.selected && !ui.selected.z) this.drawRange(ctx, ui.selected.gx, ui.selected.gy, ui.selected.stats.range, TOWERS[ui.selected.type].color, true, TOWERS[ui.selected.type].minRange);
+    const selBar = ui.selected && ui.selected.kind === 'barricade';
+    if (selBar) this.drawRoutes(ctx, game.routes, '255,80,55', 0.8);
+    // maps with detours / standing barricades: while building (or before the first wave) the way the machines take
+    else if ((game.level.links || game.barricades.length) && ui.previewType !== 'barricade' && (ui.buildCell || game.state === 'build')) this.drawRoutes(ctx, game.routes, '255,80,55', ui.buildCell ? 0.6 : 0.45);
+    if (ui.selected && !selBar && !ui.selected.z) this.drawRange(ctx, ui.selected.gx, ui.selected.gy, ui.selected.stats.range, TOWERS[ui.selected.type].color, true, TOWERS[ui.selected.type].minRange);
 
     const fx = Assets.fx;
     // ground pass: baked 3D shadows (key light from the upper left) for static objects and towers
@@ -477,6 +483,7 @@ export class Renderer {
     for (const p of game.decor) if (!p.z) Models.drawShadow(ctx, p.model, p.rot, p.wx, p.wy, p.s);
     Models.drawShadow(ctx, 'p3d_base_hq', 0, game.baseW.x, game.baseW.y);
     for (const g of game.gates) Models.drawShadow(ctx, 'p3d_spawn_gate', g.rot, g.x, g.y);
+    for (const b of game.barricades) Models.drawShadow(ctx, 'p3d_prop_barrier', b.rot, b.wx, b.wy, BAR_SCALE);
     for (const t of game.towers) {
       if (t.z) continue;
       const TS = TOWER_SCALE * (1 + 0.08 * ((t.level || 1) - 1));
@@ -502,6 +509,7 @@ export class Renderer {
     for (const p of game.props) list.push({ y: p.wy + (p.z || 0), o: p, k: 0 });
     for (const p of game.decor) list.push({ y: p.wy + (p.z || 0), o: p, k: 0 });
     for (const t of game.towers) list.push({ y: t.wy + (t.z || 0), o: t, k: 1 });
+    for (const b of game.barricades) list.push({ y: b.wy, o: b, k: 7 });
     for (const b of this.blocks) {
       list.push({ y: b.cy - HH - 0.6, o: b, k: 5 });
       if (b.side) list.push({ y: b.cy - 0.5, o: b, k: 6 });
@@ -519,6 +527,7 @@ export class Renderer {
       else if (it.k === 2) this.drawEnemy(ctx, it.o);
       else if (it.k === 3) Models.draw(ctx, 'p3d_base_hq', 0, it.o.x, it.o.y);
       else if (it.k === 4) this.drawGate(ctx, it.o);
+      else if (it.k === 7) this.drawBarricade(ctx, it.o, ui);
     }
     // units behind high ground: a faint silhouette on top (drawing a sprite over itself changes nothing where it is visible)
     ctx.globalAlpha = 0.32;
@@ -531,7 +540,7 @@ export class Renderer {
     }
     ctx.globalAlpha = 1;
     if (ui.buildCell && bz) this.drawBuildPreview(ctx, ui, bz);
-    if (ui.selected && ui.selected.z) this.drawRange(ctx, ui.selected.gx, ui.selected.gy, ui.selected.stats.range, TOWERS[ui.selected.type].color, true, TOWERS[ui.selected.type].minRange, ui.selected.z);
+    if (ui.selected && !selBar && ui.selected.z) this.drawRange(ctx, ui.selected.gx, ui.selected.gy, ui.selected.stats.range, TOWERS[ui.selected.type].color, true, TOWERS[ui.selected.type].minRange, ui.selected.z);
     const air = game.enemies.filter(e => e.air).sort((a, b) => a.wy - b.wy);
     for (const e of air) this.drawEnemy(ctx, e);
 
@@ -548,6 +557,7 @@ export class Renderer {
     if (!xray) game.fx.draw(ctx);
     for (const e of game.enemies) this.drawHp(ctx, e);
     for (const t of game.towers) if (t.hp < t.stats.hp) this.drawTowerHp(ctx, t);
+    for (const b of game.barricades) if (b.hp < b.maxHp) this.drawBarHp(ctx, b);
     if (game.lives < game.maxLives * 0.5 && Math.random() < dt * 8) game.fx.smoke(game.baseW.x + (Math.random() - 0.5) * 80, game.baseW.y - 60, 1, 30, 2, true);
 
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -1045,17 +1055,52 @@ export class Renderer {
     const ins = this.insets, x0 = ins.left + 18, x1 = this.vw - ins.right - 18, y0 = ins.top + 18, y1 = this.vh - Math.max(ins.bottom, 0) - 18;
     const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
     const bins = new Map();
+    const bosses = [];
+    this.bossMarks = [];
     for (const e of game.enemies) {
+      if (!e.alive) continue;
       const p = this.worldToScreen(e.wx, e.wy - 30);
       if (p.x > x0 - 10 && p.x < x1 + 10 && p.y > y0 - 10 && p.y < y1 + 10) continue;
+      if (e.def.boss) { bosses.push({ e, p }); continue; }
       const a = Math.atan2(p.y - cy, p.x - cx);
       const k = Math.round(a / (Math.PI / 12));
       const b = bins.get(k);
       if (b) { b.n++; if (e.def.boss) b.boss = true; } else bins.set(k, { a, n: 1, boss: !!e.def.boss });
     }
     const crates = game.drops.map(d => ({ d, p: this.worldToScreen(d.wx, d.wy - 46) })).filter(({ p }) => p.x < x0 - 10 || p.x > x1 + 10 || p.y < y0 - 10 || p.y > y1 + 10);
-    if (!bins.size && !crates.length) return;
+    if (!bins.size && !crates.length && !bosses.length) return;
     const pul = 0.65 + 0.35 * Math.sin(this.time * 6);
+    // bosses: a big pulsing marker with a skull at the screen edge, pointing at the boss (tap: camera goes there)
+    // own frame: below the boss bar and the hints at the top, clear of the weapon buttons on the right
+    const bx0 = x0 + 26, bx1 = Math.min(x1, this.vw - this.insets.right - 112) - 26, by0 = y0 + 112, by1 = y1 - 30;
+    const bcx = (bx0 + bx1) / 2, bcy = (by0 + by1) / 2;
+    for (const { e, p } of bosses) {
+      const a = Math.atan2(p.y - bcy, p.x - bcx), dx = Math.cos(a), dy = Math.sin(a);
+      const t = Math.min(dx ? (dx > 0 ? bx1 - bcx : bx0 - bcx) / dx : 1e9, dy ? (dy > 0 ? by1 - bcy : by0 - bcy) / dy : 1e9);
+      const x = bcx + dx * t, y = bcy + dy * t;
+      const beat = 1 + 0.12 * Math.max(0, Math.sin(this.time * 7));
+      ctx.save();
+      // glow + ring
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.globalAlpha = 0.55;
+      ctx.drawImage(Assets.fx.red, x - 60 * beat, y - 60 * beat, 120 * beat, 120 * beat);
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.globalAlpha = 1;
+      // arrow head towards the boss
+      ctx.translate(x, y); ctx.rotate(a);
+      ctx.beginPath(); ctx.moveTo(46 * beat, 0); ctx.lineTo(22, -19); ctx.lineTo(22, 19); ctx.closePath();
+      ctx.fillStyle = '#ff3b1f'; ctx.fill(); ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,0.8)'; ctx.stroke();
+      ctx.rotate(-a);
+      ctx.beginPath(); ctx.arc(0, 0, 24 * beat, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(20,6,4,0.92)'; ctx.fill();
+      ctx.lineWidth = 3.5; ctx.strokeStyle = '#ff3b1f'; ctx.stroke();
+      drawIcon(ctx, 'skull', 0, 0, 34 * beat);
+      ctx.font = '700 12px Orbitron, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+      ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,0.85)'; ctx.strokeText('BOSS', 0, 28 * beat);
+      ctx.fillStyle = '#ffd0c0'; ctx.fillText('BOSS', 0, 28 * beat);
+      ctx.restore();
+      this.bossMarks.push({ x, y, e });
+    }
     // crate markers stay clear of the ability buttons on the right edge
     const cx1 = Math.min(x1, this.vw - this.insets.right - 100), ccx = (x0 + cx1) / 2;
     for (const { d, p } of crates) {
@@ -1131,6 +1176,16 @@ export class Renderer {
     ctx.beginPath(); this.cellPath(ctx, x, y, 0.04, z);
     ctx.fillStyle = `rgba(90,255,150,${pulse})`; ctx.fill();
     ctx.strokeStyle = '#6dff9d'; ctx.lineWidth = 2.5; ctx.stroke();
+    if (ui.previewType === 'barricade') {
+      const key = `${x},${y}|${this.game.barricades.map(b => b.cx + ',' + b.cy).join(';')}`;
+      if (!this._prevRoutes || this._prevRoutes.key !== key) this._prevRoutes = { key, pr: this.game.previewRoutes(x, y) };
+      const pr = this._prevRoutes.pr, w = toWorld(x + 0.5, y + 0.5);
+      this.drawRoutes(ctx, pr.routes, pr.through ? '255,90,70' : '120,255,170', 0.95);
+      ctx.globalAlpha = 0.75;
+      Models.draw(ctx, 'p3d_prop_barrier', this.game.isRoad(x - 1, y) || this.game.isRoad(x + 1, y) ? 0 : 1, w.x, w.y, BAR_SCALE);
+      ctx.globalAlpha = 1;
+      return;
+    }
     if (ui.previewType) {
       const def = TOWERS[ui.previewType];
       this.drawRange(ctx, x + 0.5, y + 0.5, this.game.statsFor(ui.previewType, 1, x, y).range, def.color, false, def.minRange, z);
@@ -1139,6 +1194,41 @@ export class Renderer {
       this.drawTower(ctx, { def, type: ui.previewType, wx: w.x, wy: w.y - z, ang: Math.PI / 4, recoil: 0, built: 1, level: 1, ghost: true }, ui);
       ctx.globalAlpha = 1;
     }
+  }
+  // the ways the machines take (gate -> HQ): moving chevrons along the route
+  drawRoutes(ctx, routes, rgb, alpha) {
+    ctx.save();
+    ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    for (const r of routes) {
+      ctx.beginPath();
+      r.seg.forEach((s, i) => {
+        const a = toWorld(s.ax, s.ay), b = toWorld(s.ax + s.dx * s.len, s.ay + s.dy * s.len);
+        if (i === 0) ctx.moveTo(a.x, a.y);
+        ctx.lineTo(b.x, b.y);
+      });
+      ctx.strokeStyle = `rgba(0,0,0,${0.35 * alpha})`; ctx.lineWidth = 9; ctx.stroke();
+      ctx.setLineDash([16, 18]); ctx.lineDashOffset = -this.time * 60;
+      ctx.strokeStyle = `rgba(${rgb},${alpha})`; ctx.lineWidth = 5; ctx.stroke();
+      ctx.setLineDash([]);
+    }
+    ctx.restore();
+  }
+  drawBarricade(ctx, b, ui) {
+    const hit = this.game.time - b.hitT < 0.12;
+    Models.draw(ctx, 'p3d_prop_barrier', b.rot, b.wx + (hit ? (Math.random() - 0.5) * 3 : 0), b.wy, BAR_SCALE);
+    if (ui.selected === b || hit) {
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.globalAlpha = hit ? 0.35 : 0.18 + 0.08 * Math.sin(this.time * 5);
+      Models.draw(ctx, 'p3d_prop_barrier', b.rot, b.wx, b.wy, BAR_SCALE);
+      ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
+    }
+    // badly damaged: smoke
+    if (b.hp < b.maxHp * 0.4 && Math.random() < 0.08) this.game.fx.smoke(b.wx + (Math.random() - 0.5) * 50, b.wy - 20, 1, 18, 1.4);
+  }
+  drawBarHp(ctx, b) {
+    const w = 50, x = b.wx - w / 2, y = b.wy + 20, r = Math.max(0, b.hp / b.maxHp);
+    ctx.fillStyle = 'rgba(0,0,0,0.7)'; ctx.fillRect(x - 1, y - 1, w + 2, 6);
+    ctx.fillStyle = r > 0.5 ? '#ffd27a' : r > 0.25 ? '#ff9a2e' : '#ff3b30'; ctx.fillRect(x, y, w * r, 4);
   }
   drawRange(ctx, gx, gy, r, color, strong, minR, z = 0) {
     const c = toWorld(gx, gy);

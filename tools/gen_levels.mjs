@@ -1,4 +1,4 @@
-// Generates the 25 level maps -> js/levels_data.js
+// Generates the level maps -> js/levels_data.js
 //   node tools/gen_levels.mjs
 // Paths are self-avoiding walks on a coarse grid (cell i -> tile 2i+1), so parallel road
 // segments always keep at least one buildable tile between them.
@@ -131,10 +131,43 @@ function genLevel(spec) {
       p.forEach(c => used.add(K(...c)));
     }
     if (!ok) continue;
+    // ---- alternative roads (newer missions): a second way between two points of the main route, so
+    // barricades can steer the enemies. Some detours are longer than the main road, some shorter. ----
+    const links = [];
+    for (let k = 0; k < (spec.bypass || 0) && ok; k++) {
+      let made = null;
+      for (let tries = 0; tries < 40 && !made; tries++) {
+        const a = 2 + Math.floor(r() * Math.max(1, main.length - 9));
+        const span = 3 + Math.floor(r() * 5);
+        const bIdx = Math.min(main.length - 3, a + span);
+        if (bIdx - a < 3) continue;
+        const starts = DIRS.map(([dx, dy]) => [main[a][0] + dx, main[a][1] + dy]).filter(c => c[0] >= 0 && c[1] >= 0 && c[0] < M && c[1] < M && !used.has(K(...c)));
+        if (!starts.length) continue;
+        const st = starts[Math.floor(r() * starts.length)];
+        const goalIdx = (c) => { for (const [dx, dy] of DIRS) { const j = idx.get(K(c[0] + dx, c[1] + dy)); if (j !== undefined && j >= a + 3 && j <= bIdx + 2) return j; } return -1; };
+        // even: a longer way round (barricade the main road to send them on a tour past more towers);
+        // odd: a shortcut (they take it by default - barricade it and they have to walk the long way)
+        const short = k % 2 === 1 && tries < 25;
+        const maxL = short ? bIdx - a + 1 : (bIdx - a) * 2 + 4;
+        const fits = (c, path) => {
+          const j = goalIdx(c);
+          if (j < 0 || path.length < 3) return false;
+          return short ? path.length + 1 <= j - a - 1 : path.length + 1 >= j - a + 2;
+        };
+        const p = walk(M, st, fits, 3, maxL, [...used], r, { maxRun: 3 });
+        if (!p) continue;
+        const j = goalIdx(p[p.length - 1]);
+        made = [main[a], ...p, main[j]];
+      }
+      if (!made) { ok = false; break; }
+      made.slice(1, -1).forEach(c => used.add(K(...c)));
+      links.push(made);
+    }
+    if (!ok) continue;
     // spawn gates must not overlap foreign road cells
     const N = 2 * M + 1;
     const grid = Array.from({ length: N }, () => new Array(N).fill(0)); // 0 free 1 road 3 spawn 4 base
-    for (const rt of routes) for (const [x, y] of roadCells(rt)) grid[y][x] = 1;
+    for (const rt of [...routes, ...links]) for (const [x, y] of roadCells(rt)) grid[y][x] = 1;
     const block = (c) => [[0, 0], [1, 0], [0, 1], [1, 1]].map(([dx, dy]) => [2 * c[0] + 1 + dx, 2 * c[1] + 1 + dy]);
     let clash = false;
     const spawns = routes.map(rt => rt[0]);
@@ -236,6 +269,7 @@ function genLevel(spec) {
         pts: compress(rt.map(fineCenter)),
         cells: roadCells(rt),
       })),
+      ...(links.length ? { links: links.map(rt => ({ pts: compress(rt.map(fineCenter)), cells: roadCells(rt) })) } : {}),
       props,
       elev,
       near,
@@ -248,7 +282,7 @@ function genLevel(spec) {
 const maps = LEVEL_SPECS.map((s, i) => {
   const m = genLevel(s);
   const len = m.paths.map(p => p.cells.length);
-  console.log(`${String(i + 1).padStart(2)} ${s.name.padEnd(24)} N=${m.N} routes=${m.paths.length} len=${len.join('/')} nearRoad=${m.near} props=${m.props.length} (try ${m.attempt})`);
+  console.log(`${String(i + 1).padStart(2)} ${s.name.padEnd(24)} N=${m.N} routes=${m.paths.length} len=${len.join('/')}${m.links ? ' detours=' + m.links.map(l => l.cells.length).join('/') : ''} nearRoad=${m.near} props=${m.props.length} (try ${m.attempt})`);
   delete m.near; delete m.attempt;
   return m;
 });

@@ -2,7 +2,7 @@
 
 Isometrisches Tower Defense im Browser, gebaut für das iPhone (Touch, Safe Areas, Hoch- und Querformat, „Zum Home-Bildschirm“ als Vollbild-App).
 
-**Szenario:** Jahr 2049. Eine KI-Maschinenarmee aus Chrom-Endoskeletten, Spinnendrohnen, Jagdpanzern, Gunships und Mutterschiffen marschiert auf das letzte Hauptquartier der Menschheit. Du verteidigst es mit futuristischen Militärtürmen – in 25 Einsätzen auf 5 Kriegsschauplätzen.
+**Szenario:** Jahr 2049. Eine KI-Maschinenarmee aus Chrom-Endoskeletten, Spinnendrohnen, Jagdpanzern, Gunships und Mutterschiffen marschiert auf das letzte Hauptquartier der Menschheit. Du verteidigst es mit futuristischen Militärtürmen – in 40 Einsätzen auf 6 Kriegsschauplätzen.
 
 ▶ **Spielen:** https://marcelweissgerberit.github.io/towerdefense/
 
@@ -25,7 +25,9 @@ Isometrisches Tower Defense im Browser, gebaut für das iPhone (Touch, Safe Area
 
 Das Spiel selbst ist reines HTML5 Canvas 2D + ES-Module ohne Build-Schritt und läuft flüssig auf dem iPhone.
 
-**Offline & Fortsetzen:** `sw.js` (Service Worker) hält alle Spieldateien auf dem Gerät; `tools/gen_sw.mjs` schreibt bei jedem Deploy die Dateiliste mit Inhalts-Hashes hinein (läuft im Pages-Workflow), sodass nach einem Update nur geänderte Dateien neu geladen werden. **Musik:** vier mit OpenArt (Wan 3.0, Video mit Tonspur) erzeugte Stücke in d-Moll – Bauphase, zwei Gefechts-Themen im Wechsel pro Welle, Boss. `tools/make_music.py` schneidet daraus nahtlose Schleifen über ganze Takte (Rhythmus- und Harmonie-Abgleich an der Naht, Überblendung, Lautheit), das Spiel blendet je nach Lage über. Eine laufende Mission wird alle paar Sekunden und beim Wechsel in den Hintergrund lokal gespeichert und lässt sich im Hauptmenü fortsetzen.
+**Offline & Fortsetzen:** `sw.js` (Service Worker) hält alle Spieldateien auf dem Gerät; `tools/gen_sw.mjs` schreibt bei jedem Deploy die Dateiliste mit Inhalts-Hashes hinein (läuft im Pages-Workflow), sodass nach einem Update nur geänderte Dateien neu geladen werden. **Barrikaden & Gegenoffensive:** Gegner laufen den günstigsten Weg durchs Straßennetz (Dijkstra über die Straßenfelder); eine Barrikade zählt als 40 Felder Umweg – mit freiem Umweg wird sie umgangen, sonst bleiben Bodentruppen davor stehen und rammen sie. Die 10 Einsätze der „Gegenoffensive“ (31–40) haben Straßennetze mit Umwegen und Abkürzungen (`tools/gen_levels.mjs`, `bypass` in `js/level_specs.js`); `power` legt dort die Gegnerstärke fest. `BAR=1 node tools/balance_sim.mjs 31 40` lässt den Bot Barrikaden für die längsten Umwege setzen.
+
+**Musik:** vier mit OpenArt (Wan 3.0, Video mit Tonspur) erzeugte Stücke in d-Moll – Bauphase, zwei Gefechts-Themen im Wechsel pro Welle, Boss. `tools/make_music.py` schneidet daraus nahtlose Schleifen über ganze Takte (Rhythmus- und Harmonie-Abgleich an der Naht, Überblendung, Lautheit), das Spiel blendet je nach Lage über. Eine laufende Mission wird alle paar Sekunden und beim Wechsel in den Hintergrund lokal gespeichert und lässt sich im Hauptmenü fortsetzen.
 
 ## Lokal starten
 ```bash
