@@ -1,6 +1,6 @@
 // Core simulation: grid, routes, towers (turret aiming), enemies (attack towers), projectiles, waves.
 import {
-  HW, TOWERS, ENEMIES, BIOMES, BOSS, BAR, SPECS, PERKS, WEATHER, BIOME_WEATHER, WEATHER_CFG, TOWER_DMG, specCost, EFFECT, FROST, SHATTER, THERMAL, ACID_ARMOR, NUKE, POWERUPS, DROP, HOLE, ELEV_PX, ELEV_RANGE, MAX_LEVEL, TOWER_SCALE, UPGRADE_TIME, WAVE_GAP, SELL_RATE, FULL_REFUND_TIME, towerStats, upgradeCost, totalInvested,
+  HW, TOWERS, ENEMIES, BIOMES, BOSS, BAR, resistOf, SPECS, PERKS, WEATHER, BIOME_WEATHER, WEATHER_CFG, TOWER_DMG, specCost, EFFECT, FROST, SHATTER, THERMAL, ACID_ARMOR, NUKE, POWERUPS, DROP, HOLE, ELEV_PX, ELEV_RANGE, MAX_LEVEL, TOWER_SCALE, UPGRADE_TIME, WAVE_GAP, SELL_RATE, FULL_REFUND_TIME, towerStats, upgradeCost, totalInvested,
 } from './config.js';
 import { getLevel, makeWaves, makeBossRush, hpMultiplier } from './levels.js';
 import { toWorld, rand, mulberry32 } from './iso.js';
@@ -549,7 +549,8 @@ export class Game {
   spawn(type, routeIdx, hpMul, rewardMul, startD = 0) {
     const def = ENEMIES[type];
     // a gate's route by index, or the route object of the unit that launches / releases this one
-    const route = routeIdx && typeof routeIdx === 'object' ? routeIdx : this.routes[routeIdx] || this.routes[0];
+    const gateRoutes = (this.routesBy && this.routesBy[this.pathKind(def)]) || this.routes;
+    const route = routeIdx && typeof routeIdx === 'object' ? routeIdx : gateRoutes[routeIdx] || gateRoutes[0];
     const hp = Math.round(def.hp * hpMul);
     const p = routePos(route, startD);
     const w = toWorld(p.x, p.y);
@@ -573,10 +574,11 @@ export class Game {
   // ---------------- damage to enemies ----------------
   damage(e, raw, opts = {}) {
     if (!e.alive) return 0;
+    if (e.burrowed && !opts.ignoreArmor) return 0;               // under the sand: only special weapons reach it
     if (e.cloaked && !opts.dot) e.revealT = Math.max(e.revealT, 0.8);
     // tower effectiveness against the enemy class (light / armoured / heavy / air)
     const src = opts.src;
-    let mult = src && src.type && EFFECT[src.type] ? (EFFECT[src.type][e.def.cls] ?? 1) : 1;
+    let mult = src && src.type && EFFECT[src.type] ? (EFFECT[src.type][e.def.cls] ?? 1) * resistOf(src.type, e.def) : 1;
     if (src && src.rank) mult *= 1 + 0.08 * src.rank;            // veteran towers
     if (src && src.stats && src.hp != null) mult *= this.towerEff(src);   // damaged towers hit softer
     if (e.frozenT > 0 && src && SHATTER.towers.includes(src.type)) {
@@ -610,7 +612,7 @@ export class Game {
 
   // frost build-up: slows, at 100 % the machine freezes solid (bosses only slow down)
   chill(e, amt) {
-    if (!e.alive || e.frozenT > 0) return;
+    if (!e.alive || e.frozenT > 0 || e.def.frostImmune || e.burrowed) return;
     e.frost = Math.min(FROST.max, e.frost + amt * (e.freezeImm > 0 ? 0.4 : 1));
     e.frostHit = this.time;
     if (e.frost >= FROST.max && !e.def.boss && e.freezeImm <= 0) {
@@ -635,6 +637,21 @@ export class Game {
       const b = e.def.burst;
       for (let i = 0; i < b.count; i++) { const c = this.spawn(b.type, e.route, e.hpMul * 0.7, 0.4, Math.max(0, e.d - 0.15 - i * 0.12)); c.off = rand(-0.35, 0.35); }
       this.fx.add({ k: 'glow', x: e.wx, y: e.wy - 30, s: 140, life: 0.4, spr: 'orange' });
+    }
+    // scrap collector nearby: every few wrecks it builds spider drones (and patches itself up)
+    if (!e.def.scrap && !e.air) for (const s of this.enemies) {
+      if (!s.alive || !s.def.scrap || (s.gx - e.gx) ** 2 + (s.gy - e.gy) ** 2 > s.def.scrap.range ** 2) continue;
+      const S = s.def.scrap;
+      s.scrap = (s.scrap || 0) + 1;
+      this.fx.add({ k: 'line', x1: e.wx, y1: e.wy - 18, x2: s.wx, y2: this.bodyY(s), w: 2.5, life: 0.35, c: 'rgba(255,190,90,' });
+      if (s.scrap >= S.need) {
+        s.scrap -= S.need;
+        for (let i = 0; i < S.count; i++) { const c = this.spawn('spider', s.route, s.hpMul * 0.8, 0.5, Math.max(0, s.d - 0.25 - i * 0.25)); c.off = rand(-0.3, 0.3); }
+        s.hp = Math.min(s.maxHp, s.hp + s.maxHp * S.heal);
+        this.fx.sparks(s.wx, this.bodyY(s), 14, '#ffc070', 200);
+        this.fx.text(s.wx, this.bodyY(s) - 60, 'SCHROTT → SPINNEN', '#ffc070');
+      }
+      break;
     }
     if (src) {
       src.kills++;
@@ -778,8 +795,9 @@ export class Game {
     // EMP towers expose cloaked infiltrators in their range
     if (def.kind === 'emp') for (const e of this.enemiesInRange(t.gx, t.gy, s.range, true, true)) if (e.cloaked) e.revealT = Math.max(e.revealT, 0.4);
     if (t.target && t.target.cloaked && t.target.revealT <= 0 && !this.cloakOff(t.target)) t.target = null;
+    if (t.target && t.target.burrowed) t.target = null;
     if (!t.target || t.retarget <= 0) {
-      const list = this.enemiesInRange(t.gx, t.gy, s.range, def.air, def.ground, def.minRange || 0).filter(e => !e.cloaked || e.revealT > 0 || this.cloakOff(e));
+      const list = this.enemiesInRange(t.gx, t.gy, s.range, def.air, def.ground, def.minRange || 0).filter(e => !e.burrowed && (!e.cloaked || e.revealT > 0 || this.cloakOff(e)));
       const nt = this.pickTarget(t, list);
       if (nt !== t.target) { t.target = nt; t.beamT = 0; }
       t.retarget = 0.25;
@@ -830,7 +848,7 @@ export class Game {
         const a = Math.atan2(e.gy - t.gy, e.gx - t.gx);
         if (Math.abs(angDiff(t.ang, a)) <= cone / 2 + 0.12) {
           this.damage(e, s.dps * dt * odm, { src: t });
-          e.burnT = def.burnDur; e.burnDps = Math.max(e.burnDps, s.burn);
+          if (!e.def.burnImmune) { e.burnT = def.burnDur; e.burnDps = Math.max(e.burnDps, s.burn); }
           // thermal shock: fire on a deep-frozen machine cracks it open
           if (e.alive && (e.frost >= THERMAL.frost || e.frozenT > 0) && this.time > (e.thermalCd || 0)) {
             e.thermalCd = this.time + 4;
@@ -1015,7 +1033,7 @@ export class Game {
       if (!e.alive) return;
     }
     // acid puddles on the road
-    if (!e.air && this.puddles.length) {
+    if (!e.air && !e.burrowed && this.puddles.length) {
       e.puddleCd -= dt;
       if (e.puddleCd <= 0) for (const p of this.puddles) {
         if ((e.gx - p.gx) ** 2 + (e.gy - p.gy) ** 2 <= p.r * p.r) { this.corrode(e, p.dps, p.src); e.puddleCd = 0.8; break; }
@@ -1076,16 +1094,49 @@ export class Game {
     if (this.buffs.timestop > 0) sp *= def.boss ? 0.3 : 0;
     if (e.holeSlow) { sp *= 1 - e.holeSlow; e.holeSlow = 0; }
     if (this.weather) { const W = WEATHER[this.weather.type]; sp *= (e.air ? W.airSpeed : W.speed) || 1; }
+    // sand burrower: digs in every few seconds - faster and out of reach underground
+    if (def.burrow) {
+      e.burrowT = (e.burrowT ?? def.burrow.every * 0.6) - dt;
+      if (e.burrowT <= 0) { if (e.burrowed) this.surface(e); else this.burrowDown(e); }
+      if (e.burrowed) { sp *= def.burrow.speed; if (Math.random() < dt * 9) this.fx.footDust(e.wx + rand(-8, 8), e.wy, 0.7); }
+    }
+    // climber: over a barricade it slows down and climbs (lifted in the drawing)
+    if (def.climb) {
+      const over = this._barAt && this._barAt.has(this.idx(Math.floor(e.gx), Math.floor(e.gy)));
+      e.climbH = (e.climbH || 0) + ((over ? 1 : 0) - (e.climbH || 0)) * Math.min(1, dt * 8);
+      if (over) sp *= 0.55;
+    }
     // a barricade in the way (no detour): stop in front of it and smash it
     e.blocked = false;
-    if (!e.air && sp > 0 && this.barricades.length) {
+    if (!e.air && sp > 0 && this.barricades.length && !def.climb && !e.burrowed) {
       const b = this.barricadeAhead(e);
-      if (b) {
+      if (b && def.burrow) this.burrowDown(e);      // the burrower tunnels underneath instead
+      else if (b) {
         sp = 0; e.blocked = true;
-        const dps = (BAR.ram + def.cost * BAR.ramCost) * Math.sqrt(e.hpMul) * (def.boss ? BAR.boss : 1);
+        const dps = (BAR.ram + def.cost * BAR.ramCost) * Math.sqrt(e.hpMul) * (def.boss ? BAR.boss : 1) * (def.ram || 1);
         this.damageBarricade(b, dps * dt);
-        if (Math.random() < dt * 3) this.fx.sparks(b.wx + rand(-26, 26), b.wy - rand(8, 34), 3, '#ffd29a', 150);
+        if (Math.random() < dt * (def.ram ? 9 : 3)) this.fx.sparks(b.wx + rand(-26, 26), b.wy - rand(8, 34), def.ram ? 6 : 3, '#ffd29a', def.ram ? 260 : 150);
+        if (def.ram && b.rammedBy !== e.id) { b.rammedBy = e.id; this.fx.shake = Math.max(this.fx.shake, 7); this.fx.text(b.wx, b.wy - 70, 'RAMMSTOSS!', '#ffb050'); sfx('explosion'); }
       }
+    }
+    // auras: the icebreaker thaws machines around it, the magma walker's heat wears down towers
+    if (def.thaw || def.heat) {
+      e.auraT = (e.auraT || 0) - dt;
+      if (e.auraT <= 0) {
+        e.auraT = 0.5;
+        if (def.thaw) for (const o of this.enemiesInRange(e.gx, e.gy, def.thaw.range, true, true)) {
+          if (o.frost <= 0 && o.frozenT <= 0) continue;
+          o.frost = Math.max(0, o.frost - 50);
+          if (o.frozenT > 0) { o.frozenT = 0; o.freezeImm = FROST.immune; }
+          this.fx.smoke(o.wx, this.bodyY(o), 1, 16, 1.2, true);
+        }
+        if (def.heat) for (const t of this.towers) {
+          if ((t.gx - e.gx) ** 2 + (t.gy - e.gy) ** 2 > def.heat.range ** 2) continue;
+          this.damageTower(t, def.heat.dps * 0.5 * Math.pow(e.hpMul, 0.3));
+          if (Math.random() < 0.5) this.fx.add({ k: 'glow', x: t.wx, y: t.wy - 30, s: 70, life: 0.4, spr: 'orange' });
+        }
+      }
+      if (def.heat && Math.random() < dt * 5) this.fx.burn(e.wx + rand(-16, 16), e.wy - rand(0, 10));
     }
     e.d += sp * dt;
     // footfalls: two per animation cycle (or per configured stride for unanimated gaits)
@@ -1617,9 +1668,8 @@ export class Game {
   isRoad(x, y) { return x >= 0 && y >= 0 && x < this.N && y < this.N && this.road[this.idx(x, y)] === 1; }
   barricadeAt(x, y) { return this.barricades.find(b => b.cx === x && b.cy === y) || null; }
   // cost of the cheapest way from every road tile to the HQ (Dijkstra; entering a barricade tile costs extra)
-  computeFlow() {
+  computeFlow(detour = BAR.detour) {
     const N = this.N, dist = new Float64Array(N * N).fill(Infinity), done = new Uint8Array(N * N);
-    this._barAt = new Map(this.barricades.filter(b => b.hp > 0).map(b => [this.idx(b.cx, b.cy), b]));
     const [bx, by] = this.level.base;
     const open = [this.idx(bx, by)];
     dist[open[0]] = 0;
@@ -1630,7 +1680,7 @@ export class Game {
       if (done[u]) continue;
       done[u] = 1;
       const ux = u % N, uy = (u / N) | 0;
-      const step = 1 + (this._barAt.has(u) ? BAR.detour : 0);    // what it costs to walk INTO tile u
+      const step = 1 + (this._barAt.has(u) ? detour : 0);    // what it costs to walk INTO tile u
       for (const [dx, dy] of DIR4) {
         const vx = ux + dx, vy = uy + dy;
         if (!this.isRoad(vx, vy)) continue;
@@ -1638,18 +1688,25 @@ export class Game {
         if (nd < dist[v]) { dist[v] = nd; open.push(v); }
       }
     }
-    this.flow = dist;
+    return dist;
   }
+  // the road read three ways: normal units avoid barricades, climbers ignore them, battering rams barely care
+  updateFlows() {
+    this._barAt = new Map(this.barricades.filter(b => b.hp > 0).map(b => [this.idx(b.cx, b.cy), b]));
+    this.flowBy = { normal: this.computeFlow(BAR.detour), free: this.computeFlow(0), ram: this.computeFlow(BAR.ramDetour) };
+    this.flow = this.flowBy.normal;
+  }
+  pathKind(def) { return def.climb ? 'free' : def.ram ? 'ram' : 'normal'; }
   // route from a road tile to the HQ along the cheapest way; `start`: the unit's exact position (mid-road)
-  routeFrom(tx, ty, start = null) {
-    const dist = this.flow, tiles = [[tx, ty]];
+  routeFrom(tx, ty, start = null, kind = 'normal') {
+    const dist = this.flowBy[kind], cost = kind === 'free' ? 0 : kind === 'ram' ? BAR.ramDetour : BAR.detour, tiles = [[tx, ty]];
     let cx = tx, cy = ty;
     for (let guard = 0; dist[this.idx(cx, cy)] > 0 && guard < this.N * this.N; guard++) {
       let best = null, bv = Infinity;
       for (const [dx, dy] of DIR4) {
         const nx = cx + dx, ny = cy + dy;
         if (!this.isRoad(nx, ny)) continue;
-        const i = this.idx(nx, ny), v = dist[i] + 1 + (this._barAt.has(i) ? BAR.detour : 0);
+        const i = this.idx(nx, ny), v = dist[i] + 1 + (this._barAt.has(i) ? cost : 0);
         if (v < bv) { bv = v; best = [nx, ny]; }
       }
       if (!best || bv === Infinity) break;
@@ -1672,8 +1729,10 @@ export class Game {
   }
   // after a barricade went up or down: new gate routes, and every unit on the road picks its way again
   recomputeRoutes(moveUnits = true) {
-    this.computeFlow();
-    this.routes = this.spawnTiles.map(([x, y]) => this.routeFrom(x, y));
+    this.updateFlows();
+    this.routesBy = {};
+    for (const k of ['normal', 'free', 'ram']) this.routesBy[k] = this.spawnTiles.map(([x, y]) => this.routeFrom(x, y, null, k));
+    this.routes = this.routesBy.normal;
     if (!moveUnits) return;
     for (const e of this.enemies) {
       if (!e.alive || e.air || e.diving || e.vortex) continue;
@@ -1687,7 +1746,7 @@ export class Game {
         }
       }
       if (!this.isRoad(tx, ty) || this.flow[this.idx(tx, ty)] === Infinity) continue;
-      e.route = this.routeFrom(tx, ty, [p.x, p.y]);
+      e.route = this.routeFrom(tx, ty, [p.x, p.y], this.pathKind(e.def));
       e.d = 0;
     }
   }
@@ -1695,13 +1754,29 @@ export class Game {
   previewRoutes(cx, cy) {
     const tmp = { cx, cy, hp: 1 };
     this.barricades.push(tmp);
-    this.computeFlow();
+    this.updateFlows();
     const routes = this.spawnTiles.map(([x, y]) => this.routeFrom(x, y));
-    const i = this.idx(cx, cy);
-    const through = routes.some(r => r.pts.some(([x, y]) => this.idx(Math.floor(x), Math.floor(y)) === i));
+    const through = routes.some(r => this.routeHasTile(r, cx, cy));
     this.barricades.pop();
-    this.computeFlow();
+    this.updateFlows();
     return { routes, through };
+  }
+  burrowDown(e) {
+    const B = e.def.burrow;
+    e.burrowed = true; e.burrowT = B.dur;
+    e.frost = 0; e.frozenT = 0; e.slowT = 0;
+    this.fx.dust(e.wx, e.wy, 1.3);
+    this.fx.debris(e.wx, e.wy - 6, 6, 120);
+  }
+  surface(e) {
+    e.burrowed = false; e.burrowT = e.def.burrow.every;
+    this.fx.dust(e.wx, e.wy, 1.5);
+    this.fx.debris(e.wx, e.wy - 8, 8, 160);
+  }
+  // does the route run over tile (cx, cy)? (sampled along every segment, not just at the corners)
+  routeHasTile(r, cx, cy) {
+    for (const sg of r.seg) for (let k = 0; k <= sg.len; k += 0.2) if (Math.floor(sg.ax + sg.dx * k) === cx && Math.floor(sg.ay + sg.dy * k) === cy) return true;
+    return false;
   }
   barricadeAhead(e) {
     const look = 0.5 + (e.id % 5) * 0.11 + (e.def.boss ? 0.45 : 0);    // units queue up instead of piling into one spot
@@ -1729,7 +1804,7 @@ export class Game {
     this.recomputeRoutes();
     this.fx.dust(w.x, w.y + 6, 1.3);
     this.fx.add({ k: 'ring', x: w.x, y: w.y + 8, r0: 20, r1: 90, life: 0.45, c: '255,210,120' });
-    this.emit('barricade', { b, detour: !this.routes.some(r => r.pts.some(([x, y]) => Math.floor(x) === cx && Math.floor(y) === cy)) });
+    this.emit('barricade', { b, detour: !this.routes.some(r => this.routeHasTile(r, cx, cy)) });
     sfx('build');
     return b;
   }

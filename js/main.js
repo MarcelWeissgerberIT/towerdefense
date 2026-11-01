@@ -500,6 +500,15 @@ function intelHTML(type) {
   if (def.spawns) ab.push(`${IC('swarm')}Setzt laufend ${ENEMIES[def.spawns.type].name}n aus`);
   if (def.burst) ab.push(`${IC('swarm')}Zerplatzt beim Tod in ${def.burst.count} ${ENEMIES[def.burst.type].name}n`);
   if (def.atk) ab.push(`${IC('target')}Beschießt Türme (Reichweite ${String(def.atk.range).replace('.', ',')})`);
+  if (def.scrap) ab.push(`${IC('swarm')}Sammelt Wracks im Umkreis: alle ${def.scrap.need} Abschüsse baut er ${def.scrap.count} Späher-Spinnen und repariert sich`);
+  if (def.climb) ab.push(`${IC('fast')}Klettert über Barrikaden, statt einen Umweg zu nehmen`);
+  if (def.burrow) ab.push(`${IC('lock')}Gräbt sich alle ${def.burrow.every} s für ${String(def.burrow.dur).replace('.', ',')} s ein: schneller, für Türme unerreichbar (Spezialwaffen treffen) – untertunnelt Barrikaden`);
+  if (def.frostImmune) ab.push(`${IC('frost')}Lässt sich nicht einfrieren, Kryo wirkt kaum`);
+  if (def.thaw) ab.push(`${IC('frost')}Taut eingefrorene Maschinen in seiner Nähe auf`);
+  if (def.burnImmune) ab.push(`${IC('damage')}Hitzefest: brennt nicht, Flammenwerfer machen kaum Schaden`);
+  if (def.heat) ab.push(`${IC('damage')}Seine Hitze beschädigt Türme in ${String(def.heat.range).replace('.', ',')} Feldern Abstand`);
+  if (def.ram) ab.push(`${IC('damage')}Nimmt den direkten Weg und zerlegt Barrikaden in Sekunden`);
+  if (def.biome) ab.push(`${IC('target')}Kommt nur hier vor: ${BIOMES[def.biome].name}`);
   if (def.boss) ab.push(`${IC('skull')}Boss – durchbricht er die Linie, kostet das viele Leben`);
   const unlocked = TOWER_ORDER.filter(k => !game || game.unlocked(k));
   const num = (v) => String(v).replace('.', ',');

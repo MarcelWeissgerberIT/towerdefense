@@ -496,6 +496,13 @@ export class Renderer {
     for (const h of game.holes) this.drawHoleGround(ctx, h);
     if (ui.aim) this.drawAimGround(ctx, ui);
     for (const e of game.enemies) {
+      if (e.burrowed) continue;
+      if (e.def.heat) {
+        const r = e.def.heat.range * HW * Math.SQRT2, k = 0.18 + 0.07 * Math.sin(this.time * 3 + e.id);
+        ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = k;
+        ctx.drawImage(Assets.fx.lava, e.wx - r, e.wy - r * 0.5, r * 2, r);
+        ctx.globalCompositeOperation = 'source-over';
+      }
       const m = Models.meta(e.def.model);
       const s = (m ? m.w * m.scale * 0.6 : 60) * e.def.scale;
       ctx.globalAlpha = e.air ? 0.3 : 0.55;
@@ -514,7 +521,7 @@ export class Renderer {
       list.push({ y: b.cy - HH - 0.6, o: b, k: 5 });
       if (b.side) list.push({ y: b.cy - 0.5, o: b, k: 6 });
     }
-    for (const e of game.enemies) if (!e.air) list.push({ y: e.wy, o: e, k: 2 });
+    for (const e of game.enemies) if (!e.air) list.push({ y: e.wy + (e.climbH || 0) * 40, o: e, k: 2 });   // climbing: in front of the barricade
     list.push({ y: game.baseW.y + HH, o: game.baseW, k: 3 });
     for (const g of game.gates) list.push({ y: g.y + HH, o: g, k: 4 });
     list.sort((a, b) => a.y - b.y);
@@ -1469,16 +1476,30 @@ export class Renderer {
     if (e.rage) Models.drawTinted(ctx, name, f, x, y, s, 'rage', 0.16 + 0.14 * Math.sin(this.time * 7));
   }
 
+  // burrowed sand worm: a moving mound of sand with the drill tip breaking through now and then
+  drawBurrow(ctx, e) {
+    const t = this.time * 6 + e.id, x = e.wx, y = e.wy;
+    ctx.save();
+    ctx.fillStyle = 'rgba(70,52,30,0.55)';
+    ctx.beginPath(); ctx.ellipse(x, y, 30, 13, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = 'rgba(196,160,104,0.95)';
+    ctx.beginPath(); ctx.ellipse(x, y - 4 - Math.abs(Math.sin(t)) * 2, 24, 10, 0, Math.PI, 0); ctx.fill();
+    ctx.fillStyle = 'rgba(150,118,72,0.9)';
+    for (let i = 0; i < 5; i++) { const a = t * 0.7 + i * 1.3; ctx.beginPath(); ctx.arc(x + Math.cos(a) * 18, y - 6 + Math.sin(a * 1.7) * 3, 3.2, 0, Math.PI * 2); ctx.fill(); }
+    ctx.restore();
+    e._top = y - 24;
+  }
   drawEnemy(ctx, e, ghost = false) {
     const def = e.def, name = def.model;
     const m = Models.meta(name);
     if (!m) return;
+    if (e.burrowed) { if (!ghost) this.drawBurrow(ctx, e); return; }
     const f = Models.unitFrame(e);
     const pose = this.enemyPose(e, m);
     const vx = e.vortex;
     if (vx) pose.roll = (pose.roll || 0) + Math.sin(vx.spin) * 0.5 * vx.k + vx.spin * 0.12 * vx.k;
     const sc = def.scale * (vx ? vx.sq : 1);
-    const lift = e.air ? def.lift * (e.liftMul ?? 1) + pose.bob : pose.bob;
+    const lift = (e.air ? def.lift * (e.liftMul ?? 1) + pose.bob : pose.bob) + (e.climbH || 0) * 30;
     const y = e.wy - lift;
     const x = e.wx + pose.dx;
     if (ghost) {
@@ -1565,6 +1586,7 @@ export class Renderer {
 
   drawHp(ctx, e) {
     if (e.def.cloak && !this.game.visible(e)) return;
+    if (e.burrowed) return;
     if (e.hp >= e.maxHp && e.shield >= e.maxShield && !e.def.boss) return;
     const w = e.def.boss ? 110 : 40;
     const x = e.wx - w / 2, y = (e._top ?? e.wy - 80) - 8;

@@ -95,7 +95,13 @@ export const ACID_ARMOR = 1.6;   // armour removed per corrosion stack
 export function effectOf(towerType, enemyType) {
   const t = TOWERS[towerType], e = ENEMIES[enemyType];
   if (e.air ? !t.air : !t.ground) return 0;
-  return EFFECT[towerType][e.cls] ?? 1;
+  return (EFFECT[towerType][e.cls] ?? 1) * resistOf(towerType, e);
+}
+// special resistances of single machine types (on top of the class)
+export function resistOf(towerType, def) {
+  if (def.burnImmune && towerType === 'flame') return 0.4;
+  if (def.frostImmune && towerType === 'cryo') return 0.6;
+  return 1;
 }
 export const TOWER_ORDER = ['gatling', 'missile', 'plasma', 'emp', 'flak', 'flame', 'rail', 'acid', 'laser', 'mortar', 'cryo'];
 
@@ -214,6 +220,17 @@ export const ENEMIES = {
   bomber:   { cls: 'air', info: 'Schwerer Bomber. Fliegt über deine Stellungen und wirft Bombenteppiche auf die Türme darunter.', motion: 'hover', name: 'Bomber', model: 'enemy_bomber', hp: 520, speed: 0.6, armor: 4, reward: 38, leak: 3, cost: 12, scale: 0.85, air: true, lift: 70, bomb: { every: 2.4, dmg: 55, splash: 0.85, range: 1.15 } },
   aegis:    { cls: 'armored', info: 'Mobiler Schildprojektor. Lädt die Energieschilde aller Maschinen in seiner Nähe auf – zuerst ausschalten!', motion: 'tracks', name: 'Schildprojektor', model: 'enemy_aegis', hp: 460, speed: 0.62, armor: 4, reward: 34, leak: 2, cost: 11, scale: 0.85, project: { every: 3.5, range: 1.9, shield: 110 } },
   saboteur: { cls: 'light', info: 'Hacker-Einheit. Bleibt neben einem Turm stehen und legt ihn lahm, solange er lebt – höchstens 12 Sekunden, dann zieht er zum nächsten. Sofort abschießen!', motion: 'biped', name: 'Saboteur', model: 'enemy_saboteur', hp: 190, speed: 1.05, armor: 1, reward: 16, leak: 1, cost: 5, scale: 0.9, hack: { range: 1.35, max: 12, cd: 3 } },
+  // ---- signature machines: each only appears in its own area ----
+  scavenger: { cls: 'armored', biome: 'wasteland', info: 'Sammelt den Schrott zerstörter Maschinen in seiner Nähe ein und baut daraus neue Späher-Spinnen – und flickt sich dabei selbst.', motion: 'tracks', name: 'Schrottsammler', model: 'enemy_scavenger', hp: 300, speed: 0.7, armor: 3, reward: 22, leak: 2, cost: 6, scale: 0.85,
+    scrap: { range: 1.9, need: 3, count: 2, heal: 0.15 } },
+  climber: { cls: 'light', biome: 'jungle', info: 'Flinker Kletterroboter. Steigt einfach über Barrikaden hinweg, statt einen Umweg zu nehmen.', motion: 'spider', stride: 0.3, name: 'Kletterer', model: 'enemy_climber', hp: 140, speed: 1.25, armor: 1, reward: 12, leak: 1, cost: 3, scale: 0.85, climb: true },
+  burrower: { cls: 'armored', biome: 'desert', info: 'Gräbt sich immer wieder in den Sand ein: unter der Erde ist er schneller und für Türme unerreichbar – nur Spezialwaffen treffen ihn dann. Barrikaden untertunnelt er.', motion: 'tracks', name: 'Sandwühler', model: 'enemy_burrower', hp: 360, speed: 0.7, armor: 4, reward: 26, leak: 2, cost: 7, scale: 0.85,
+    burrow: { every: 6, dur: 2.6, speed: 1.6 } },
+  icebreaker: { cls: 'heavy', biome: 'ice', info: 'Schwerer Eisbrecher mit beheiztem Räumschild. Lässt sich nicht einfrieren und taut Maschinen in seiner Nähe wieder auf.', motion: 'tracks', name: 'Eisbrecher', model: 'enemy_icebreaker', hp: 600, speed: 0.5, armor: 6, reward: 34, leak: 3, cost: 11, scale: 0.85,
+    frostImmune: true, thaw: { range: 1.4 } },
+  magma: { cls: 'heavy', biome: 'volcano', info: 'Glühender Lava-Läufer. Feuer schadet ihm kaum, und seine Hitze setzt Türmen am Straßenrand zu.', motion: 'walker', stride: 0.7, name: 'Magma-Läufer', model: 'enemy_magma', hp: 820, speed: 0.45, armor: 6, reward: 40, leak: 3, cost: 13, scale: 0.85,
+    burnImmune: true, heat: { range: 1.35, dps: 10 } },
+  ram: { cls: 'heavy', biome: 'city', info: 'Gepanzerter Rammbock. Nimmt den direkten Weg und walzt Barrikaden in Sekunden nieder.', motion: 'tracks', name: 'Rammbock', model: 'enemy_ram', hp: 640, speed: 0.58, armor: 8, reward: 36, leak: 3, cost: 12, scale: 0.85, ram: 12 },
   mothership: { cls: 'air', info: 'Fliegende Festung. Setzt unterwegs laufend Kamikaze-Drohnen aus.', motion: 'hover', name: 'Mutterschiff',  model: 'enemy_mothership', hp: 3000, speed: 0.42, armor: 6, reward: 280, leak: 8, cost: 80, scale: 0.78, boss: true, air: true, lift: 84,
     atk: { dmg: 30, range: 3.2, rate: 1.1, kind: 'missile' }, spawns: { type: 'kamikaze', every: 6.5, count: 2 } },
 };
@@ -229,7 +246,10 @@ export const BOSS = {
 export const ENEMY_UNLOCK = {
   android: 1, spider: 1, drone: 2, mech: 3, tank: 4, repair: 6, shield: 8, kamikaze: 11, siege: 13,
   infiltrator: 14, brood: 17, saboteur: 19, bomber: 21, aegis: 23,
+  // signature machines (only in their own area, from its first missions on)
+  scavenger: 3, climber: 6, burrower: 11, icebreaker: 16, magma: 21, ram: 26,
 };
+export const BIOME_ENEMY = { wasteland: 'scavenger', jungle: 'climber', desert: 'burrower', ice: 'icebreaker', volcano: 'magma', city: 'ram' };
 
 export const BIOMES = {
   wasteland: {
@@ -358,6 +378,7 @@ export const BAR = {
   cost: 60, step: 30, max: 5,            // price rises with every barricade standing
   hp: 800, hpLvl: 0.07,                  // hit points, +7 % per mission
   detour: 40,                            // a detour of up to 40 tiles is preferred over breaking through
+  ramDetour: 3,                          // battering rams take a detour only if it is (almost) as short
   ram: 4, ramCost: 3, boss: 3,           // damage per second of a blocked unit: (ram + cost * ramCost) * sqrt(hp scale)
   sell: 0.5, repair: 0.6,
 };

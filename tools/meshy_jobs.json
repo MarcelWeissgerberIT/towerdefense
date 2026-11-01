@@ -110,5 +110,29 @@
  "enemy_saboteur": {
   "image_url": "https://cdn.openart.ai/openart-ai/production/2026-10/create-image/wRD6PTxSzjxZwjWN69MC/gpt-image-2-1_1793476382781_a2ddc9b0.png",
   "polycount": 40000
+ },
+ "enemy_scavenger": {
+  "image_url": "https://cdn.openart.ai/openart-ai/production/2026-11/create-image/wRD6PTxSzjxZwjWN69MC/gpt-image-2-1_1793548031524_87c77ad0.png",
+  "polycount": 40000
+ },
+ "enemy_climber": {
+  "image_url": "https://cdn.openart.ai/openart-ai/production/2026-11/create-image/wRD6PTxSzjxZwjWN69MC/gpt-image-2-1_1793548019341_9eb73ae0.png",
+  "polycount": 40000
+ },
+ "enemy_burrower": {
+  "image_url": "https://cdn.openart.ai/openart-ai/production/2026-11/create-image/wRD6PTxSzjxZwjWN69MC/gpt-image-2-1_1793548024205_c1e63077.png",
+  "polycount": 40000
+ },
+ "enemy_icebreaker": {
+  "image_url": "https://cdn.openart.ai/openart-ai/production/2026-11/create-image/wRD6PTxSzjxZwjWN69MC/gpt-image-2-1_1793548032807_bf5eef18.png",
+  "polycount": 40000
+ },
+ "enemy_magma": {
+  "image_url": "https://cdn.openart.ai/openart-ai/production/2026-11/create-image/wRD6PTxSzjxZwjWN69MC/gpt-image-2-1_1793548032333_891eaffe.png",
+  "polycount": 40000
+ },
+ "enemy_ram": {
+  "image_url": "https://cdn.openart.ai/openart-ai/production/2026-11/create-image/wRD6PTxSzjxZwjWN69MC/gpt-image-2-1_1793548030594_90f9c247.png",
+  "polycount": 40000
  }
 }

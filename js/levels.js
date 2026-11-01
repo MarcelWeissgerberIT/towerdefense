@@ -1,5 +1,5 @@
 // Levels: specs (used by tools/gen_levels.mjs to build the maps) + wave generator.
-import { ENEMIES, ENEMY_UNLOCK } from './config.js';
+import { ENEMIES, ENEMY_UNLOCK, BIOME_ENEMY } from './config.js';
 import { LEVEL_MAPS } from './levels_data.js';
 import { LEVEL_SPECS } from './level_specs.js';
 export { LEVEL_SPECS };
@@ -27,7 +27,7 @@ function rng(seed) {
   };
 }
 
-const GAP = { spider: 0.38, android: 0.8, drone: 0.85, mech: 1.7, tank: 2.1, shield: 1.2, repair: 1.6, kamikaze: 0.55, siege: 2.6, boss: 7, mothership: 7, infiltrator: 0.9, brood: 3.2, bomber: 2.6, aegis: 2.4, saboteur: 1.6 };
+const GAP = { scavenger: 2.2, climber: 0.7, burrower: 2.0, icebreaker: 2.8, magma: 3.0, ram: 2.6, spider: 0.38, android: 0.8, drone: 0.85, mech: 1.7, tank: 2.1, shield: 1.2, repair: 1.6, kamikaze: 0.55, siege: 2.6, boss: 7, mothership: 7, infiltrator: 0.9, brood: 3.2, bomber: 2.6, aegis: 2.4, saboteur: 1.6 };
 
 export function hpMultiplier(levelNum, wave) {
   const n = wave - 1;
@@ -38,7 +38,10 @@ export function hpMultiplier(levelNum, wave) {
 export function makeWaves(level) {
   const lv = level.number, pw = level.power || lv;
   const r = rng(level.seed * 7 + 3);
-  const pool = Object.keys(ENEMY_UNLOCK).filter(k => ENEMY_UNLOCK[k] <= lv);
+  // area signature machines are not part of the random pool: they come in their own groups (below)
+  const pool = Object.keys(ENEMY_UNLOCK).filter(k => ENEMY_UNLOCK[k] <= lv && !ENEMIES[k].biome);
+  const sig = BIOME_ENEMY[level.biome];
+  const sigOn = sig && ENEMY_UNLOCK[sig] <= lv;
   const ground = pool.filter(k => !ENEMIES[k].air);
   const air = pool.filter(k => ENEMIES[k].air);
   const heavy = pool.filter(k => ['mech', 'tank', 'siege', 'shield', 'brood', 'aegis'].includes(k));
@@ -99,6 +102,11 @@ export function makeWaves(level) {
       const b = pick(pool, 0.4);
       add(a, 0.6);
       add(b, 0.4, 2 + r() * 3);
+    }
+    // every third wave (from wave 2): a squad of this area's signature machine, the rest of the wave a bit smaller
+    if (sigOn && !last && w % 3 === 2) {
+      for (const g of groups) if (!ENEMIES[g.type].boss) g.count = Math.max(1, Math.round(g.count * 0.86));
+      groups.push({ type: sig, count: Math.max(1, Math.round(budget * 0.16 / ENEMIES[sig].cost)), gap: GAP[sig], delay: 2.5 });
     }
     // a mid boss in long late levels
     if (!last && lv >= 12 && w === Math.round(W * 0.7)) {

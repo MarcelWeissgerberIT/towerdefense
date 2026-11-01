@@ -286,5 +286,69 @@
    "frames": 12,
    "rootFacing": true
   }
+ },
+ "enemy_scavenger": {
+  "mode": "unit",
+  "frames": 32,
+  "size": 0.95,
+  "yaw0": 180,
+  "P": 128
+ },
+ "enemy_climber": {
+  "mode": "unit",
+  "frames": 32,
+  "size": 0.72,
+  "yaw0": 90,
+  "P": 128,
+  "anim": {
+   "frames": 8
+  },
+  "legs": {
+   "n": 6,
+   "r0": 0.38,
+   "stride": 0.15,
+   "lift": 0.08,
+   "bob": 0.015
+  },
+  "pad": 0.1
+ },
+ "enemy_burrower": {
+  "mode": "unit",
+  "frames": 32,
+  "size": 1.05,
+  "yaw0": 180,
+  "P": 128
+ },
+ "enemy_icebreaker": {
+  "mode": "unit",
+  "frames": 32,
+  "size": 1.0,
+  "yaw0": 180,
+  "P": 128
+ },
+ "enemy_magma": {
+  "mode": "unit",
+  "frames": 32,
+  "size": 1.0,
+  "yaw0": 90,
+  "P": 128,
+  "anim": {
+   "frames": 8
+  },
+  "legs": {
+   "n": 4,
+   "r0": 0.45,
+   "stride": 0.12,
+   "lift": 0.1,
+   "bob": 0.01
+  },
+  "pad": 0.1
+ },
+ "enemy_ram": {
+  "mode": "unit",
+  "frames": 32,
+  "size": 1.0,
+  "yaw0": 180,
+  "P": 128
  }
 }
