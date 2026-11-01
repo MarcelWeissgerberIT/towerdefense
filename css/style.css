@@ -688,6 +688,8 @@ body.aiming #btn-replay { display: none; }
 #replay-label { position: fixed; z-index: 13; left: calc(16px + var(--sal)); top: calc(14px + var(--sat)); font-family: var(--font-title); font-weight: 800; font-size: 15px; letter-spacing: 0.12em; color: #fff; text-shadow: 0 1px 4px #000; pointer-events: none; }
 #replay-label i { display: inline-block; width: 11px; height: 11px; border-radius: 50%; background: #ff2a1a; margin-right: 6px; animation: obarm 0.5s infinite alternate; }
 body.replaying #hud, body.replaying #btn-wave, body.replaying #btn-orbital, body.replaying #btn-nuke, body.replaying #btn-hole, body.replaying #boss-bar, body.replaying #buffs { visibility: hidden; }
+/* live nuclear strike: the HUD makes room for the mushroom cloud */
+body.nukecine #hud, body.nukecine #btn-wave, body.nukecine #btn-orbital, body.nukecine #btn-nuke, body.nukecine #btn-hole, body.nukecine #buffs, body.nukecine #towermenu, body.nukecine #builddrawer { visibility: hidden; }
 
 .tm-eff { flex-basis: 100%; color: #ffd27a; }
 .tm-eff.bad { color: #ff8a70; }

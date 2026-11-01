@@ -639,17 +639,28 @@ export class Game {
     }
     const y = this.bodyY(e);
     const big = e.def.boss ? 3.0 : e.def.cost >= 10 ? 1.7 : e.def.cost >= 5 ? 1.3 : e.type === 'spider' ? 0.8 : 1;
-    // explosion style depends on what killed the machine
+    // explosion style depends on what killed the machine (nuclear blast and radiation: it crumbles to dust)
     const sk = src && src.def ? src.def.kind : null;
-    const kind = e.frozenT > 0 || sk === 'cryo' ? 'ice' : sk === 'acid' || (!sk && e.acidT > 0) ? 'acid'
+    const kind = this._nuking ? 'nuke' : !sk && e.radT > 0 && !(e.burnT > 0) && !(e.acidT > 0) ? 'rad'
+      : e.frozenT > 0 || sk === 'cryo' ? 'ice' : sk === 'acid' || (!sk && e.acidT > 0) ? 'acid'
       : sk === 'plasma' || sk === 'emp' || sk === 'laser' || sk === 'rail' ? 'plasma' : (!sk && e.burnT > 0) || sk === 'flame' ? 'burn' : 'fire';
-    this.fx.death(e, { x: e.wx, y, ground: !e.air, kind, scale: big, frame: Models.unitFrame(e) });
-    this.fx.text(e.wx, y - 30 * big, `+${e.reward}`);
+    this.deathFx(e, kind, this._nuking);
+    if (kind !== 'nuke') this.fx.text(e.wx, y - 30 * big, `+${e.reward}`);
     if (!e.air) this.decals.push({ x: e.wx, y: e.wy, s: 70 * Math.min(big, 2.4) });
     sfx('explosion', big >= 1.6);
     if (e.def.boss) { this.emit('toast', { text: `${e.def.name} vernichtet! +${e.reward}`, warn: false }); this.fx.shake = Math.max(this.fx.shake, 14); }
   }
 
+  // death effect; nuke: the blast wave reaches far machines a moment later, they crumble away from ground zero
+  deathFx(e, kind, blast = null) {
+    const big = e.def.boss ? 3.0 : e.def.cost >= 10 ? 1.7 : e.def.cost >= 5 ? 1.3 : e.type === 'spider' ? 0.8 : 1;
+    const info = { x: e.wx, y: this.bodyY(e), ground: !e.air, kind, scale: big, frame: Models.unitFrame(e) };
+    if (blast && blast.gx != null) {
+      info.from = toWorld(blast.gx, blast.gy);
+      info.hold = Math.min(0.35, Math.hypot(e.gx - blast.gx, e.gy - blast.gy) / NUKE.outer * 0.35) + rand(0, 0.06);
+    }
+    this.fx.death(e, info);
+  }
   bodyY(e) { return e.wy - (e.air ? e.def.lift : 0) - (Models.meta(e.def.model)?.centerPx ?? 30) * e.def.scale; }
   aimPoint(e) { return { x: e.wx, y: this.bodyY(e) }; }
 
@@ -1253,7 +1264,7 @@ export class Game {
       // flash and a frozen X-ray moment first - the blast wave hits after it, so the machines show up intact
       this.fx.nuke(w.x, w.y);
       this.startCinematic(NUKE.cine);
-      this.emit('nukeHit', {});
+      this.emit('nukeHit', { gx: n.gx, gy: n.gy });
       sfx('nuke');
       this.nukeBlasts.push({ gx: n.gx, gy: n.gy, t: NUKE.blastDelay });
     }
@@ -1262,7 +1273,7 @@ export class Game {
       if (n.t > 0) continue;
       n.done = true;
       const hpm = Math.pow(hpMultiplier(this.level.number, Math.max(1, this.wave)), 0.9);
-      this._nuking = true;
+      this._nuking = { gx: n.gx, gy: n.gy };
       for (const e of this.enemiesInRange(n.gx, n.gy, NUKE.outer, true, true)) {
         const d = Math.hypot(e.gx - n.gx, e.gy - n.gy);
         const k = d <= NUKE.radius ? 1 : 0.4;

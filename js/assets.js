@@ -133,6 +133,12 @@ export const Models = {
       const grd = g.createLinearGradient(0, 0, 0, m.h);
       grd.addColorStop(0, 'rgba(235,250,255,0.85)'); grd.addColorStop(1, 'rgba(140,210,255,0.8)');
       g.fillStyle = grd;
+    } else if (kind === 'heat' || kind === 'radglow') {
+      // glowing hot (nuclear blast) / glowing green (radiation) just before the machine crumbles
+      const grd = g.createLinearGradient(0, 0, 0, m.h);
+      if (kind === 'heat') { grd.addColorStop(0, 'rgba(255,240,200,0.9)'); grd.addColorStop(1, 'rgba(255,120,40,0.85)'); }
+      else { grd.addColorStop(0, 'rgba(220,255,190,0.85)'); grd.addColorStop(1, 'rgba(90,230,60,0.8)'); }
+      g.fillStyle = grd;
     } else g.fillStyle = kind === 'rage' ? 'rgba(255,50,20,0.8)' : kind === 'hack' ? 'rgba(255,150,40,0.8)' : 'rgba(120,255,40,0.75)';
     g.fillRect(0, 0, m.w, m.h);
     if (this._tint.size > 600) this._tint.clear();
@@ -146,6 +152,46 @@ export const Models = {
     ctx.globalAlpha = Math.min(1, alpha);
     ctx.drawImage(this.tinted(name, f, kind), x - m.ax * k, y - m.ay * k, m.w * k, m.h * k);
     ctx.globalAlpha = 1;
+  },
+  // grain positions for crumbling a frame to dust: points on the solid part of the sprite (sprite px relative
+  // to the anchor) on a grid sized for ~target grains. One small alpha read-back per model (sheet at 1/3 size).
+  _mask: new Map(), _grains: new Map(),
+  grains(name, f, target = 90) {
+    const key = name + ':' + f + ':' + target;
+    let out = this._grains.get(key);
+    if (out) return out;
+    const m = this.data[name];
+    const Q = 3;
+    let mk = this._mask.get(name);
+    if (!mk) {
+      const rows = Math.ceil(m.n / m.cols);
+      const W = Math.ceil(m.cols * m.w / Q), H = Math.ceil(rows * m.h / Q);
+      const c = document.createElement('canvas'); c.width = W; c.height = H;
+      const g = c.getContext('2d', { willReadFrequently: true });
+      g.drawImage(m.img, 0, 0, W, H);
+      let a = null;
+      try { a = g.getImageData(0, 0, W, H).data; } catch (e) { a = null; }
+      mk = { W, H, a };
+      this._mask.set(name, mk);
+      c.width = c.height = 1;
+    }
+    const x0 = (f % m.cols) * m.w / Q, y0 = Math.floor(f / m.cols) * m.h / Q, fw = m.w / Q, fh = m.h / Q;
+    const solid = [];
+    for (let j = 0; j < fh; j++) for (let i = 0; i < fw; i++) {
+      const X = Math.floor(x0 + i), Y = Math.floor(y0 + j);
+      if (!mk.a || mk.a[(Y * mk.W + X) * 4 + 3] > 110) solid.push(i, j);
+    }
+    const step = Math.max(1, Math.round(Math.sqrt(solid.length / 2 / target)));
+    const pts = [];
+    for (let k = 0; k < solid.length; k += 2) {
+      const i = solid[k], j = solid[k + 1];
+      if (i % step || j % step) continue;
+      pts.push((i + step / 2) * Q - m.ax, (j + step / 2) * Q - m.ay);
+    }
+    out = { pts: new Float32Array(pts), cell: step * Q };
+    if (this._grains.size > 800) this._grains.clear();
+    this._grains.set(key, out);
+    return out;
   },
   _wreck: new Map(),
   // charred copy of a frame for wrecks

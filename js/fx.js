@@ -6,8 +6,8 @@ import { rand } from './iso.js';
 const MAX_PARTICLES = 900;
 
 export class FX {
-  constructor() { this.p = []; this.shake = 0; this.flash = 0; this.whiteout = 0; this.blind = null; this.lightning = 0; }
-  clear() { this.p.length = 0; this.shake = 0; this.flash = 0; this.whiteout = 0; this.blind = null; this.lightning = 0; }
+  constructor() { this.p = []; this.shake = 0; this.flash = 0; this.whiteout = 0; this.blind = null; this.lightning = 0; this.grainN = 0; }
+  clear() { this.p.length = 0; this.shake = 0; this.flash = 0; this.whiteout = 0; this.blind = null; this.lightning = 0; this.grainN = 0; }
 
   add(o) {
     if (this.p.length >= MAX_PARTICLES) {
@@ -97,6 +97,14 @@ export class FX {
     const m = Models.meta(name);
     const heavy = e.def.cost >= 7 || e.def.boss;
     const s0 = (m ? m.scale : 0.7) * e.def.scale;
+    if (kind === 'nuke' || kind === 'rad') {
+      // caught by the nuclear blast / killed by radiation: the machine glows and crumbles to dust
+      const nuke = kind === 'nuke';
+      this.add({ k: 'glow', x, y, s: (nuke ? 130 : 90) * Math.min(scale, 2), life: nuke ? 0.6 : 0.5, spr: nuke ? 'orange' : 'green' });
+      if (m && m.img) this.disintegrate(e, { mode: kind, frame, s0, from: info.from, hold: info.hold || 0 });
+      if (e.def.boss) this.bigExplosion(x, y, scale, 'heavy');
+      return;
+    }
     if (kind === 'ice') {
       // frozen machine bursts into ice
       this.boom(x, y, 100 * scale, 0.6, 'plasma');
@@ -137,9 +145,9 @@ export class FX {
         });
       }
     }
-    // charred wreck for heavy ground machines
+    // charred wreck for heavy ground machines: burns for a moment, then crumbles to dust
     if (ground && heavy && m && m.img && kind !== 'ice') {
-      this.add({ k: 'wreck', c: Models.wreck(name, frame), x: e.wx, y: e.wy, w: m.w * s0, h: m.h * s0, ax: m.ax * s0, ay: m.ay * s0, life: e.def.boss ? 14 : 8, fire: 0 });
+      this.disintegrate(e, { mode: 'wreck', frame, s0, hold: e.def.boss ? 5 : rand(2.2, 2.8), img: Models.wreck(name, frame) });
     }
     if (heavy) {
       // chain of secondary detonations
@@ -153,6 +161,46 @@ export class FX {
         });
       }
     }
+  }
+  // a machine falls apart into dust: a front sweeps across the sprite along (dx, dy); everything behind it has
+  // turned into grains that drift off. mode 'nuke' = glowing hot, blown away from ground zero; 'rad' = green
+  // glow, rising; 'wreck' = charred hull crumbling from the top down after burning for `hold` seconds.
+  disintegrate(e, { mode, frame, s0, from = null, hold = 0, img = null }) {
+    const name = e.def.model, m = Models.meta(name);
+    if (!m || !m.img) return;
+    const lift = e.air ? e.def.lift : 0;
+    const x = e.wx, y = e.wy - lift;
+    const budget = this.grainN > 4500 ? 0.3 : this.grainN > 2500 ? 0.55 : 1;
+    const G = Models.grains(name, frame, Math.max(20, Math.round((e.def.boss ? 260 : mode === 'wreck' ? 130 : 120) * budget)));
+    const n = G.pts.length / 2;
+    if (!n) return;
+    let dx = 0, dy = 1;
+    if (mode === 'nuke') {
+      const a0 = Math.random() * Math.PI * 2;
+      dx = from ? x - from.x : Math.cos(a0); dy = from ? y - from.y : Math.sin(a0);
+      const l = Math.hypot(dx, dy);
+      if (l > 6) { dx /= l; dy /= l; } else { dx = Math.cos(a0); dy = Math.sin(a0); }
+    } else if (mode === 'rad') { const a = rand(-2.6, -0.5); dx = Math.cos(a); dy = Math.sin(a); }
+    const T = mode === 'wreck' ? 1.3 : mode === 'rad' ? 1.1 : 0.9;
+    const g = new Float32Array(n * 6);
+    let p0 = Infinity, p1 = -Infinity;
+    for (let i = 0; i < n; i++) { const pr = G.pts[2 * i] * s0 * dx + G.pts[2 * i + 1] * s0 * dy; if (pr < p0) p0 = pr; if (pr > p1) p1 = pr; }
+    const span = Math.max(1, p1 - p0), px = -dy, py = dx;
+    for (let i = 0; i < n; i++) {
+      const ox = G.pts[2 * i] * s0, oy = G.pts[2 * i + 1] * s0, j = i * 6;
+      g[j] = ox; g[j + 1] = oy;
+      g[j + 2] = hold + T * ((ox * dx + oy * dy) - p0) / span + rand(-0.05, 0.05);
+      if (mode === 'nuke') {
+        const v = rand(40, 170), side = rand(-40, 40);
+        g[j + 3] = dx * v + px * side; g[j + 4] = dy * v + py * side - rand(10, 60); g[j + 5] = rand(0.8, 1.5);
+      } else if (mode === 'rad') {
+        g[j + 3] = dx * rand(5, 30) + rand(-18, 18); g[j + 4] = dy * rand(5, 30) - rand(25, 60); g[j + 5] = rand(0.9, 1.6);
+      } else {
+        g[j + 3] = rand(-32, 32); g[j + 4] = rand(-30, 0); g[j + 5] = rand(0.9, 1.5);
+      }
+    }
+    this.add({ k: 'disint', mode, name, f: frame, img, x, y, s0, dx, dy, p0, p1, hold, T, g, n, gs: Math.max(2, G.cell * s0 * 1.05), life: hold + T + 1.7, keep: true, fire: 0 });
+    this.grainN += n;
   }
   plasmaHit(x, y, k = 1) {
     this.add({ k: 'glow', x, y, s: 120 * k, life: 0.3, spr: 'cyan' });
@@ -275,8 +323,19 @@ export class FX {
       const o = p[i];
       if (!!o.rt !== rt) { p[w++] = o; continue; }
       o.t += dt;
-      if (o.t >= o.life) continue;
+      if (o.t >= o.life) { if (o.k === 'disint') this.grainN -= o.n; continue; }
       switch (o.k) {
+        case 'disint':
+          if (o.mode === 'wreck' && o.t < o.hold) {
+            o.fire -= dt;
+            if (o.fire <= 0) {
+              o.fire = 0.14;
+              const m = Models.meta(o.name), hw = m ? m.w * o.s0 * 0.25 : 20, hh = m ? m.h * o.s0 : 40;
+              spawned.push({ k: 'smoke', x: o.x + rand(-hw, hw), y: o.y - hh * 0.25, vx: rand(-6, 6), vy: -26, s: 16, grow: 40, life: 1.6, a: 0.45, dark: true, t: 0 });
+              if (Math.random() < 0.5) spawned.push({ k: 'fire', x: o.x + rand(-hw * 0.8, hw * 0.8), y: o.y - rand(5, hh * 0.35), vx: rand(-6, 6), vy: rand(-40, -20), s: rand(10, 18), life: rand(0.3, 0.5), t: 0 });
+            }
+          }
+          break;
         case 'spark': o.x += o.vx * dt; o.y += o.vy * dt; o.vy += 380 * dt; break;
         case 'smoke': case 'fire': o.x += o.vx * dt; o.y += o.vy * dt; if (o.k === 'fire') { o.vx *= 1 - dt * 2.5; o.vy *= 1 - dt * 2.5; o.vy -= 40 * dt; } break;
         case 'debris':
@@ -345,13 +404,17 @@ export class FX {
 
   draw(ctx) {
     const fx = Assets.fx;
-    // pass 0: wrecks lie on the ground
+    // pass 0: wrecks lie on the ground, machines that are crumbling
+    let nukeBoom = null;
     for (const o of this.p) {
-      if (o.k !== 'wreck') continue;
-      const k = o.t / o.life;
-      ctx.globalAlpha = k > 0.75 ? (1 - k) / 0.25 : 1;
-      ctx.drawImage(o.c, o.x - o.ax, o.y - o.ay, o.w, o.h);
+      if (o.k === 'wreck') {
+        const k = o.t / o.life;
+        ctx.globalAlpha = k > 0.75 ? (1 - k) / 0.25 : 1;
+        ctx.drawImage(o.c, o.x - o.ax, o.y - o.ay, o.w, o.h);
+      } else if (o.k === 'disint') this.drawIntact(ctx, o);
     }
+    ctx.globalAlpha = 1;
+    for (const o of this.p) if (o.k === 'disint') this.drawGrains(ctx, o);
     // pass 1: normal blending (smoke, debris, shards, video explosions, text)
     for (const o of this.p) {
       const k = o.t / o.life;
@@ -391,24 +454,9 @@ export class FX {
           ctx.fillRect(o.x - o.s / 2, o.y - o.z - o.s / 2, o.s, o.s);
           break;
         case 'boom': {
-          const ex = Assets.vfx[o.kind || 'fire'];
-          if (!ex || !ex.img) break;
-          const fp = Math.min(ex.n - 1, k * ex.n);
-          const f = Math.floor(fp);
-          const a0 = k > 0.8 ? (1 - k) / 0.2 : 1;
-          ctx.save();
-          ctx.translate(o.x, o.y);
-          ctx.rotate(o.rot);
-          if (o.flip) ctx.scale(-1, 1);
-          const frameAt = (fi, a) => {
-            const sx = (fi % ex.cols) * ex.size, sy = Math.floor(fi / ex.cols) * ex.size;
-            ctx.globalAlpha = a;
-            ctx.drawImage(ex.img, sx, sy, ex.size, ex.size, -o.s / 2, -o.s * ex.ay, o.s, o.s);
-          };
-          // slow, long effects (mushroom cloud) blend between frames so they stay smooth
-          if (o.kind === 'nuke' && f < ex.n - 1) { const fr = fp - f; frameAt(f, a0); frameAt(f + 1, a0 * fr); }
-          else frameAt(f, a0);
-          ctx.restore();
+          // the mushroom cloud is drawn last, on top of all smoke and explosions
+          if (o.kind === 'nuke') { (nukeBoom || (nukeBoom = [])).push(o); break; }
+          this.drawBoom(ctx, o, k);
           break;
         }
         case 'text':
@@ -542,6 +590,90 @@ export class FX {
       }
     }
     ctx.globalCompositeOperation = 'source-over';
+    if (nukeBoom) for (const o of nukeBoom) this.drawBoom(ctx, o, o.t / o.life);
+    ctx.globalAlpha = 1;
+  }
+
+  drawBoom(ctx, o, k) {
+    const ex = Assets.vfx[o.kind || 'fire'];
+    if (!ex || !ex.img) return;
+    const fp = Math.min(ex.n - 1, k * ex.n);
+    const f = Math.floor(fp);
+    const a0 = k > 0.8 ? (1 - k) / 0.2 : 1;
+    ctx.save();
+    ctx.translate(o.x, o.y);
+    ctx.rotate(o.rot);
+    if (o.flip) ctx.scale(-1, 1);
+    const frameAt = (fi, a) => {
+      const sx = (fi % ex.cols) * ex.size, sy = Math.floor(fi / ex.cols) * ex.size;
+      ctx.globalAlpha = a;
+      ctx.drawImage(ex.img, sx, sy, ex.size, ex.size, -o.s / 2, -o.s * ex.ay, o.s, o.s);
+    };
+    // slow, long effects (mushroom cloud) blend between frames so they stay smooth
+    if (o.kind === 'nuke' && f < ex.n - 1) { const fr = fp - f; frameAt(f, a0); frameAt(f + 1, a0 * fr); }
+    else frameAt(f, a0);
+    ctx.restore();
+  }
+
+  // the part of a crumbling machine that is still in one piece (clipped at the sweeping front)
+  drawIntact(ctx, o) {
+    const u = (o.t - o.hold) / o.T;
+    if (u >= 1) return;
+    const m = Models.meta(o.name);
+    if (!m || !m.img) return;
+    const s = o.s0, cut = o.p0 + (o.p1 - o.p0) * Math.max(0, u) - 1;
+    ctx.save();
+    ctx.translate(o.x, o.y);
+    if (u > 0) {
+      const L = 1500, dx = o.dx, dy = o.dy, cx = dx * cut, cy = dy * cut, px = -dy * L, py = dx * L;
+      ctx.beginPath();
+      ctx.moveTo(cx + px, cy + py); ctx.lineTo(cx - px, cy - py);
+      ctx.lineTo(cx - px + dx * L, cy - py + dy * L); ctx.lineTo(cx + px + dx * L, cy + py + dy * L);
+      ctx.closePath(); ctx.clip();
+    }
+    const x0 = -m.ax * s, y0 = -m.ay * s, w = m.w * s, h = m.h * s;
+    if (o.img) { ctx.globalAlpha = 1; ctx.drawImage(o.img, x0, y0, w, h); }
+    else {
+      ctx.globalAlpha = 1;
+      ctx.drawImage(m.img, (o.f % m.cols) * m.w, Math.floor(o.f / m.cols) * m.h, m.w, m.h, x0, y0, w, h);
+      // glowing hot / glowing green, building up in the first moments
+      ctx.globalAlpha = Math.min(1, 0.45 + o.t * 2.5) * (o.mode === 'rad' ? 0.75 : 0.9);
+      ctx.drawImage(Models.tinted(o.name, o.f, o.mode === 'rad' ? 'radglow' : 'heat'), x0, y0, w, h);
+    }
+    ctx.restore();
+  }
+
+  // the dust: computed from the start values (no per-frame state), drawn in colour buckets by age
+  drawGrains(ctx, o) {
+    if (o.t < o.hold) return;
+    const pal = GRAIN_PAL[o.mode], B = pal.length, g = o.g, t = o.t, nuke = o.mode === 'nuke', wreck = o.mode === 'wreck';
+    const acc = nuke ? 240 : o.mode === 'rad' ? 20 : 0, grav = nuke ? -25 : o.mode === 'rad' ? -18 : 260;
+    if (grainBuf.length < o.n * 3) grainBuf = new Float32Array(o.n * 3 + 600);
+    let cnt = 0;
+    for (let i = 0; i < o.n; i++) {
+      const j = i * 6, a = t - g[j + 2];
+      if (a <= 0 || a >= g[j + 5]) continue;
+      let x = g[j] + g[j + 3] * a + 0.5 * acc * o.dx * a * a;
+      let y = g[j + 1] + g[j + 4] * a + 0.5 * (acc * o.dy + grav) * a * a;
+      if (wreck) { const gy = (i % 7) - 1; if (y > gy) { y = gy; x = g[j] + g[j + 3] * a * 0.6; } }
+      grainBuf[cnt * 3] = o.x + x; grainBuf[cnt * 3 + 1] = o.y + y; grainBuf[cnt * 3 + 2] = Math.min(B - 1, Math.floor(a / g[j + 5] * B));
+      cnt++;
+    }
+    if (!cnt) return;
+    for (let b = 0; b < B; b++) {
+      const [col, al, sz] = pal[b];
+      ctx.fillStyle = col; ctx.globalAlpha = al;
+      const s = o.gs * sz, h = s / 2;
+      for (let c = 0; c < cnt; c++) if (grainBuf[c * 3 + 2] === b) ctx.fillRect(grainBuf[c * 3] - h, grainBuf[c * 3 + 1] - h, s, s);
+    }
     ctx.globalAlpha = 1;
   }
 }
+
+// colour, alpha and size of dust grains over their lifetime
+const GRAIN_PAL = {
+  nuke: [['#fff4d0', 1, 1], ['#ffd27a', 1, 1], ['#ff9d45', 1, 0.95], ['#e8622a', 0.95, 0.9], ['#a8482a', 0.9, 0.85], ['#6e4636', 0.85, 0.8], ['#5c5450', 0.75, 0.75], ['#6f6a66', 0.6, 0.7], ['#7d7874', 0.42, 0.65], ['#86817c', 0.22, 0.6]],
+  rad: [['#e9ffd8', 1, 1], ['#b6ff8a', 1, 1], ['#7fe85a', 0.95, 0.95], ['#5cc046', 0.9, 0.9], ['#4f9440', 0.85, 0.85], ['#4d6e43', 0.75, 0.8], ['#58604f', 0.6, 0.75], ['#686d62', 0.45, 0.7], ['#73766e', 0.3, 0.65], ['#7b7d77', 0.15, 0.6]],
+  wreck: [['#ff9a4a', 1, 0.95], ['#a8542e', 1, 0.95], ['#3e2f28', 1, 0.9], ['#3a322d', 0.95, 0.9], ['#4a423c', 0.9, 0.85], ['#5a524b', 0.8, 0.8], ['#69625b', 0.65, 0.75], ['#756e67', 0.5, 0.7], ['#7d7770', 0.32, 0.65], ['#847e77', 0.15, 0.6]],
+};
+let grainBuf = new Float32Array(3000);

@@ -30,7 +30,7 @@ function showScreen(id) { for (const s of document.querySelectorAll('.screen')) 
 function hideScreens() { for (const s of document.querySelectorAll('.screen')) s.classList.add('hidden'); }
 function setInGameUI(on) {
   for (const id of ['hud', 'btn-wave']) $(id).classList.toggle('hidden', !on);
-  if (!on) { closeBuildMenu(); closeTowerMenu(); endAim(); $('nuke-flash').style.opacity = 0; hudCache.nukeFlash = 0; setXray(false); camTween = null; if (replay) endReplay(); $('btn-replay').classList.add('hidden'); $('boss-bar').classList.add('hidden'); document.body.classList.remove('boss'); hudCache.bossOn = false; }
+  if (!on) { closeBuildMenu(); closeTowerMenu(); endAim(); $('nuke-flash').style.opacity = 0; hudCache.nukeFlash = 0; setXray(false); camTween = null; endNukeCam(false); if (replay) endReplay(); $('btn-replay').classList.add('hidden'); $('boss-bar').classList.add('hidden'); document.body.classList.remove('boss'); hudCache.bossOn = false; }
 }
 function starsHTML(n) { let s = ''; for (let i = 0; i < 3; i++) s += i < n ? '★' : '<span class="off">★</span>'; return s; }
 
@@ -801,6 +801,43 @@ function updateCamTween(dt) {
   c.x = tw.from.x + (to.x - tw.from.x) * k; c.y = tw.from.y + (to.y - tw.from.y) * k;
   renderer.clampCam();
 }
+// nuclear strike: frame ground zero so the whole mushroom cloud is on screen and the HUD is out of the way
+// (like the replay); afterwards the camera glides back. Touching the map ends it right away.
+let nukeCam = null;
+const easeIO = (u) => u < 0.5 ? 2 * u * u : 1 - Math.pow(-2 * u + 2, 2) / 2;
+function blastFrame(gx, gy) {
+  const w = toWorld(gx, gy), r = renderer;
+  const top = w.y - 700, bot = w.y + 190;   // mushroom cloud top .. blast rings at the ground
+  const z = Math.max(0.2, Math.min(0.95, (r.vh - 24) / (bot - top), (r.vw - 24) / 950));
+  return { x: w.x, y: (top + bot) / 2, z };
+}
+function setCam(v) { const c = renderer.cam; c.x = v.x; c.y = v.y; c.zoom = v.z; }
+function startNukeCam(gx, gy) {
+  if (gx == null) return;
+  const c = renderer.cam;
+  camTween = null;
+  nukeCam = { from: nukeCam ? nukeCam.from : { x: c.x, y: c.y, z: c.zoom }, to: blastFrame(gx, gy), t: 0 };
+  setCam(nukeCam.to);   // the switch happens under the white flash
+  document.body.classList.add('nukecine');
+}
+const NUKE_CAM_HOLD = NUKE.cine.freeze + 4.4, NUKE_CAM_BACK = 1.2;
+function updateNukeCam(dt) {
+  const nc = nukeCam;
+  if (!nc) return;
+  nc.t += dt;
+  if (input.pointers.size && nc.t > 0.3) { endNukeCam(false); return; }
+  if (nc.t < NUKE_CAM_HOLD) return;
+  const u = Math.min(1, (nc.t - NUKE_CAM_HOLD) / NUKE_CAM_BACK), k = easeIO(u);
+  setCam({ x: nc.to.x + (nc.from.x - nc.to.x) * k, y: nc.to.y + (nc.from.y - nc.to.y) * k, z: nc.to.z + (nc.from.z - nc.to.z) * k });
+  if (u >= 1) endNukeCam(false);
+}
+function endNukeCam(restore) {
+  if (!nukeCam) return;
+  if (restore) setCam(nukeCam.from);
+  nukeCam = null;
+  document.body.classList.remove('nukecine');
+  renderer.clampCam();
+}
 function updateBossBar() {
   let b = null;
   for (const e of game.enemies) if (e.alive && e.def.boss && (!b || e.hp / e.maxHp < b.hp / b.maxHp)) b = e;
@@ -993,7 +1030,7 @@ function processEvents() {
       else toast(`${ev.e.def.name.toUpperCase()} – ÜBERLADUNG: EMP-Stoß legt ${ev.jammed || 'keine'} Türme lahm!`, 'warn', 3200);
       if (navigator.vibrate) try { navigator.vibrate(80); } catch (e) { /* ignore */ }
     }
-    else if (ev.type === 'nukeHit') { if (navigator.vibrate) try { navigator.vibrate([120, 60, 200]); } catch (e) { /* ignore */ } }
+    else if (ev.type === 'nukeHit') { startNukeCam(ev.gx, ev.gy); if (navigator.vibrate) try { navigator.vibrate([120, 60, 200]); } catch (e) { /* ignore */ } }
     else if (ev.type === 'rankUp') { if (ev.rank >= 2) toast(`${TOWERS[ev.t.type].name} erreicht Rang ${'★'.repeat(ev.rank)} (+${ev.rank * 8} % Schaden)`, '', 1800); }
     else if (ev.type === 'newTypes') {
       save.data.intel = save.data.intel || {};
@@ -1207,6 +1244,7 @@ function frame(now) {
     if (replay) updateReplay(dt);
     else {
       updateCamTween(dt);
+      updateNukeCam(dt);
       acc += dt * speed * ts;
       let n = 0;
       while (acc >= STEP && n < 12) { game.update(STEP); acc -= STEP; n++; }
@@ -1235,13 +1273,13 @@ function offerReplay(dt) {
 function startReplay() {
   const R = game && game.nukeReplay;
   if (!R || replay || game.cine) return;
-  closeBuildMenu(); closeTowerMenu(); endAim();
+  closeBuildMenu(); closeTowerMenu(); endAim(); endNukeCam(true);
   const c = renderer.cam;
   replay = { t: 0, gt: 0, blasted: false, cam: { x: c.x, y: c.y, z: c.zoom }, enemies: game.enemies, zones: game.radZones, drops: game.drops, strikes: game.strikesW };
   game.enemies = R.enemies.map(e => ({ ...e }));
   game.radZones = []; game.drops = []; game.strikesW = [];
   const w = toWorld(R.gx, R.gy);
-  c.zoom = Math.max(c.zoom, Math.min(renderer.maxZoom, 0.62)); c.x = w.x; c.y = w.y - 120; renderer.clampCam();
+  setCam(blastFrame(R.gx, R.gy));
   game.fx.nuke(w.x, w.y);
   game.startCinematic(NUKE.cine);
   sfx('nuke');
@@ -1259,11 +1297,10 @@ function updateReplay(dt) {
     const R = game.nukeReplay;
     const bw = toWorld(R.gx, R.gy);
     game.fx.nukeBlast(bw.x, bw.y);
-    let n = 0;
     game.enemies = game.enemies.filter(e => {
-      if (Math.hypot(e.gx - R.gx, e.gy - R.gy) > NUKE.radius && !e.def.boss) return true;
-      if (n++ < 18) game.fx.explosion(e.wx, game.bodyY(e), e.def.boss ? 2.2 : 1.2, 'fire');
-      return !!e.def.boss;
+      if (Math.hypot(e.gx - R.gx, e.gy - R.gy) > NUKE.radius || e.def.boss) return true;
+      game.deathFx(e, 'nuke', R);
+      return false;
     });
   }
   if (!game.cine && replay.t > 1.2) endReplay();
