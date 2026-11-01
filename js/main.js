@@ -7,7 +7,7 @@ import { Input } from './input.js';
 import { Game } from './game.js';
 import { CHALLENGES, dailyChallenge, medalFor, MEDAL_NAME, todayKey } from './challenges.js';
 import { toWorld, toGrid } from './iso.js';
-import { sfx, unlockAudio, setSound, soundOn } from './audio.js';
+import { sfx, unlockAudio, setSound, soundOn, music, musicPreload, musicLevel, setMusic, musicOn } from './audio.js';
 
 const $ = (id) => document.getElementById(id);
 const STORE = 'ironsentinel.v2';
@@ -981,6 +981,7 @@ function openPause() {
     ['WEITER', 'primary', () => { paused = false; closeModal(); }],
     ['FEINDKATALOG', '', () => openCatalog()],
     [`TON: ${soundOn() ? 'AN' : 'AUS'}`, '', () => { toggleSound(); openPause(); }],
+    [`MUSIK: ${musicOn() ? 'AN' : 'AUS'}`, '', () => { toggleMusic(); openPause(); }],
     ['NEU STARTEN', '', () => { closeModal(); startLevel(game.levelIdx, challenge); }],
     ['EINSATZ VERLASSEN', 'danger', () => { closeModal(); toLevels(); }],
   ]);
@@ -1099,6 +1100,7 @@ async function startLevel(i, ch = null, restored = null) {
     if (d.burst) types.add(d.burst.type);
   }
   const models = [...types].map(t => ENEMIES[t].model);
+  musicPreload(['build', 'battle', 'battle2', ...(g.waves.some(w => w.groups.some(gr => ENEMIES[gr.type].boss)) ? ['boss'] : [])]);
   const slow = setTimeout(() => toast('Lade Einsatzdaten …', '', 1500), 400);
   await Promise.all([Assets.loadBiome(spec.biome), Assets.loadModels(models), g.nuke.on ? Assets.loadVfx('nuke') : null, g.hole.on ? Assets.loadVfx('hole') : null]);
   clearTimeout(slow);
@@ -1200,6 +1202,12 @@ function renderChallenges() {
     list.appendChild(b);
   }
 }
+function toggleMusic() {
+  save.data.music = !musicOn();
+  setMusic(save.data.music);
+  save.write();
+  $('btn-music').textContent = `MUSIK: ${save.data.music ? 'AN' : 'AUS'}`;
+}
 function toggleSound() {
   save.data.sound = !soundOn();
   setSound(save.data.sound);
@@ -1245,6 +1253,7 @@ $('btn-help').onclick = () => { unlockAudio(); sfx('click'); showScreen('screen-
 $('btn-help-back').onclick = () => { sfx('click'); showScreen('screen-menu'); };
 $('btn-levels-back').onclick = () => { sfx('click'); updateResumeBtn(); showScreen('screen-menu'); };
 $('btn-sound').onclick = () => { unlockAudio(); toggleSound(); sfx('click'); };
+$('btn-music').onclick = () => { unlockAudio(); toggleMusic(); sfx('click'); };
 function updateFreeBtn() { $('btn-free').textContent = `FREIES SPIEL: ${freePlay() ? 'AN' : 'AUS'}`; }
 $('btn-free').onclick = () => {
   unlockAudio(); sfx('click');
@@ -1267,6 +1276,23 @@ window.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') { if (ui.buildCell) closeBuildMenu(); else if (ui.selected) closeTowerMenu(); else openPause(); }
   if (e.key === ' ') { e.preventDefault(); if (game.canCallWave()) game.startWave(); }
 });
+
+// ---------------- music ----------------
+// build phase / menu: calm track; enemies on the field: battle; a boss alive: boss track. Calm only after the
+// field has been empty for a few seconds, so the music doesn't flip between waves.
+let musicCalm = 0;
+function updateMusic(dt) {
+  if (!game) { music('build'); musicLevel(1); return; }
+  if (game.state === 'won' || game.state === 'lost') { music(null, 1.2); return; }
+  let n = 0, boss = false;
+  const list = replay ? replay.enemies : game.enemies;
+  for (const e of list) if (e.alive) { n++; if (e.def.boss) boss = true; }
+  if (n > 0 || (game.queue.length && game.queue[0].t - game.time < 3)) musicCalm = 0; else musicCalm += paused ? 0 : dt;
+  // two battle tracks take turns wave by wave, so long missions don't repeat one loop
+  music(boss ? 'boss' : game.wave > 0 && musicCalm < 6 ? (game.wave % 2 ? 'battle' : 'battle2') : 'build');
+  // pause: quieter; siren: half; nuclear flash, X-ray and mushroom cloud: (almost) silent, then back slowly
+  musicLevel(paused ? 0.4 : game.cine ? 0.04 : game.nukes.length ? 0.45 : 1, game.cine ? 0.2 : 2.5);
+}
 
 // ---------------- loop ----------------
 let last = performance.now();
@@ -1309,6 +1335,7 @@ function frame(now) {
   }
   else setXray(false);
   if (game) renderer.draw(paused ? 0 : dt * Math.min(speed, 2) * ts, ui);
+  updateMusic(dt);
 }
 // ---------------- nuke replay ----------------
 // the detonation once more from a snapshot of the battlefield: same flash, X-ray and slow motion, game paused meanwhile
@@ -1405,6 +1432,9 @@ function initOffline() {
 async function boot() {
   setSound(save.data.sound !== false);
   $('btn-sound').textContent = `TON: ${save.data.sound !== false ? 'AN' : 'AUS'}`;
+  setMusic(save.data.music !== false);
+  $('btn-music').textContent = `MUSIK: ${save.data.music !== false ? 'AN' : 'AUS'}`;
+  musicPreload(['build']);
   renderer.resize();
   await Assets.load((p) => { $('loadfill').style.width = Math.round(p * 100) + '%'; });
   makeIcons();

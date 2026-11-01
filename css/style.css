@@ -393,6 +393,9 @@ button {
   .ltile { min-height: 70px; }
   .ltile .lname { font-size: 9.5px; }
   .ltile .lmeta { font-size: 8px; letter-spacing: 0; }
+  .menu-buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; width: min(90vw, 420px); }
+  .menu-buttons .btn.large { min-width: 0; padding: 10px 8px; font-size: 15px; }
+  .menu-buttons #btn-play, .menu-buttons #btn-resume, .menu-buttons #btn-free { grid-column: span 2; font-size: 18px; }
 }
 /* small landscape phones */
 @media (max-height: 430px) and (min-aspect-ratio: 1/1) {
@@ -401,6 +404,16 @@ button {
   #btn-wave { min-height: 48px; min-width: 160px; font-size: 16px; }
   .logo.big { font-size: 40px; }
   .tagline { margin: 6px auto 12px; font-size: 15px; }
+  /* main menu: big buttons side by side, the rest in a compact grid */
+  .kicker { font-size: 11px; margin-bottom: 2px; }
+  .tagline { margin: 4px auto 10px; font-size: 13.5px; }
+  .menu-buttons { display: grid; grid-template-columns: repeat(6, 1fr); gap: 7px; width: min(92vw, 660px); }
+  .menu-buttons .btn.large { min-width: 0; grid-column: span 2; padding: 8px 8px; font-size: 14.5px; }
+  .menu-buttons #btn-play, .menu-buttons #btn-resume, .menu-buttons #btn-sound, .menu-buttons #btn-music { grid-column: span 3; }
+  .menu-buttons #btn-play, .menu-buttons #btn-resume { font-size: 18px; min-height: 52px; }
+  #btn-resume.hidden + #btn-play { grid-column: span 6; }
+  #btn-resume small { font-size: 11px; }
+  .offline-status { margin-top: 6px; }
   .btn.large { padding: 9px 24px; font-size: 17px; }
   .help-box ul { font-size: 14px; }
   .ltile { min-height: 62px; }

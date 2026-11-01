@@ -30,6 +30,7 @@ function init() {
   const d = noiseBuf.getChannelData(0);
   for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
   loadSprite();
+  musicInit();
 }
 
 function loadSprite() {
@@ -114,7 +115,7 @@ if (typeof document !== 'undefined') document.addEventListener('visibilitychange
 
 if (typeof document !== 'undefined') for (const ev of ['touchend', 'click', 'keydown']) document.addEventListener(ev, () => { if (enabled) unlockAudio(); }, { capture: true, passive: true });
 
-export function setSound(on) { enabled = on; if (!on && keepAlive) keepAlive.pause(); }
+export function setSound(on) { enabled = on; if (!on && keepAlive) keepAlive.pause(); musicApply(); }
 export function soundOn() { return enabled; }
 
 function throttle(key, ms) {
@@ -444,3 +445,88 @@ export function audioLevel() {
   return 20 * Math.log10(pk + 1e-6);
 }
 export function audioStatus() { return { state: ctx && ctx.state, sprite: !!sprite, sounds: spriteMap ? Object.keys(spriteMap).length : 0, session: (navigator.audioSession && navigator.audioSession.type) || null, keepAlive: keepAlive ? !keepAlive.paused : null }; }
+
+// ---------------- music ----------------
+// Looped tracks (assets/music/<name>.mp3, loop seam crossfaded into the file by tools/make_music.py), switched
+// with crossfades by the game situation. Separate bus: explosions don't pump it and it has its own switch.
+const TRACK_GAIN = { build: 0.85, battle: 1, battle2: 1, boss: 1 };
+const MUSIC_VOL = 0.5;
+let musicEnabled = true, musicBus = null, musicLvl = null, musicTarget = 1;
+const tracks = {}, trackLoad = {};
+let loops = null;      // music.json: loop start and length per track (the file has a wrap-around margin)
+const loopInfo = () => loops || (loops = fetch('assets/music/music.json').then(r => r.json()).catch(() => ({})));
+let wantTrack = null, curTrack = null;
+
+function musicInit() {
+  if (musicBus || !ctx) return;
+  const phone = matchMedia('(pointer: coarse)').matches;
+  musicBus = ctx.createGain();
+  musicBus.gain.value = enabled && musicEnabled ? MUSIC_VOL : 0;
+  musicLvl = ctx.createGain();
+  musicLvl.gain.value = musicTarget;
+  const hpf = ctx.createBiquadFilter();
+  hpf.type = 'highpass'; hpf.frequency.value = phone ? 90 : 28; hpf.Q.value = 0.7;
+  musicBus.connect(musicLvl).connect(hpf).connect(ctx.destination);
+  if (wantTrack) music(wantTrack, 1.5);
+}
+function musicApply() {
+  if (!musicBus) return;
+  const t = ctx.currentTime, v = enabled && musicEnabled ? MUSIC_VOL : 0;
+  musicBus.gain.cancelScheduledValues(t);
+  musicBus.gain.setValueAtTime(musicBus.gain.value, t);
+  musicBus.gain.linearRampToValueAtTime(v, t + 0.4);
+}
+const trackFail = {};
+function loadTrack(name) {
+  if (tracks[name] || trackLoad[name] || trackFail[name] || !ctx) return trackLoad[name];
+  trackLoad[name] = Promise.all([loopInfo(), fetch(`assets/music/${name}.mp3`).then(r => { if (!r.ok) throw new Error(r.status); return r.arrayBuffer(); })])
+    .then(([info, data]) => new Promise((res, rej) => ctx.decodeAudioData(data, res, rej)).then(buf => ({ buf, loop: info[name] })))
+    .then(t => { tracks[name] = t; if (wantTrack === name && (!curTrack || curTrack.name !== name)) music(name); })
+    .catch(() => { trackLoad[name] = null; trackFail[name] = true; });    // missing / undecodable: stay with what plays
+  return trackLoad[name];
+}
+// preload tracks (decoded in the background) so a switch has no gap
+export function musicPreload(names) { wantList = names; if (ctx) for (const n of names) loadTrack(n); }
+let wantList = [];
+// name: 'build' | 'battle' | 'boss' | null (silence); fade: crossfade time in seconds
+export function music(name, fade = 2.5) {
+  wantTrack = name;
+  if (!ctx || !musicBus) return;
+  for (const n of wantList) loadTrack(n);
+  if (curTrack && curTrack.name === name) return;
+  if (name && !tracks[name]) { loadTrack(name); if (curTrack) return; }   // keep the old track until the new one is ready
+  const t = ctx.currentTime;
+  // two battle tracks (different tempos) don't overlap: the old one fades out first, then the new one comes in
+  const swap = curTrack && name && /^battle/.test(curTrack.name) && /^battle/.test(name);
+  let t1 = t;
+  if (curTrack) {
+    const o = curTrack, g = o.g.gain, out = swap ? 1.3 : fade * (name ? 1.4 : 1);
+    g.cancelScheduledValues(t); g.setValueAtTime(g.value, t); g.linearRampToValueAtTime(0, t + out);
+    try { o.src.stop(t + out + 0.1); } catch (e) { /* ignore */ }
+    curTrack = null;
+    if (swap) { t1 = t + 1.0; fade = 1.2; }
+  }
+  if (!name || !tracks[name]) return;
+  const tr = tracks[name], src = ctx.createBufferSource();
+  src.buffer = tr.buf; src.loop = true;
+  const lp = tr.loop && tr.loop.len < tr.buf.duration ? tr.loop : { start: 0, len: tr.buf.duration };
+  src.loopStart = lp.start; src.loopEnd = lp.start + lp.len;
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(0.0001, t1);
+  g.gain.linearRampToValueAtTime(TRACK_GAIN[name] || 1, t1 + fade);
+  src.connect(g).connect(musicBus);
+  src.start(t1, lp.start);
+  curTrack = { name, src, g };
+}
+// overall music level (pause, nuclear flash): 0..1, eased
+export function musicLevel(v, time = 0.6) {
+  if (v === musicTarget) return;
+  musicTarget = v;
+  if (!musicLvl) return;
+  const t = ctx.currentTime;
+  musicLvl.gain.cancelScheduledValues(t);
+  musicLvl.gain.setTargetAtTime(v, t, time / 3);
+}
+export function setMusic(on) { musicEnabled = on; musicApply(); }
+export function musicOn() { return musicEnabled; }
+export function musicStatus() { return { want: wantTrack, playing: curTrack && curTrack.name, loaded: Object.keys(tracks), level: musicTarget, on: musicEnabled }; }
