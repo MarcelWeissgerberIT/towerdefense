@@ -71,7 +71,9 @@ export const Models = {
   cycleOf(def) {
     if (def._cycle) return def._cycle;
     const m = this.data[def.model];
-    const c = m && m.rootDist ? m.rootDist * def.scale : (def.cycle || 1.1);
+    // def.gait: hand-tuned stride length (tiles per animation cycle) - procedural gaits with a short root
+    // distance would otherwise cycle so fast that the legs only flicker
+    const c = def.gait || (m && m.rootDist ? m.rootDist * def.scale : (def.cycle || 1.1));
     def._cycle = Math.max(c, def.speed / 5);
     return def._cycle;
   },
@@ -276,7 +278,8 @@ export const Assets = {
   async load(onProgress) {
     const meta = await fetch('assets/models/models.json').then(r => r.json());
     this._meta = meta;
-    const names = Object.keys(meta).filter(n => !n.startsWith('enemy_'));
+    // enemies and the per-landscape headquarters are loaded with the mission
+    const names = Object.keys(meta).filter(n => !n.startsWith('enemy_') && !n.startsWith('p3d_hq_'));
     const total = names.length + 1;
     let done = 0;
     const tick = () => onProgress && onProgress(++done / total);

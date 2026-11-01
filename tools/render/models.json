@@ -370,12 +370,12 @@
   "legs": {
    "n": 4,
    "mode": "quad",
-   "hip": 0.5,
-   "stride": 0.1,
-   "lift": 0.07,
-   "bob": 0.012
+   "hip": 0.55,
+   "stride": 0.15,
+   "lift": 0.1,
+   "bob": 0.018
   },
-  "pad": 0.1
+  "pad": 0.12
  },
  "enemy_hellhound": {
   "mode": "unit",
@@ -389,12 +389,12 @@
   "legs": {
    "n": 4,
    "mode": "quad",
-   "hip": 0.5,
-   "stride": 0.1,
-   "lift": 0.07,
-   "bob": 0.012
+   "hip": 0.55,
+   "stride": 0.15,
+   "lift": 0.1,
+   "bob": 0.018
   },
-  "pad": 0.1
+  "pad": 0.12
  },
  "enemy_gargoyle": {
   "mode": "unit",
@@ -408,12 +408,12 @@
   "legs": {
    "n": 4,
    "mode": "quad",
-   "hip": 0.4,
-   "stride": 0.08,
-   "lift": 0.06,
-   "bob": 0.01
+   "hip": 0.45,
+   "stride": 0.13,
+   "lift": 0.09,
+   "bob": 0.012
   },
-  "pad": 0.1
+  "pad": 0.12
  },
  "enemy_imp": {
   "mode": "unit",
@@ -427,47 +427,96 @@
   "legs": {
    "n": 2,
    "mode": "biped",
-   "hip": 0.4,
-   "stride": 0.1,
-   "lift": 0.07,
-   "bob": 0.015
+   "hip": 0.45,
+   "stride": 0.16,
+   "lift": 0.1,
+   "bob": 0.02
   },
-  "pad": 0.1
+  "pad": 0.12
  },
  "enemy_necromancer": {
   "mode": "unit",
-  "frames": 32,
+  "frames": 16,
   "size": 0.95,
   "yaw0": 90,
-  "P": 128
+  "P": 128,
+  "anim": {
+   "frames": 8
+  },
+  "deform": {
+   "mode": "robe",
+   "h": 0.5,
+   "amp": 0.06
+  },
+  "pad": 0.12
  },
  "enemy_wraith": {
   "mode": "unit",
-  "frames": 32,
+  "frames": 16,
   "size": 0.95,
   "yaw0": 90,
-  "P": 128
+  "P": 128,
+  "anim": {
+   "frames": 8
+  },
+  "deform": {
+   "mode": "robe",
+   "h": 0.65,
+   "amp": 0.1
+  },
+  "pad": 0.14
  },
  "enemy_lich": {
   "mode": "unit",
-  "frames": 32,
+  "frames": 16,
   "size": 1.6,
   "yaw0": 90,
-  "P": 128
+  "P": 128,
+  "anim": {
+   "frames": 6
+  },
+  "deform": {
+   "mode": "robe",
+   "h": 0.5,
+   "amp": 0.06
+  },
+  "pad": 0.12
  },
  "enemy_fallen": {
   "mode": "unit",
   "frames": 32,
   "size": 1.05,
   "yaw0": 90,
-  "P": 128
+  "P": 128,
+  "anim": {
+   "frames": 8
+  },
+  "deform": {
+   "mode": "wings",
+   "r0": 0.22,
+   "amp": 0.55,
+   "minY": 0.35,
+   "bob": 0.03
+  },
+  "pad": 0.22
  },
  "enemy_archangel": {
   "mode": "unit",
-  "frames": 32,
+  "frames": 16,
   "size": 1.7,
   "yaw0": 90,
-  "P": 128
+  "P": 128,
+  "anim": {
+   "frames": 6
+  },
+  "deform": {
+   "mode": "wings",
+   "r0": 0.2,
+   "amp": 0.45,
+   "minY": 0.35,
+   "bob": 0.025
+  },
+  "pad": 0.2
  },
  "enemy_zombie": {
   "url": "glb/enemy_zombie_walk.glb",

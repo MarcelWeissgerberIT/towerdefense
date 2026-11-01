@@ -6,8 +6,8 @@ import { rand } from './iso.js';
 const MAX_PARTICLES = 900;
 
 export class FX {
-  constructor() { this.p = []; this.shake = 0; this.flash = 0; this.whiteout = 0; this.blind = null; this.lightning = 0; this.grainN = 0; }
-  clear() { this.p.length = 0; this.shake = 0; this.flash = 0; this.whiteout = 0; this.blind = null; this.lightning = 0; this.grainN = 0; }
+  constructor() { this.splats = []; this.p = []; this.shake = 0; this.flash = 0; this.whiteout = 0; this.blind = null; this.lightning = 0; this.grainN = 0; }
+  clear() { this.splats = []; this.p.length = 0; this.shake = 0; this.flash = 0; this.whiteout = 0; this.blind = null; this.lightning = 0; this.grainN = 0; }
 
   add(o) {
     if (this.p.length >= MAX_PARTICLES) {
@@ -88,6 +88,22 @@ export class FX {
     for (let i = 0; i < n; i++) {
       const a = Math.random() * Math.PI * 2, v = rand(0.3, 1) * speed;
       this.add({ k: 'debris', x, y, z: 4, vx: Math.cos(a) * v, vy: Math.sin(a) * v * 0.5, vz: rand(140, 340), life: rand(0.8, 1.4), s: rand(2, 6), c: Math.random() < 0.5 ? '#2a2a2a' : '#7c7c80' });
+    }
+  }
+  // creatures bleed: drops fly in an arc, fall to the ground (floor = world y of the ground under the unit) and
+  // leave a small stain there; bones / stone shatter into chips, ghosts spill glowing ectoplasm, angels lose feathers
+  // B = def.blood: { c: colour, c2: second colour, glow, chips: colour (no stains), feathers: colour }
+  blood(x, y, floor, B, n = 4, dirX = 0, power = 1) {
+    if (!B) return;
+    for (let i = 0; i < n; i++) {
+      const a = rand(-Math.PI * 0.95, -Math.PI * 0.05), v = rand(60, 210) * power;
+      const c = B.chips || (B.c2 && Math.random() < 0.35 ? B.c2 : B.c);
+      this.add({ k: 'drop', x: x + rand(-5, 5), y: y + rand(-6, 6), vx: Math.cos(a) * v * 0.9 + dirX * rand(40, 140), vy: Math.sin(a) * v - 40,
+        floor: floor + rand(-7, 7), life: 2.2, r: B.chips ? rand(1.4, 2.8) : rand(1.3, 2.6), c, glow: B.glow, chip: !!B.chips });
+    }
+    if (B.glow) this.add({ k: 'glow', x, y, s: 26 + 6 * n, life: 0.2, spr: B.glow });
+    if (B.feathers && Math.random() < 0.5 + 0.1 * n) {
+      for (let i = 0; i < Math.max(1, n >> 1); i++) this.add({ k: 'feather', x: x + rand(-14, 14), y: y + rand(-14, 6), vx: rand(-50, 50), vy: rand(-70, -20), floor: floor + rand(-5, 5), life: rand(2.4, 3.6), rot: rand(0, 6.3), vr: rand(-4, 4), c: B.feathers });
     }
   }
   // machine destroyed: kind-specific blast, the sprite splinters into burning pieces, heavy units leave a wreck
@@ -344,6 +360,17 @@ export class FX {
           }
           break;
         case 'spark': o.x += o.vx * dt; o.y += o.vy * dt; o.vy += 380 * dt; break;
+        case 'drop':
+          o.x += o.vx * dt; o.y += o.vy * dt; o.vy += 720 * dt;
+          if (o.vy > 0 && o.y >= o.floor) {
+            if (!o.chip && this.splats.length < 300) this.splats.push({ x: o.x, y: o.floor, r: o.r * rand(1.7, 3.0), c: o.c, glow: o.glow });
+            o.t = o.life;                              // gone (the stain stays on the ground)
+          }
+          break;
+        case 'feather':
+          o.vx *= 1 - dt * 1.8; o.vy = Math.min(o.vy + 120 * dt, 34); o.x += (o.vx + Math.sin(o.t * 5 + o.rot) * 26) * dt; o.y += o.vy * dt; o.rot += o.vr * dt;
+          if (o.y >= o.floor) { o.y = o.floor; o.vx = 0; o.vy = 0; o.vr = 0; }
+          break;
         case 'smoke': case 'fire': o.x += o.vx * dt; o.y += o.vy * dt; if (o.k === 'fire') { o.vx *= 1 - dt * 2.5; o.vy *= 1 - dt * 2.5; o.vy -= 40 * dt; } break;
         case 'debris':
           o.x += o.vx * dt; o.y += o.vy * dt; o.z += o.vz * dt; o.vz -= 900 * dt;
@@ -459,6 +486,19 @@ export class FX {
           ctx.globalAlpha = 1 - k * k;
           ctx.fillStyle = o.c;
           ctx.fillRect(o.x - o.s / 2, o.y - o.z - o.s / 2, o.s, o.s);
+          break;
+        case 'drop': {
+          ctx.globalAlpha = 1;
+          ctx.fillStyle = o.c;
+          // stretched along the flight direction
+          const sp = Math.hypot(o.vx, o.vy) || 1, st = Math.min(2.6, 1 + sp / 260);
+          ctx.beginPath(); ctx.ellipse(o.x, o.y, o.r * st, o.r, Math.atan2(o.vy, o.vx), 0, Math.PI * 2); ctx.fill();
+          break;
+        }
+        case 'feather':
+          ctx.globalAlpha = Math.min(1, (1 - k) * 3);
+          ctx.fillStyle = o.c;
+          ctx.beginPath(); ctx.ellipse(o.x, o.y, 4.5, 1.5, o.rot, 0, Math.PI * 2); ctx.fill();
           break;
         case 'boom': {
           // the mushroom cloud is drawn last, on top of all smoke and explosions

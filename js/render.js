@@ -440,6 +440,111 @@ export class Renderer {
     this.ground = { canvas: iso, ctx: ig, s, ox, oy, W, H };
   }
 
+  // headquarters: one model per landscape (falls back to the generic one)
+  hqName() {
+    const n = 'p3d_hq_' + this.game.level.biome;
+    return Models.meta(n) ? n : 'p3d_base_hq';
+  }
+  // the base takes visible damage with every life lost: soot and cracks over the sprite, then smoke columns,
+  // fires, sparks and small secondary explosions from points on the building (sprite silhouette)
+  drawBase(ctx, game, b) {
+    const name = this.hqName(), m = Models.meta(name);
+    Models.draw(ctx, name, 0, b.x, b.y);
+    if (!m) return;
+    const dmg = 1 - game.lives / Math.max(1, game.maxLives);
+    if (dmg <= 0.05) return;
+    const stage = dmg >= 0.85 ? 4 : dmg >= 0.6 ? 3 : dmg >= 0.35 ? 2 : 1;
+    const ov = this.baseDamageOverlay(name, m, stage);
+    if (ov) { const k = m.scale; ctx.drawImage(ov, b.x - m.ax * k, b.y - m.ay * k, m.w * k, m.h * k); }
+    // emitter points on the upper part of the building, fixed per map
+    if (!this._hqPts || this._hqPts.name !== name) {
+      const g = Models.grains(name, 0, 60), r = mulberry32(77), pts = [];
+      for (let i = 0; i < g.pts.length; i += 2) if (g.pts[i + 1] < -m.h * 0.18) pts.push([g.pts[i] * m.scale, g.pts[i + 1] * m.scale]);
+      for (let i = pts.length - 1; i > 0; i--) { const j = Math.floor(r() * (i + 1)); [pts[i], pts[j]] = [pts[j], pts[i]]; }
+      this._hqPts = { name, pts: pts.slice(0, 6) };
+    }
+    const P = this._hqPts.pts, fx = game.fx, dt = this._dt || 0.016;
+    if (!P.length || game.cine) return;
+    const n = Math.min(P.length, stage + 1);
+    for (let i = 0; i < n; i++) {
+      const [px, py] = P[i], x = b.x + px, y = b.y + py;
+      // smoke column (black from stage 2 on)
+      if (Math.random() < dt * (2 + stage * 1.5)) fx.add({ k: 'smoke', x: x + (Math.random() - 0.5) * 8, y, vx: 6 + Math.random() * 8, vy: -40 - Math.random() * 25, s: 10 + stage * 3, grow: 50 + stage * 18, life: 2 + stage * 0.4, a: 0.35 + stage * 0.1, dark: stage >= 2 });
+      // fires
+      if (stage >= 2 && i < stage && Math.random() < dt * 9) fx.add({ k: 'fire', x: x + (Math.random() - 0.5) * 10, y: y + 4, vx: (Math.random() - 0.5) * 10, vy: -30 - Math.random() * 30, s: 9 + stage * 3, life: 0.4 + Math.random() * 0.3 });
+    }
+    // sparks from torn cables, small secondary blasts when it is critical
+    if (stage >= 2 && Math.random() < dt * 1.2 * stage) { const [px, py] = P[Math.floor(Math.random() * n)]; fx.sparks(b.x + px, b.y + py, 5, '#ffd27a', 140); }
+    if (stage >= 4 && Math.random() < dt * 0.5) { const [px, py] = P[Math.floor(Math.random() * n)]; fx.explosion(b.x + px, b.y + py, 0.45, 'fire'); }
+    // critical: rotating red alarm light
+    if (stage >= 3) {
+      const a = 0.35 + 0.35 * Math.sin(this.time * 9);
+      ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = a;
+      ctx.drawImage(Assets.fx.red, b.x - 60, b.y - m.topPx - 40, 120, 120);
+      ctx.restore();
+    }
+  }
+  // soot, scorch marks and cracks clipped to the building's sprite, cached per damage stage
+  baseDamageOverlay(name, m, stage) {
+    const key = name + ':' + stage;
+    if (this._hqOv && this._hqOv.key === key) return this._hqOv.c;
+    const c = document.createElement('canvas'); c.width = m.w; c.height = m.h;
+    const g = c.getContext('2d'), r = mulberry32(31 + stage);
+    g.drawImage(m.img, 0, 0, m.w, m.h, 0, 0, m.w, m.h);
+    g.globalCompositeOperation = 'source-atop';
+    // overall soot
+    g.fillStyle = `rgba(20,14,10,${0.08 + 0.1 * stage})`; g.fillRect(0, 0, m.w, m.h);
+    // scorch blotches
+    for (let i = 0; i < 3 + stage * 4; i++) {
+      const x = r() * m.w, y = m.h * (0.15 + r() * 0.7), rr = m.w * (0.04 + r() * 0.07);
+      const gr = g.createRadialGradient(x, y, 0, x, y, rr);
+      gr.addColorStop(0, 'rgba(8,6,4,0.85)'); gr.addColorStop(1, 'rgba(8,6,4,0)');
+      g.fillStyle = gr; g.beginPath(); g.arc(x, y, rr, 0, Math.PI * 2); g.fill();
+    }
+    // cracks: jagged random walks
+    g.strokeStyle = 'rgba(5,4,3,0.9)'; g.lineCap = 'round';
+    for (let i = 0; i < stage * 5; i++) {
+      let x = r() * m.w, y = m.h * (0.2 + r() * 0.65), a = r() * Math.PI * 2;
+      g.lineWidth = 1 + r() * 1.4;
+      g.beginPath(); g.moveTo(x, y);
+      for (let k = 0; k < 6 + r() * 8; k++) { a += (r() - 0.5) * 1.4; x += Math.cos(a) * 5; y += Math.sin(a) * 5; g.lineTo(x, y); }
+      g.stroke();
+    }
+    // glowing burn holes when it is heavily damaged
+    if (stage >= 3) for (let i = 0; i < stage; i++) {
+      const x = m.w * (0.25 + r() * 0.5), y = m.h * (0.3 + r() * 0.4), rr = 4 + r() * 5;
+      g.fillStyle = 'rgba(10,6,4,0.95)'; g.beginPath(); g.ellipse(x, y, rr * 1.4, rr, 0, 0, Math.PI * 2); g.fill();
+      g.strokeStyle = 'rgba(255,120,30,0.9)'; g.lineWidth = 1.4; g.stroke();
+    }
+    this._hqOv = { key, c };
+    return c;
+  }
+  // blood on the ground: a pool of overlapping blobs with a few droplets around (flat, iso-squashed);
+  // glowing ectoplasm / ichor gets a lighter rim
+  stampBlood(x, y, size, B) {
+    const gr = this.ground;
+    if (!gr) return;
+    const g = gr.ctx;
+    g.setTransform(gr.s, 0, 0, gr.s, gr.s * gr.ox, gr.s * gr.oy);
+    const big = size > 8;
+    g.globalAlpha = big ? 0.78 : 0.7;
+    g.fillStyle = B.c;
+    const blobs = big ? 7 : 1;
+    for (let i = 0; i < blobs; i++) {
+      const r = size * (big ? 0.18 + Math.random() * 0.22 : 1), ox = big ? (Math.random() - 0.5) * size * 0.7 : 0, oy = big ? (Math.random() - 0.5) * size * 0.35 : 0;
+      g.beginPath(); g.ellipse(x + ox, y + oy, r, r * 0.5, 0, 0, Math.PI * 2); g.fill();
+    }
+    if (big) for (let i = 0; i < 9; i++) {
+      const a = Math.random() * Math.PI * 2, d = size * (0.45 + Math.random() * 0.5), r = 1 + Math.random() * 2.2;
+      g.beginPath(); g.ellipse(x + Math.cos(a) * d, y + Math.sin(a) * d * 0.5, r, r * 0.55, 0, 0, Math.PI * 2); g.fill();
+    }
+    if (B.glow) {
+      g.globalCompositeOperation = 'lighter'; g.globalAlpha = 0.25;
+      g.beginPath(); g.ellipse(x, y, size * 0.5, size * 0.25, 0, 0, Math.PI * 2); g.fill();
+      g.globalCompositeOperation = 'source-over';
+    }
+    g.globalAlpha = 1;
+  }
   stampDecal(x, y, size) {
     const gr = this.ground;
     if (!gr) return;
@@ -454,12 +559,16 @@ export class Renderer {
   draw(dt, ui) {
     const game = this.game, ctx = this.ctx, dpr = this.dpr;
     this.time += dt;
+    this._dt = dt;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.fillStyle = this.bg;
     ctx.fillRect(0, 0, this.vw, this.vh);
     if (!game) return;
-    for (const d of game.decals) this.stampDecal(d.x, d.y, d.s);
+    // nuclear X-ray flash: creatures show their bones (drawEnemy)
+    this.xray = !!(game.fx.blind && game.fx.blindState().xray);
+    for (const d of game.decals) d.blood ? this.stampBlood(d.x, d.y, d.s, d.blood) : this.stampDecal(d.x, d.y, d.s);
     game.decals.length = 0;
+    if (game.fx.splats.length) { for (const d of game.fx.splats) this.stampBlood(d.x, d.y, d.r, d); game.fx.splats.length = 0; }
 
     const z = this.cam.zoom;
     let shx = 0, shy = 0;
@@ -485,7 +594,7 @@ export class Renderer {
     ctx.globalAlpha = 0.9;
     for (const p of game.props) if (!p.z) Models.drawShadow(ctx, p.model, p.rot, p.wx, p.wy, p.s);
     for (const p of game.decor) if (!p.z) Models.drawShadow(ctx, p.model, p.rot, p.wx, p.wy, p.s);
-    Models.drawShadow(ctx, 'p3d_base_hq', 0, game.baseW.x, game.baseW.y);
+    Models.drawShadow(ctx, this.hqName(), 0, game.baseW.x, game.baseW.y);
     for (const g of game.gates) Models.drawShadow(ctx, this.biome.gate || 'p3d_spawn_gate', g.rot, g.x, g.y);
     for (const b of game.barricades) Models.drawShadow(ctx, 'p3d_prop_barrier', b.rot, b.wx, b.wy, BAR_SCALE);
     for (const t of game.towers) {
@@ -537,7 +646,7 @@ export class Renderer {
       else if (it.k === 6) ctx.drawImage(it.o.side, it.o.cx - HW, it.o.cy - it.o.z, it.o.side.width / gs, it.o.side.height / gs);
       else if (it.k === 1) this.drawTower(ctx, it.o, ui);
       else if (it.k === 2) this.drawEnemy(ctx, it.o);
-      else if (it.k === 3) Models.draw(ctx, 'p3d_base_hq', 0, it.o.x, it.o.y);
+      else if (it.k === 3) this.drawBase(ctx, game, it.o);
       else if (it.k === 4) this.drawGate(ctx, it.o);
       else if (it.k === 7) this.drawBarricade(ctx, it.o, ui);
     }
@@ -1752,6 +1861,88 @@ export class Renderer {
     ctx.restore();
     e._top = y - 24;
   }
+  // procedural skeleton for the X-ray flash: humanoid (front view, walking) or quadruped (side view along the
+  // heading), plus wings / horns; sized from the sprite's height
+  drawBones(ctx, e, x, y, sc, m) {
+    // two passes: a light halo first (dark after the X-ray inversion) so the bones stand out, then the bones
+    this._boneHalo = true; this.drawBonesPass(ctx, e, x, y, sc, m);
+    this._boneHalo = false; this.drawBonesPass(ctx, e, x, y, sc, m);
+  }
+  drawBonesPass(ctx, e, x, y, sc, m) {
+    const def = e.def, H = m.topPx * sc * 0.96;
+    const ph = (e.walk / Models.cycleOf(def)) * Math.PI * 2, sw = Math.sin(ph);
+    const hx = Math.cos(e.ang) - Math.sin(e.ang), hy = Math.cos(e.ang) + Math.sin(e.ang);   // heading on screen
+    const dir = hx >= 0 ? 1 : -1, side = Math.min(1, Math.abs(hx) / Math.hypot(hx, hy * 0.5) + 0.25);
+    const quad = def.motion === 'walker';
+    const halo = this._boneHalo;
+    const lw = Math.max(1.2, H * (quad ? 0.05 : 0.035)) * (halo ? 2.6 : 1);
+    ctx.save();
+    ctx.translate(x, y);
+    const ink = halo ? 'rgba(235,235,235,0.55)' : '#060606';
+    ctx.strokeStyle = ink; ctx.fillStyle = ink;
+    ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.lineWidth = lw;
+    const L = (pts) => { ctx.beginPath(); ctx.moveTo(pts[0], pts[1]); for (let i = 2; i < pts.length; i += 2) ctx.lineTo(pts[i], pts[i + 1]); ctx.stroke(); };
+    const J = (px, py, r = lw * 0.75) => { ctx.beginPath(); ctx.arc(px, py, r, 0, Math.PI * 2); ctx.fill(); };
+    const eyes = (cx, cy, r, d) => { if (halo) return; ctx.fillStyle = '#d8d8d8'; for (const s of d) { ctx.beginPath(); ctx.arc(cx + s * r * 0.42, cy - r * 0.1, r * 0.28, 0, Math.PI * 2); ctx.fill(); } ctx.fillStyle = '#060606'; };
+    const wings = def.blood && def.blood.feathers || e.type === 'imp' || e.type === 'gargoyle';
+    if (!quad) {
+      const W = H * 0.32, lean = dir * side * H * 0.04;
+      const sk = { x: lean, y: -H * 0.9 }, r = H * 0.075;
+      // skull + jaw
+      ctx.beginPath(); ctx.ellipse(sk.x, sk.y, r * 0.85, r, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.fillRect(sk.x - r * 0.45, sk.y + r * 0.7, r * 0.9, r * 0.45);
+      eyes(sk.x, sk.y, r, [-1, 1]);
+      if (e.type === 'demon' || e.type === 'imp') { L([sk.x - r * 0.6, sk.y - r * 0.6, sk.x - r * 1.3, sk.y - r * 1.6, sk.x - r * 0.9, sk.y - r * 2.1]); L([sk.x + r * 0.6, sk.y - r * 0.6, sk.x + r * 1.3, sk.y - r * 1.6, sk.x + r * 0.9, sk.y - r * 2.1]); }
+      // spine, ribs, pelvis
+      const ghost = e.type === 'wraith';
+      L([lean, -H * 0.8, lean * 0.6, -H * 0.62, 0, -H * 0.46]);
+      for (let i = 0; i < 4; i++) {
+        const ry = -H * (0.77 - i * 0.045), rw = W * (0.36 - i * 0.03);
+        ctx.beginPath(); ctx.ellipse(lean * 0.8, ry, rw, H * 0.03, 0, Math.PI * 0.05, Math.PI * 0.95); ctx.stroke();
+      }
+      if (ghost) L([0, -H * 0.46, -W * 0.1, -H * 0.3, W * 0.05, -H * 0.15]);
+      else {
+        ctx.beginPath(); ctx.ellipse(0, -H * 0.45, W * 0.3, H * 0.045, 0, 0, Math.PI * 2); ctx.fill();
+        // legs with a walking swing
+        for (const s of [-1, 1]) {
+          const k = sw * s * W * 0.25;
+          const hip = [s * W * 0.18, -H * 0.45], knee = [s * W * 0.2 + k * 0.6, -H * 0.24], foot = [s * W * 0.2 + k, -H * 0.02];
+          L([...hip, ...knee, ...foot]); J(...knee); L([foot[0], foot[1], foot[0] + dir * W * 0.14, foot[1]]);
+        }
+      }
+      // shoulders and arms (opposite swing)
+      L([-W * 0.42 + lean, -H * 0.79, W * 0.42 + lean, -H * 0.79]);
+      for (const s of [-1, 1]) {
+        const k = -sw * s * W * 0.18;
+        const sh = [s * W * 0.42 + lean, -H * 0.79], el = [s * W * 0.52 + k * 0.5, -H * 0.62], ha = [s * W * 0.5 + k, -H * 0.47];
+        L([...sh, ...el, ...ha]); J(...el); J(...ha, lw * 0.9);
+      }
+      if (wings) {
+        const fl = Math.sin(ph * 2) * 0.25;
+        for (const s of [-1, 1]) {
+          const r0 = [s * W * 0.25 + lean, -H * 0.78], wr = [s * W * 1.5, -H * (1.0 + fl)];
+          L([...r0, ...wr]); J(...wr);
+          for (let i = 0; i < 4; i++) L([...wr, s * W * (1.7 + 0.5 * i), -H * (0.98 - i * 0.16 + fl * 0.6)]);
+        }
+      }
+    } else {
+      // quadruped, side view; foreshortened when it walks towards / away from the camera
+      const Lb = H * 1.25 * side, hs = dir;
+      const back = -H * 0.66;
+      ctx.beginPath(); ctx.ellipse(hs * Lb * 0.52, -H * 0.72, H * 0.13 + Lb * 0.04, H * 0.09, hs * 0.15, 0, Math.PI * 2); ctx.fill();   // skull
+      eyes(hs * Lb * 0.5, -H * 0.74, H * 0.09, [hs * 0.6]);
+      L([hs * Lb * 0.42, -H * 0.68, hs * Lb * 0.3, back, -hs * Lb * 0.36, back + H * 0.02, -hs * Lb * 0.56, -H * 0.42]);   // neck, spine, tail
+      for (let i = 0; i < 5; i++) { const rx = hs * Lb * (0.22 - i * 0.08); ctx.beginPath(); ctx.moveTo(rx, back); ctx.quadraticCurveTo(rx + hs * H * 0.06, back + H * 0.2, rx - hs * H * 0.02, back + H * 0.32); ctx.stroke(); }
+      for (const [lx, o] of [[0.26, 0], [-0.3, Math.PI]]) for (const far of [0, 1]) {
+        const k = Math.sin(ph + o + far * Math.PI) * H * 0.16;
+        const top = [hs * Lb * lx, back + H * 0.04], knee = [hs * Lb * lx + k * 0.5, -H * 0.3], foot = [hs * Lb * lx + k, -H * 0.02];
+        ctx.globalAlpha = far ? 0.6 : 1; L([...top, ...knee, ...foot]); J(...knee);
+      }
+      ctx.globalAlpha = 1;
+      if (wings) for (let i = 0; i < 3; i++) L([hs * Lb * 0.1, back, -hs * Lb * (0.1 + 0.15 * i), back - H * (0.35 - 0.06 * i)]);
+    }
+    ctx.restore();
+  }
   drawEnemy(ctx, e, ghost = false) {
     const def = e.def, name = def.model;
     const m = Models.meta(name);
@@ -1793,6 +1984,13 @@ export class Renderer {
       return;
     }
     if (def.cloak && e.revealT > 0 && Math.random() < 0.25) ctx.globalAlpha = 0.6;
+    if (this.xray && def.faction) {
+      // X-ray: faint flesh, bright bones (drawn dark - the X-ray filter inverts the picture)
+      Models.draw(ctx, name, f, x, y, sc, 0.28);
+      this.drawBones(ctx, e, x, y, sc, m);
+      e._top = y - m.topPx * def.scale;
+      return;
+    }
     if (pose.roll) {
       ctx.save();
       ctx.translate(x, y);

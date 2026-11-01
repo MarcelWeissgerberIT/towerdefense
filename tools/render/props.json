@@ -378,5 +378,85 @@
   "P": 128,
   "pad": 0.04,
   "shadow": true
+ },
+ "p3d_hq_wasteland": {
+  "url": "glb/p3d_hq_wasteland.glb",
+  "mode": "prop",
+  "frames": 1,
+  "size": 1.95,
+  "yaw0": 90,
+  "P": 128,
+  "pad": 0.04,
+  "shadow": true
+ },
+ "p3d_hq_jungle": {
+  "url": "glb/p3d_hq_jungle.glb",
+  "mode": "prop",
+  "frames": 1,
+  "size": 1.95,
+  "yaw0": 0,
+  "P": 128,
+  "pad": 0.04,
+  "shadow": true
+ },
+ "p3d_hq_desert": {
+  "url": "glb/p3d_hq_desert.glb",
+  "mode": "prop",
+  "frames": 1,
+  "size": 1.95,
+  "yaw0": 90,
+  "P": 128,
+  "pad": 0.04,
+  "shadow": true
+ },
+ "p3d_hq_ice": {
+  "url": "glb/p3d_hq_ice.glb",
+  "mode": "prop",
+  "frames": 1,
+  "size": 2.35,
+  "yaw0": 0,
+  "P": 128,
+  "pad": 0.04,
+  "shadow": true
+ },
+ "p3d_hq_volcano": {
+  "url": "glb/p3d_hq_volcano.glb",
+  "mode": "prop",
+  "frames": 1,
+  "size": 1.95,
+  "yaw0": 0,
+  "P": 128,
+  "pad": 0.04,
+  "shadow": true
+ },
+ "p3d_hq_city": {
+  "url": "glb/p3d_hq_city.glb",
+  "mode": "prop",
+  "frames": 1,
+  "size": 1.95,
+  "yaw0": 0,
+  "P": 128,
+  "pad": 0.04,
+  "shadow": true
+ },
+ "p3d_hq_necro": {
+  "url": "glb/p3d_hq_necro.glb",
+  "mode": "prop",
+  "frames": 1,
+  "size": 1.95,
+  "yaw0": 0,
+  "P": 128,
+  "pad": 0.04,
+  "shadow": true
+ },
+ "p3d_hq_inferno": {
+  "url": "glb/p3d_hq_inferno.glb",
+  "mode": "prop",
+  "frames": 1,
+  "size": 1.95,
+  "yaw0": 0,
+  "P": 128,
+  "pad": 0.04,
+  "shadow": true
  }
 }

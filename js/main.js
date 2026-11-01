@@ -105,7 +105,7 @@ function renderLevels() {
     const b = BIOMES[bid];
     const sec = document.createElement('div');
     sec.className = 'biome-sec';
-    sec.innerHTML = `<div class="biome-head" style="background-image:url(assets/tex/${b.ground}.jpg)"><span>${b.name.toUpperCase()}</span></div>`;
+    sec.innerHTML = `<div class="biome-head" style="background-image:url(assets/tex/${b.ground}.jpg)"><span>${b.name.toUpperCase()}</span><button class="intro-play" data-biome="${bid}">▶ INTRO</button></div>`;
     const row = document.createElement('div');
     row.className = 'lrow';
     LEVEL_SPECS.forEach((L, i) => {
@@ -120,13 +120,15 @@ function renderLevels() {
   for (const [cid, ch] of Object.entries(CHAPTERS)) {
     const sec = document.createElement('div');
     sec.className = 'biome-sec';
-    sec.innerHTML = `<div class="biome-head" style="background-image:url(assets/tex/${BIOMES[ch.tex].ground}.jpg)"><span>${ch.name.toUpperCase()}</span><small>${ch.desc}</small></div>`;
+    const iv = { undead: 'necro', inferno: 'inferno' }[cid];
+    sec.innerHTML = `<div class="biome-head" style="background-image:url(assets/tex/${BIOMES[ch.tex].ground}.jpg)"><span>${ch.name.toUpperCase()}</span><small>${ch.desc}</small>${iv ? `<button class="intro-play" data-biome="${iv}">▶ INTRO</button>` : ''}</div>`;
     const row = document.createElement('div');
     row.className = 'lrow';
     LEVEL_SPECS.forEach((L, i) => { if (L.chapter === cid) { const t = levelTile(L, i, true); total += t.stars; row.appendChild(t.btn); } });
     sec.appendChild(row);
     list.appendChild(sec);
   }
+  for (const btn of list.querySelectorAll('.intro-play')) btn.onclick = (ev) => { ev.stopPropagation(); unlockAudio(); sfx('click'); playIntro(btn.dataset.biome); };
   $('total-stars').innerHTML = `★ ${total} / ${LEVEL_COUNT * 3}`;
   updateDiffBar();
   // scroll to the first unfinished level
@@ -1298,6 +1300,50 @@ function updateInsets() {
 }
 
 let challenge = null;
+// ---------------- landscape intro videos ----------------
+// played the first time a world is entered (started right in the tap, so iOS allows the sound, while the mission
+// data loads behind it) and on demand from the mission list. Without a network the intro is simply skipped.
+const INTRO_SUB = { wasteland: 'Die Maschinen kommen', jungle: 'Grüne Hölle', desert: 'Sturm aus Sand und Stahl', ice: 'Eiskalte Front', volcano: 'Feuerprobe', city: 'Die letzte Stadt', necro: 'Dimensionsriss', inferno: 'Der Abgrund' };
+let introPlaying = false;
+function playIntro(biome) {
+  return new Promise((resolve) => {
+    const box = $('intro'), v = $('intro-video');
+    let done = false, titleT = 0;
+    const finish = () => {
+      if (done) return;
+      done = true; introPlaying = false;
+      clearTimeout(titleT);
+      v.pause(); v.removeAttribute('src'); v.load();
+      box.classList.add('hidden'); box.classList.remove('show-title');
+      $('intro-sound').classList.add('hidden');
+      resolve();
+    };
+    introPlaying = true;
+    musicLevel(0, 0.3);
+    $('intro-title').innerHTML = `${BIOMES[biome].name.toUpperCase()}<small>${INTRO_SUB[biome] || ''}</small>`;
+    box.classList.remove('hidden');
+    v.muted = !soundOn();
+    v.src = `assets/video/intro_${biome}.mp4`;
+    v.onended = finish;
+    v.onerror = finish;
+    $('intro-skip').onclick = (ev) => { ev.stopPropagation(); finish(); };
+    $('intro-sound').onclick = (ev) => { ev.stopPropagation(); v.muted = false; $('intro-sound').classList.add('hidden'); };
+    titleT = setTimeout(() => box.classList.add('show-title'), 900);
+    const p = v.play();
+    if (p && p.catch) p.catch(() => {
+      // no sound allowed without a gesture: play muted and offer the sound button
+      v.muted = true;
+      $('intro-sound').classList.remove('hidden');
+      v.play().catch(finish);
+    });
+    // safety net: never hang on a stalled download
+    setTimeout(() => { if (!done && v.currentTime < 0.1) finish(); }, 9000);
+  });
+}
+function introDue(spec, ch, restored) {
+  return !ch && !restored && navigator.onLine !== false && !save.data['intro_' + spec.biome];
+}
+
 const RIFT_STORY = {
   undead: ['DIMENSIONSRISS', 'Die Maschinen haben in ihrem Kern ein verbotenes Experiment gestartet: ein Tor in andere Dimensionen. Es ist außer Kontrolle geraten – durch die Risse strömt das <b>Totenreich</b>. Nekromanten wecken die Toten, Zombies und Skelette marschieren, Gespenster ziehen über das Feld.<br><br>Deine Türme und das Arsenal funktionieren auch gegen sie. Merke dir: <b>Feuer und Plasma</b> halten Skelette am Boden. Halte die Linie, Kommandant!'],
   inferno: ['DER ABGRUND ÖFFNET SICH', 'Der Riss wird größer. Hinter dem Totenreich brennt die <b>Hölle</b>: Imps, Höllenhunde und Dämonen stürmen heran, über ihnen kreisen <b>gefallene Engel</b> – angeführt vom Erzengel des Abgrunds.<br><br>Höllenhunde sind hitzefest, Gargoyles erstarren zu Stein. Schließe den Riss, bevor die Hölle die Welt verschlingt!'],
@@ -1317,11 +1363,16 @@ async function startLevel(i, ch = null, restored = null) {
     if (d.burst) types.add(d.burst.type);
     if (d.escort) for (const t of d.escort) types.add(t);
   }
+  // the landscape intro starts right away (inside the tap) and covers the loading time
+  let intro = null;
+  if (introDue(spec, ch, restored)) { save.data['intro_' + spec.biome] = true; save.write(); intro = playIntro(spec.biome); }
   const models = [...types].map(t => ENEMIES[t].model);
+  models.push('p3d_hq_' + spec.biome);          // headquarters of this landscape (if there is one)
   musicPreload(['build', 'battle', 'battle2', ...(g.waves.some(w => w.groups.some(gr => ENEMIES[gr.type].boss)) ? ['boss'] : [])]);
   const slow = setTimeout(() => toast('Lade Einsatzdaten …', '', 1500), 400);
   await Promise.all([Assets.loadBiome(spec.biome), Assets.loadModels(models), g.nuke.on ? Assets.loadVfx('nuke') : null, g.hole.on ? Assets.loadVfx('hole') : null]);
   clearTimeout(slow);
+  if (intro) await intro;
   endAim();
   game = g;
   window.__game = game;
@@ -1517,6 +1568,7 @@ window.addEventListener('keydown', (e) => {
 // field has been empty for a few seconds, so the music doesn't flip between waves.
 let musicCalm = 0;
 function updateMusic(dt) {
+  if (introPlaying) { musicLevel(0, 0.3); return; }
   if (!game) { music('build'); musicLevel(1); return; }
   if (game.state === 'won' || game.state === 'lost') { music(null, 1.2); return; }
   let n = 0, boss = false;

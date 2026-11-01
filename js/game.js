@@ -616,6 +616,13 @@ export class Game {
     if (opts.acid) this.corrode(e, opts.acid, opts.src);
     e.hp -= dmg;
     if (e.flashCd <= 0) { e.flash = 0.06; e.flashCd = 0.2; }
+    // creatures bleed (rate-limited per unit; damage over time only now and then)
+    const B = e.def.blood;
+    if (B && dmg > 0.5 && this.time > (e.bleedT || 0) && (!opts.dot || Math.random() < 0.08)) {
+      e.bleedT = this.time + (opts.dot ? 0.4 : 0.11);
+      const src = opts.src, dirX = src && src.wx != null ? Math.sign(e.wx - src.wx) : 0;
+      this.fx.blood(e.wx + rand(-6, 6), this.bodyY(e) - rand(-4, 14), e.wy, B, Math.round(Math.min(7, 2 + 40 * dmg / e.maxHp)), dirX);
+    }
     if (e.hp <= 0) this.kill(e, opts.src, opts.fire);
     return dmg;
   }
@@ -709,7 +716,12 @@ export class Game {
     const F = e.def.faction && FACTIONS[e.def.faction];
     this.deathFx(e, F && kind !== 'nuke' ? F.death : kind, this._nuking);
     if (kind !== 'nuke') this.fx.text(e.wx, y - 30 * big, `+${e.reward}`);
-    if (!e.air) this.decals.push({ x: e.wx, y: e.wy, s: 70 * Math.min(big, 2.4) });
+    if (e.def.blood) {
+      // creatures: a last burst of blood and a pool on the ground (flyers too - it rains down)
+      const B = e.def.blood;
+      this.fx.blood(e.wx, y, e.wy, B, Math.round(10 * Math.min(big, 2.5)), 0, 1.3);
+      if (!B.chips) this.decals.push({ x: e.wx, y: e.wy + 2, s: 30 * Math.min(big, 2.6), blood: B });
+    } else if (!e.air) this.decals.push({ x: e.wx, y: e.wy, s: 70 * Math.min(big, 2.4) });
     sfx('explosion', big >= 1.6);
     if (e.def.boss) { this.emit('toast', { text: `${e.def.name} vernichtet! +${e.reward}`, warn: false }); this.fx.shake = Math.max(this.fx.shake, 14); }
   }

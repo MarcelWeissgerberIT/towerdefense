@@ -230,5 +230,81 @@
  "p3d_prop_h_gate": {
   "image_url": "https://cdn.openart.ai/openart-ai/production/2026-11/create-image/wRD6PTxSzjxZwjWN69MC/gpt-image-2-1_1793557293770_2f5ac121.png",
   "polycount": 40000
+ },
+ "p3d_hq_wasteland": {
+  "image_url": "https://cdn.openart.ai/openart-ai/production/2026-11/create-image/wRD6PTxSzjxZwjWN69MC/gpt-image-2-1_1793559701057_4c667012.png",
+  "polycount": 50000
+ },
+ "p3d_hq_jungle": {
+  "image_url": "https://cdn.openart.ai/openart-ai/production/2026-11/create-image/wRD6PTxSzjxZwjWN69MC/gpt-image-2-1_1793559700214_656290e9.png",
+  "polycount": 50000
+ },
+ "p3d_hq_desert": {
+  "image_url": "https://cdn.openart.ai/openart-ai/production/2026-11/create-image/wRD6PTxSzjxZwjWN69MC/gpt-image-2-1_1793559696159_668136f1.png",
+  "polycount": 50000
+ },
+ "p3d_hq_ice": {
+  "image_url": "https://cdn.openart.ai/openart-ai/production/2026-11/create-image/wRD6PTxSzjxZwjWN69MC/gpt-image-2-1_1793559695763_82bcaaf5.png",
+  "polycount": 50000
+ },
+ "p3d_hq_volcano": {
+  "image_url": "https://cdn.openart.ai/openart-ai/production/2026-11/create-image/wRD6PTxSzjxZwjWN69MC/gpt-image-2-1_1793559700994_9900c8f2.png",
+  "polycount": 50000
+ },
+ "p3d_hq_city": {
+  "image_url": "https://cdn.openart.ai/openart-ai/production/2026-11/create-image/wRD6PTxSzjxZwjWN69MC/gpt-image-2-1_1793559702508_42cee926.png",
+  "polycount": 50000
+ },
+ "p3d_hq_necro": {
+  "image_url": "https://cdn.openart.ai/openart-ai/production/2026-11/create-image/wRD6PTxSzjxZwjWN69MC/gpt-image-2-1_1793559707192_9495996f.png",
+  "polycount": 50000
+ },
+ "p3d_hq_inferno": {
+  "image_url": "https://cdn.openart.ai/openart-ai/production/2026-11/create-image/wRD6PTxSzjxZwjWN69MC/gpt-image-2-1_1793559705142_1eb1d71b.png",
+  "polycount": 50000
+ },
+ "tower2_gatling": {
+  "image_url": "https://cdn.openart.ai/openart-ai/production/2026-11/create-image/wRD6PTxSzjxZwjWN69MC/gpt-image-2-1_1793560039631_107b59c4.png",
+  "polycount": 50000
+ },
+ "tower2_missile": {
+  "image_url": "https://cdn.openart.ai/openart-ai/production/2026-11/create-image/wRD6PTxSzjxZwjWN69MC/gpt-image-2-1_1793560038797_b1683d91.png",
+  "polycount": 50000
+ },
+ "tower2_plasma": {
+  "image_url": "https://cdn.openart.ai/openart-ai/production/2026-11/create-image/wRD6PTxSzjxZwjWN69MC/gpt-image-2-1_1793560039468_08594bb2.png",
+  "polycount": 50000
+ },
+ "tower2_emp": {
+  "image_url": "https://cdn.openart.ai/openart-ai/production/2026-11/create-image/wRD6PTxSzjxZwjWN69MC/gpt-image-2-1_1793560036525_8d2cb02b.png",
+  "polycount": 50000
+ },
+ "tower2_flak": {
+  "image_url": "https://cdn.openart.ai/openart-ai/production/2026-11/create-image/wRD6PTxSzjxZwjWN69MC/gpt-image-2-1_1793560037634_ef84180e.png",
+  "polycount": 50000
+ },
+ "tower2_flame": {
+  "image_url": "https://cdn.openart.ai/openart-ai/production/2026-11/create-image/wRD6PTxSzjxZwjWN69MC/gpt-image-2-1_1793560043765_1976bf4c.png",
+  "polycount": 50000
+ },
+ "tower2_rail": {
+  "image_url": "https://cdn.openart.ai/openart-ai/production/2026-11/create-image/wRD6PTxSzjxZwjWN69MC/gpt-image-2-1_1793560036733_2c7cb4f5.png",
+  "polycount": 50000
+ },
+ "tower2_acid": {
+  "image_url": "https://cdn.openart.ai/openart-ai/production/2026-11/create-image/wRD6PTxSzjxZwjWN69MC/gpt-image-2-1_1793560044248_467cb2e3.png",
+  "polycount": 50000
+ },
+ "tower2_laser": {
+  "image_url": "https://cdn.openart.ai/openart-ai/production/2026-11/create-image/wRD6PTxSzjxZwjWN69MC/gpt-image-2-1_1793560046620_9f318190.png",
+  "polycount": 50000
+ },
+ "tower2_mortar": {
+  "image_url": "https://cdn.openart.ai/openart-ai/production/2026-11/create-image/wRD6PTxSzjxZwjWN69MC/gpt-image-2-1_1793560045771_586c6217.png",
+  "polycount": 50000
+ },
+ "tower2_cryo": {
+  "image_url": "https://cdn.openart.ai/openart-ai/production/2026-11/create-image/wRD6PTxSzjxZwjWN69MC/gpt-image-2-1_1793560046228_2f76c4ee.png",
+  "polycount": 50000
  }
 }

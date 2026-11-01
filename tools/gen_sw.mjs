@@ -10,7 +10,7 @@ const ENTRIES = ['index.html', 'manifest.webmanifest', 'css', 'js', 'assets'];
 
 function walk(p, out) {
   const st = statSync(p);
-  if (st.isDirectory()) { for (const f of readdirSync(p).sort()) if (!f.startsWith('.')) walk(join(p, f), out); }
+  if (st.isDirectory()) { for (const f of readdirSync(p).sort()) if (!f.startsWith('.') && !(f === 'video' && p.endsWith('assets'))) walk(join(p, f), out); }
   else out.push(p);
   return out;
 }
