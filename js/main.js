@@ -17,6 +17,38 @@ const save = (() => {
   return { data, write() { try { localStorage.setItem(STORE, JSON.stringify(data)); } catch (e) { /* ignore */ } } };
 })();
 
+// running mission: saved every few seconds and when the app goes to the background, so an iOS tab
+// reload (call, app switch) does not lose it; cleared when the mission ends or a new one starts
+const RUN_KEY = 'ironsentinel.run';
+let runSaveT = 0;
+function loadRun() {
+  try { const r = JSON.parse(localStorage.getItem(RUN_KEY) || 'null'); return r && r.snap ? r : null; } catch (e) { return null; }
+}
+function saveRun() {
+  if (!game || replay) return;
+  let snap = null;
+  try { snap = game.snapshot(); } catch (e) { console.warn('snapshot failed', e); }
+  if (!snap) return;
+  const meta = { level: game.level.number, name: game.level.name, wave: game.wave, waves: game.waves.length, ch: challenge ? challenge.name : null, diff: challenge ? null : game.mods.diff || 0 };
+  try { localStorage.setItem(RUN_KEY, JSON.stringify({ at: Date.now(), ch: challenge, meta, snap })); } catch (e) { /* storage full / private mode */ }
+}
+function clearRun() { try { localStorage.removeItem(RUN_KEY); } catch (e) { /* ignore */ } updateResumeBtn(); }
+function updateResumeBtn() {
+  const r = loadRun(), b = $('btn-resume');
+  b.classList.toggle('hidden', !r);
+  $('btn-play').classList.toggle('primary', !r);
+  if (!r) return;
+  const m = r.meta || {};
+  $('resume-sub').textContent = `${m.ch ? m.ch : 'Einsatz ' + m.level + (m.name ? ' · ' + m.name : '')} · Welle ${m.wave}/${m.waves}`;
+}
+async function resumeRun() {
+  const r = loadRun();
+  let g = null;
+  try { g = r && Game.restore(r.snap); } catch (e) { console.warn('restore failed', e); }
+  if (!g) { clearRun(); toast('Der gespeicherte Einsatz konnte nicht geladen werden', 'bad', 3000); return; }
+  await startLevel(g.levelIdx, r.ch || null, g);
+}
+
 const canvas = $('game');
 const renderer = new Renderer(canvas);
 let game = null;
@@ -943,6 +975,7 @@ function closeModal() { $('modal').classList.add('hidden'); }
 function openPause() {
   if (!game || game.state === 'won' || game.state === 'lost') return;
   paused = true;
+  saveRun();
   sfx('click');
   modal('PAUSE', '', `Einsatz ${game.level.number}: <b>${game.level.name}</b>${challenge ? '' : ' · ' + DIFFICULTY[game.mods.diff || 0].name} · Welle ${game.wave}/${game.waves.length}`, 0, [
     ['WEITER', 'primary', () => { paused = false; closeModal(); }],
@@ -970,6 +1003,7 @@ function onChallengeEnd(won) {
   ]), 1100);
 }
 function onWin() {
+  clearRun();
   if (challenge) { onChallengeEnd(true); return; }
   const stars = game.stars();
   const i = game.levelIdx;
@@ -993,6 +1027,7 @@ function onWin() {
     stars, btns), 1100);
 }
 function onLose() {
+  clearRun();
   if (challenge) { onChallengeEnd(false); return; }
   sfx('defeat');
   setTimeout(() => modal('BASIS ZERSTÖRT', 'lose',
@@ -1049,11 +1084,12 @@ function updateInsets() {
 }
 
 let challenge = null;
-async function startLevel(i, ch = null) {
+async function startLevel(i, ch = null, restored = null) {
   unlockAudio();
   const spec = LEVEL_SPECS[i];
   challenge = ch;
-  const g = new Game(i, { ...(ch ? ch.mods : DIFFICULTY[diffIdx()].mods), unlockAll: freePlay(), diff: ch ? 0 : diffIdx(), perks: ch ? null : { ...perkLevels() } });
+  if (!restored) clearRun();
+  const g = restored || new Game(i, { ...(ch ? ch.mods : DIFFICULTY[diffIdx()].mods), unlockAll: freePlay(), diff: ch ? 0 : diffIdx(), perks: ch ? null : { ...perkLevels() } });
   // only the enemy types of this mission (incl. units launched by carriers / bursting out)
   const types = new Set();
   for (const w of g.waves.slice(0, 60)) for (const gr of w.groups) {
@@ -1081,6 +1117,14 @@ async function startLevel(i, ch = null) {
   setInGameUI(true);
   for (const k in hudCache) delete hudCache[k];
   updateHUD();
+  runSaveT = 4;
+  if (restored) {
+    // resumed after the app was closed: start paused so the player can get their bearings
+    toast(`EINSATZ FORTGESETZT – Welle ${game.wave}/${game.waves.length}`, 'warn', 2600);
+    openPause();
+    maybeRotateHint();
+    return;
+  }
   if (ch) toast(`CHALLENGE: ${ch.name.toUpperCase()} – ${ch.desc}`, 'warn', 4500);
   else toast(`EINSATZ ${i + 1}: ${spec.name.toUpperCase()} – ${BIOMES[spec.biome].name} · ${DIFFICULTY[game.mods.diff].name}`, game.mods.diff ? 'warn' : '', 2600);
   const newTower = freePlay() ? null : TOWER_ORDER.find(k => TOWERS[k].unlock === i + 1 && i > 0);
@@ -1108,9 +1152,11 @@ async function startLevel(i, ch = null) {
   }
   maybeRotateHint();
 }
-function toMenu() { game = null; setInGameUI(false); showScreen('screen-menu'); }
+function toMenu() { saveRun(); if (applySwUpdate()) return; game = null; setInGameUI(false); updateResumeBtn(); showScreen('screen-menu'); }
 let levelTab = 'campaign';
 function toLevels(tab) {
+  saveRun();
+  if (applySwUpdate()) return;
   game = null; challenge = null; setInGameUI(false);
   if (tab) levelTab = tab;
   renderLevels(); renderChallenges(); setLevelTab(levelTab);
@@ -1166,6 +1212,7 @@ function maybeRotateHint() {
 }
 $('rotate-ok').onclick = () => { save.data.rotateHintSeen = true; save.write(); $('rotate-hint').classList.add('hidden'); };
 $('btn-play').onclick = () => { unlockAudio(); sfx('click'); toLevels(); };
+$('btn-resume').onclick = () => { unlockAudio(); sfx('click'); resumeRun(); };
 // ---------------- commander perks ----------------
 function starsEarned() { return Object.values(save.data.stars || {}).reduce((a, b) => a + (b || 0), 0); }
 function perkLevels() { return save.data.perks || (save.data.perks = {}); }
@@ -1196,7 +1243,7 @@ $('btn-perks-back').onclick = () => { sfx('click'); if (perksFrom === 'screen-le
 
 $('btn-help').onclick = () => { unlockAudio(); sfx('click'); showScreen('screen-help'); };
 $('btn-help-back').onclick = () => { sfx('click'); showScreen('screen-menu'); };
-$('btn-levels-back').onclick = () => { sfx('click'); showScreen('screen-menu'); };
+$('btn-levels-back').onclick = () => { sfx('click'); updateResumeBtn(); showScreen('screen-menu'); };
 $('btn-sound').onclick = () => { unlockAudio(); toggleSound(); sfx('click'); };
 function updateFreeBtn() { $('btn-free').textContent = `FREIES SPIEL: ${freePlay() ? 'AN' : 'AUS'}`; }
 $('btn-free').onclick = () => {
@@ -1208,7 +1255,12 @@ updateFreeBtn();
 
 window.addEventListener('resize', () => { renderer.resize(); if (game) { updateInsets(); renderer.clampCam(); maybeRotateHint(); } });
 window.addEventListener('orientationchange', () => setTimeout(() => { renderer.resize(); if (game) { updateInsets(); renderer.resetCamera(); maybeRotateHint(); } }, 250));
-document.addEventListener('visibilitychange', () => { if (document.hidden && game && game.state !== 'won' && game.state !== 'lost' && $('modal').classList.contains('hidden')) openPause(); });
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) return;
+  saveRun();
+  if (game && game.state !== 'won' && game.state !== 'lost' && $('modal').classList.contains('hidden')) openPause();
+});
+window.addEventListener('pagehide', () => saveRun());
 window.addEventListener('keydown', (e) => {
   if (!game) return;
   if (ui.targeting && (e.key === 'Escape' || e.key === 'Enter')) { e.preventDefault(); if (e.key === 'Enter') fireAim(); else endAim(); return; }
@@ -1252,6 +1304,7 @@ function frame(now) {
       processEvents();
       updateHUD();
       offerReplay(dt);
+      if (game && (runSaveT -= dt) <= 0) { runSaveT = 4; saveRun(); }
     }
   }
   else setXray(false);
@@ -1318,6 +1371,37 @@ $('btn-replay').onclick = (e) => { e.stopPropagation(); unlockAudio(); startRepl
 
 function setXray(on) { if (hudCache.xray !== on) { hudCache.xray = on; document.body.classList.toggle('xray', on); if (!on) document.body.classList.remove('beat', 'glitch'); } }
 
+// ---------------- offline (service worker) ----------------
+// sw.js keeps every game file on the device. After a deploy the new version installs in the background:
+// it is taken over right away while the main menu is open, otherwise when the player next leaves a mission.
+let swUpdate = false, swPoll = 0;
+function swSend(msg) { const c = navigator.serviceWorker && navigator.serviceWorker.controller; if (c) c.postMessage(msg); }
+function onMenuScreen() { return !game && !$('screen-menu').classList.contains('hidden') && $('modal').classList.contains('hidden'); }
+function applySwUpdate() { if (!swUpdate) return false; swUpdate = false; location.reload(); return true; }
+function showOfflineStatus(s) {
+  const el = $('offline-status');
+  if (!s || !s.total) return;
+  const done = s.have >= s.total;
+  el.classList.remove('hidden');
+  el.classList.toggle('done', done);
+  el.textContent = done ? '✓ OFFLINE SPIELBAR' : `Lade Spieldaten für offline … ${Math.floor(s.have / s.total * 100)} %`;
+  clearTimeout(swPoll);
+  if (!done) swPoll = setTimeout(() => swSend('status'), 2500);
+}
+function initOffline() {
+  if (!('serviceWorker' in navigator) || !window.isSecureContext) return;
+  const had = !!navigator.serviceWorker.controller;
+  navigator.serviceWorker.addEventListener('message', (e) => { if (e.data && e.data.sw === 'status') showOfflineStatus(e.data); });
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!had) { swSend('fill'); swSend('status'); return; }     // first install: start the background download
+    swUpdate = true;
+    if (onMenuScreen()) applySwUpdate();
+  });
+  navigator.serviceWorker.register('sw.js').catch((e) => console.warn('service worker', e));
+  try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {}); } catch (e) { /* ignore */ }
+  if (had) { swSend('status'); setTimeout(() => swSend('fill'), 3000); }
+}
+
 async function boot() {
   setSound(save.data.sound !== false);
   $('btn-sound').textContent = `TON: ${save.data.sound !== false ? 'AN' : 'AUS'}`;
@@ -1326,7 +1410,9 @@ async function boot() {
   makeIcons();
   installIconCss();
   await new Promise((res) => { const im = new Image(); im.onload = im.onerror = res; im.src = 'assets/title.jpg'; });
+  updateResumeBtn();
   showScreen('screen-menu');
+  initOffline();
   requestAnimationFrame((t) => { last = t; frame(t); });
   const q = new URLSearchParams(location.search);
   if (q.has('level')) startLevel(Math.max(0, Math.min(LEVEL_COUNT - 1, (parseInt(q.get('level'), 10) || 1) - 1)));

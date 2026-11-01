@@ -1580,4 +1580,79 @@ export class Game {
     const r = this.lives / this.maxLives;
     return r >= 0.9 ? 3 : r >= 0.5 ? 2 : 1;
   }
+
+  // ---------------- save / resume a running mission ----------------
+  // Plain JSON: towers, enemies and black holes are referenced by id, routes by index, unit/tower
+  // definitions are looked up again by type. Shots in flight and visual effects are not saved.
+  snapshot() {
+    if (this.state !== 'build' && this.state !== 'wave') return null;
+    if (this.cine || this._nuking) return null;
+    const T = new Set(this.towers), E = new Set(this.enemies), H = new Set(this.holes);
+    const R = new Map(this.routes.map((r, i) => [r, i]));
+    const plain = (v) => { const p = Object.getPrototypeOf(v); return p === Object.prototype || p === null; };
+    const enc = (v) => {
+      if (typeof v === 'number') return Number.isFinite(v) ? v : Number.isNaN(v) ? null : { $inf: Math.sign(v) };
+      if (v === null || typeof v !== 'object') return typeof v === 'function' ? undefined : v;
+      if (T.has(v)) return { $t: v.id };
+      if (E.has(v)) return { $e: v.id };
+      if (H.has(v)) return { $h: v.id };
+      if (R.has(v)) return { $r: R.get(v) };
+      if (Array.isArray(v)) return v.map(enc);
+      if (v instanceof Set) return { $set: [...v] };
+      if (!plain(v) || 'def' in v) return null;       // sold tower / dead unit / foreign object
+      const o = {};
+      for (const k in v) { const x = enc(v[k]); if (x !== undefined) o[k] = x; }
+      return o;
+    };
+    // entity body: its own fields, without the definition and render caches (_...)
+    const body = (v) => {
+      const o = {};
+      for (const k in v) { if (k === 'def' || k[0] === '_') continue; const x = enc(v[k]); if (x !== undefined) o[k] = x; }
+      return o;
+    };
+    const g = {};
+    for (const k of SNAP_KEYS) if (this[k] !== undefined) g[k] = enc(this[k]);
+    return {
+      v: SNAP_V, levelIdx: this.levelIdx, mods: enc(this.mods), uid,
+      towers: this.towers.map(body), enemies: this.enemies.filter(e => e.alive).map(body), holes: this.holes.map(body),
+      seen: [...this.seen], g,
+    };
+  }
+
+  static restore(s) {
+    if (!s || s.v !== SNAP_V || !Array.isArray(s.towers)) return null;
+    const g = new Game(s.levelIdx, s.mods);
+    const tw = new Map(), en = new Map(), ho = new Map();
+    g.towers = s.towers.filter(o => TOWERS[o.type]).map(o => { const t = { ...o, def: TOWERS[o.type] }; tw.set(o.id, t); return t; });
+    g.enemies = s.enemies.filter(o => ENEMIES[o.type]).map(o => { const e = { ...o, def: ENEMIES[o.type] }; en.set(o.id, e); return e; });
+    g.holes = (s.holes || []).map(o => { const h = { ...o }; ho.set(o.id, h); return h; });
+    const dec = (v) => {
+      if (v === null || typeof v !== 'object') return v;
+      if (Array.isArray(v)) return v.map(dec);
+      if ('$t' in v) return tw.get(v.$t) || null;
+      if ('$e' in v) return en.get(v.$e) || null;
+      if ('$h' in v) return ho.get(v.$h) || null;
+      if ('$r' in v) return g.routes[v.$r] || g.routes[0];
+      if ('$inf' in v) return v.$inf * Infinity;
+      if ('$set' in v) return new Set(v.$set);
+      const o = {};
+      for (const k in v) o[k] = dec(v[k]);
+      return o;
+    };
+    for (const list of [g.towers, g.enemies, g.holes]) for (const o of list) for (const k in o) if (k !== 'def') o[k] = dec(o[k]);
+    for (const k of SNAP_KEYS) if (k in s.g) g[k] = dec(s.g[k]);
+    g.seen = new Set(s.seen || []);
+    for (const e of g.enemies) { if (!e.route) e.route = g.routes[0]; e.alive = true; }
+    for (const t of g.towers) { g.setCell(t.cx, t.cy, CELL.TOWER); t.target = null; t.beamTarget = null; t.firing = false; }
+    const built = new Set(g.towers.map(t => t.cy * g.N + t.cx));
+    g.decor = g.decor.filter(d => !built.has(d.cy * g.N + d.cx));
+    uid = Math.max(uid, s.uid || 0) + 1;
+    g.resumed = true;
+    return g;
+  }
 }
+
+const SNAP_V = 1;
+const SNAP_KEYS = ['time', 'credits', 'lives', 'maxLives', 'wave', 'queue', 'state', 'nextWaveIn', 'waveLeft', 'kills', 'lost',
+  'orbital', 'strikes', 'nuke', 'nukes', 'nukeBlasts', 'weather', 'strikesW', 'hole', 'radZones', 'drops', 'lastDrop', 'buffs', 'puddles',
+  '_elevHint', '_dmgHint'];

@@ -13,9 +13,8 @@
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="apple-touch-icon" href="assets/icon-180.png">
   <link rel="icon" type="image/png" href="assets/icon-192.png">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=Orbitron:wght@700;900&display=swap" rel="stylesheet">
+  <link rel="preload" href="assets/fonts/rajdhani-600.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="assets/fonts/orbitron.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
@@ -107,12 +106,14 @@
       <div class="logo big"><span>IRON</span> SENTINEL</div>
       <div class="tagline">30 Einsätze. 6 Kriegsschauplätze. Challenges. Halte die Maschinenarmee auf.</div>
       <div class="menu-buttons">
+        <button class="btn primary large hidden" id="btn-resume">FORTSETZEN<small id="resume-sub"></small></button>
         <button class="btn primary large" id="btn-play">SPIELEN</button>
         <button class="btn large" id="btn-perks">KOMMANDO ★</button>
         <button class="btn large" id="btn-help">ANLEITUNG</button>
         <button class="btn large" id="btn-free">FREIES SPIEL: AN</button>
         <button class="btn large" id="btn-sound">TON: AN</button>
       </div>
+      <div id="offline-status" class="offline-status hidden"></div>
     </div>
   </div>
 
