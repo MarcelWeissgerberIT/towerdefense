@@ -306,5 +306,41 @@
  "tower2_cryo": {
   "image_url": "https://cdn.openart.ai/openart-ai/production/2026-11/create-image/wRD6PTxSzjxZwjWN69MC/gpt-image-2-1_1793560046228_2f76c4ee.png",
   "polycount": 50000
+ },
+ "p3d_prop_ruin2": {
+  "image_url": "https://cdn.openart.ai/openart-ai/production/2026-11/create-image/wRD6PTxSzjxZwjWN69MC/gpt-image-2-1_1793561055735_ee305406.png",
+  "polycount": 45000
+ },
+ "p3d_prop_j_temple2": {
+  "image_url": "https://cdn.openart.ai/openart-ai/production/2026-11/create-image/wRD6PTxSzjxZwjWN69MC/gpt-image-2-1_1793561039765_224bb546.png",
+  "polycount": 45000
+ },
+ "p3d_prop_d_pump2": {
+  "image_url": "https://cdn.openart.ai/openart-ai/production/2026-11/create-image/wRD6PTxSzjxZwjWN69MC/gpt-image-2-1_1793561036135_5a1c6df4.png",
+  "polycount": 45000
+ },
+ "p3d_prop_i_station2": {
+  "image_url": "https://cdn.openart.ai/openart-ai/production/2026-11/create-image/wRD6PTxSzjxZwjWN69MC/gpt-image-2-1_1793561037554_5e6db98e.png",
+  "polycount": 45000
+ },
+ "p3d_prop_v_factory2": {
+  "image_url": "https://cdn.openart.ai/openart-ai/production/2026-11/create-image/wRD6PTxSzjxZwjWN69MC/gpt-image-2-1_1793561041351_8fcff605.png",
+  "polycount": 45000
+ },
+ "p3d_prop_c_tower2": {
+  "image_url": "https://cdn.openart.ai/openart-ai/production/2026-11/create-image/wRD6PTxSzjxZwjWN69MC/gpt-image-2-1_1793561054526_165698bc.png",
+  "polycount": 45000
+ },
+ "p3d_prop_c_uplink2": {
+  "image_url": "https://cdn.openart.ai/openart-ai/production/2026-11/create-image/wRD6PTxSzjxZwjWN69MC/gpt-image-2-1_1793561034217_70e53b71.png",
+  "polycount": 45000
+ },
+ "ally_soldier": {
+  "image_url": "https://cdn.openart.ai/openart-ai/production/2026-11/create-image/wRD6PTxSzjxZwjWN69MC/gpt-image-2-1_1793561047949_cd3812d8.png",
+  "polycount": 45000
+ },
+ "ally_jeep": {
+  "image_url": "https://cdn.openart.ai/openart-ai/production/2026-11/create-image/wRD6PTxSzjxZwjWN69MC/gpt-image-2-1_1793561054383_721e4c50.png",
+  "polycount": 45000
  }
 }

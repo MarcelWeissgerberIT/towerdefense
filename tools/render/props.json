@@ -20,7 +20,7 @@
   "shadow": true
  },
  "p3d_prop_ruin": {
-  "url": "glb/p3d_prop_ruin.glb",
+  "url": "glb/p3d_prop_ruin2.glb",
   "mode": "prop",
   "frames": 4,
   "size": 1.0,
@@ -100,7 +100,7 @@
   "shadow": true
  },
  "p3d_prop_j_temple": {
-  "url": "glb/p3d_prop_j_temple.glb",
+  "url": "glb/p3d_prop_j_temple2.glb",
   "mode": "prop",
   "frames": 4,
   "size": 1.0,
@@ -140,7 +140,7 @@
   "shadow": true
  },
  "p3d_prop_i_station": {
-  "url": "glb/p3d_prop_i_station.glb",
+  "url": "glb/p3d_prop_i_station2.glb",
   "mode": "prop",
   "frames": 4,
   "size": 1.0,
@@ -180,7 +180,7 @@
   "shadow": true
  },
  "p3d_prop_d_pump": {
-  "url": "glb/p3d_prop_d_pump.glb",
+  "url": "glb/p3d_prop_d_pump2.glb",
   "mode": "prop",
   "frames": 4,
   "size": 0.95,
@@ -210,7 +210,7 @@
   "shadow": true
  },
  "p3d_prop_v_factory": {
-  "url": "glb/p3d_prop_v_factory.glb",
+  "url": "glb/p3d_prop_v_factory2.glb",
   "mode": "prop",
   "frames": 4,
   "size": 1.0,
@@ -220,7 +220,7 @@
   "shadow": true
  },
  "p3d_prop_c_tower": {
-  "url": "glb/p3d_prop_c_tower.glb",
+  "url": "glb/p3d_prop_c_tower2.glb",
   "mode": "prop",
   "frames": 4,
   "size": 1.0,
@@ -260,7 +260,7 @@
   "shadow": true
  },
  "p3d_prop_c_uplink": {
-  "url": "glb/p3d_prop_c_uplink.glb",
+  "url": "glb/p3d_prop_c_uplink2.glb",
   "mode": "prop",
   "frames": 4,
   "size": 0.85,

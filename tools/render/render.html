@@ -111,7 +111,7 @@ window.renderModel = async function (opt) {
   scene.add(pivot);
   current = { pivot };
   // optional walk cycle (rigged Meshy GLB): sample the first clip, keep the hips in place
-  let mixer = null, clip = null, hips = null, hips0 = null, animYaw = null, rootVec = null;
+  let mixer = null, clip = null, hips = null, hips0 = null, animYaw = null, rootVec = null, autoCutFrac = null;
   if (opt.anim && gltf.animations.length) {
     clip = gltf.animations[0];
     mixer = new THREE.AnimationMixer(model);
@@ -347,7 +347,18 @@ window.renderModel = async function (opt) {
   const H = box.max.y;
 
   const N = opt.frames || 16;
-  const cutY = opt.mode === 'tower' ? H * (opt.cut ?? 0.45) : null;
+  let cutY = opt.mode === 'tower' ? H * (typeof opt.cut === 'number' ? opt.cut : 0.45) : null;
+  if (opt.mode === 'tower' && opt.cut === 'auto') {
+    // turret ring = narrowest horizontal slice between the base and the weapon (smoothed radius profile)
+    const B = 60, prof = new Array(B).fill(0);
+    for (const v of collectVerts(pivot)) { const k = Math.min(B - 1, Math.max(0, Math.floor(v.y / H * B))); prof[k] = Math.max(prof[k], Math.hypot(v.x, v.z)); }
+    const sm = prof.map((_, i) => { let a = 0, n = 0; for (let d = -1; d <= 1; d++) if (prof[i + d] != null) { a += prof[i + d]; n++; } return a / n; });
+    let bi = -1, bv = 1e9;
+    for (let i = Math.floor(B * (opt.cutMin ?? 0.22)); i <= Math.floor(B * (opt.cutMax ?? 0.62)); i++) if (sm[i] > 0 && sm[i] < bv) { bv = sm[i]; bi = i; }
+    cutY = H * (bi + 0.5) / B;
+    console.log('auto cut', ((bi + 0.5) / B).toFixed(3), 'profile', sm.map(v => v.toFixed(2)).join(' '));
+    autoCutFrac = (bi + 0.5) / B;
+  }
 
   // auto-detect forward direction / muzzle for turrets (farthest vertex from the axis above the cut)
   let yaw0 = animYaw ?? (opt.yaw0 != null ? THREE.MathUtils.degToRad(opt.yaw0) : null);
@@ -429,13 +440,18 @@ window.renderModel = async function (opt) {
     scene.remove(plane); setColor(true);
     return [sd, sa];
   };
-  const out = { W, H: Hh, anchor, N, autoInfo, scale: s, height: H };
+  const out = { W, H: Hh, anchor, N, autoInfo, scale: s, height: H, autoCut: autoCutFrac };
   if (opt.mode === 'tower') {
     // base (static) with a dark turret-ring cap over the cut
     setClip([new THREE.Plane(new THREE.Vector3(0, -1, 0), cutY)]);
     pivot.rotation.y = 0;
-    const capR = opt.capR ?? 0.3;
-    const cap = new THREE.Mesh(new THREE.CircleGeometry(capR, 48), new THREE.MeshStandardMaterial({ color: 0x1b1c1e, metalness: 0.35, roughness: 0.85 }));
+    let capR = opt.capR ?? 0.3;
+    if (opt.capR === 'auto') {
+      // the cut surface: radius of the turret ring at the cut height (80th percentile of the slice)
+      const rs = collectVerts(pivot, (v) => Math.abs(v.y - cutY) < H * 0.025).map(v => Math.hypot(v.x, v.z)).sort((a, b) => a - b);
+      capR = rs.length ? rs[Math.floor(rs.length * 0.8)] * 0.98 : 0.2;
+    }
+    const cap = new THREE.Mesh(new THREE.CircleGeometry(capR, 48), new THREE.MeshStandardMaterial({ color: opt.capColor ?? 0x2a2d31, metalness: 0.6, roughness: 0.55 }));
     cap.rotation.x = -Math.PI / 2; cap.position.y = cutY - 0.002; cap.receiveShadow = true;
     scene.add(cap);
     out.base = shot();

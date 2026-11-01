@@ -1,44 +1,57 @@
 {
  "tower_gatling": {
+  "url": "glb/tower2_gatling.glb",
   "mode": "tower",
   "frames": 32,
   "size": 0.8,
-  "cut": 0.42,
+  "cut": "auto",
   "P": 136,
-  "capR": 0.3,
-  "shadow": true
+  "capR": "auto",
+  "shadow": true,
+  "yaw0": 180,
+  "cutMin": 0.22,
+  "cutMax": 0.5
  },
  "tower_missile": {
+  "url": "glb/tower2_missile.glb",
   "mode": "tower",
   "frames": 32,
   "size": 0.8,
-  "cut": 0.45,
+  "cut": "auto",
   "P": 136,
-  "capR": 0.3,
-  "shadow": true
+  "capR": "auto",
+  "shadow": true,
+  "yaw0": 270,
+  "cutMin": 0.22,
+  "cutMax": 0.5
  },
  "tower_plasma": {
+  "url": "glb/tower2_plasma.glb",
   "mode": "tower",
   "frames": 32,
   "size": 0.8,
-  "cut": 0.45,
+  "cut": "auto",
   "P": 136,
-  "capR": 0.3,
-  "shadow": true
+  "capR": "auto",
+  "shadow": true,
+  "yaw0": 180
  },
  "tower_rail": {
+  "url": "glb/tower2_rail.glb",
   "mode": "tower",
   "frames": 32,
-  "size": 0.74,
-  "cut": 0.4,
+  "size": 0.8,
+  "cut": "auto",
   "P": 136,
-  "capR": 0.28,
-  "shadow": true
+  "capR": "auto",
+  "shadow": true,
+  "yaw0": 180
  },
  "tower_emp": {
+  "url": "glb/tower2_emp.glb",
   "mode": "unit",
   "frames": 1,
-  "size": 0.78,
+  "size": 0.8,
   "yaw0": 0,
   "P": 136,
   "shadow": true
@@ -121,40 +134,52 @@
   "pad": 0.1
  },
  "tower_flame": {
+  "url": "glb/tower2_flame.glb",
   "mode": "tower",
   "frames": 32,
   "size": 0.8,
-  "cut": 0.42,
+  "cut": "auto",
   "P": 136,
-  "capR": 0.3,
-  "shadow": true
+  "capR": "auto",
+  "shadow": true,
+  "yaw0": 180
  },
  "tower_mortar": {
+  "url": "glb/tower2_mortar.glb",
   "mode": "tower",
   "frames": 32,
   "size": 0.8,
-  "cut": 0.4,
+  "cut": "auto",
   "P": 136,
-  "capR": 0.3,
-  "shadow": true
+  "capR": "auto",
+  "shadow": true,
+  "yaw0": 180,
+  "cutMin": 0.22,
+  "cutMax": 0.45
  },
  "tower_laser": {
-  "mode": "tower",
-  "frames": 32,
-  "size": 0.78,
-  "cut": 0.42,
-  "P": 136,
-  "capR": 0.3,
-  "shadow": true
- },
- "tower_flak": {
+  "url": "glb/tower2_laser.glb",
   "mode": "tower",
   "frames": 32,
   "size": 0.8,
-  "cut": 0.35,
+  "cut": "auto",
   "P": 136,
-  "capR": 0.3,
-  "shadow": true
+  "capR": "auto",
+  "shadow": true,
+  "yaw0": 180
+ },
+ "tower_flak": {
+  "url": "glb/tower2_flak.glb",
+  "mode": "tower",
+  "frames": 32,
+  "size": 0.8,
+  "cut": "auto",
+  "P": 136,
+  "capR": "auto",
+  "shadow": true,
+  "yaw0": 180,
+  "cutMin": 0.3,
+  "cutMax": 0.55
  },
  "enemy_shield": {
   "url": "glb/enemy_shield_walk.glb",
@@ -210,22 +235,26 @@
   "P": 128
  },
  "tower_cryo": {
+  "url": "glb/tower2_cryo.glb",
   "mode": "tower",
   "frames": 32,
   "size": 0.8,
-  "cut": 0.42,
+  "cut": "auto",
   "P": 136,
-  "capR": 0.26,
-  "shadow": true
+  "capR": "auto",
+  "shadow": true,
+  "yaw0": 180
  },
  "tower_acid": {
+  "url": "glb/tower2_acid.glb",
   "mode": "tower",
   "frames": 32,
   "size": 0.8,
-  "cut": 0.42,
+  "cut": "auto",
   "P": 136,
-  "capR": 0.26,
-  "shadow": true
+  "capR": "auto",
+  "shadow": true,
+  "yaw0": 90
  },
  "enemy_brood": {
   "mode": "unit",
@@ -551,6 +580,28 @@
   "mode": "unit",
   "frames": 32,
   "size": 1.15,
+  "byHeight": true,
+  "yaw0": 90,
+  "P": 120,
+  "pad": 0.08,
+  "anim": {
+   "frames": 12,
+   "rootFacing": true
+  }
+ },
+ "ally_jeep": {
+  "url": "glb/ally_jeep.glb",
+  "mode": "unit",
+  "frames": 16,
+  "size": 0.62,
+  "yaw0": 180,
+  "P": 128
+ },
+ "ally_soldier": {
+  "url": "glb/ally_soldier_walk.glb",
+  "mode": "unit",
+  "frames": 16,
+  "size": 0.95,
   "byHeight": true,
   "yaw0": 90,
   "P": 120,

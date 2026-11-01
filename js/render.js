@@ -3,6 +3,7 @@ import { HW, HH, TOWERS, BIOMES, TOWER_SCALE, ELEV_PX, NUKE, POWERUPS, HOLE, WEA
 import { toWorld, toGrid, mulberry32, clamp } from './iso.js';
 import { Assets, Models, drawIcon } from './assets.js';
 import { CELL, upgradeDrones } from './game.js';
+import { Life } from './life.js';
 
 const BAR_SCALE = 1.3;
 const BOMBER_SCALE = 1.0, ALT = 170;    // napalm bombers: sprite scale and flying height (world px)
@@ -25,6 +26,15 @@ function makeCanvas(w, h) {
   c.height = Math.max(1, Math.round(h));
   return c;
 }
+
+// props that smoke / steam / glow (k: dark smoke, grey smoke, steam, ember, mist; r: puffs per second)
+const PROP_SMOKE = {
+  p3d_prop_wreck: { k: 'dark', r: 0.9, h: 0.6 }, p3d_prop_i_wreck: { k: 'dark', r: 0.6, h: 0.6 }, p3d_prop_j_heli: { k: 'dark', r: 0.9, h: 0.5 },
+  p3d_prop_v_factory: { k: 'dark', r: 2.2, h: 0.95, w: 0.25, s: 16 }, p3d_prop_c_tower: { k: 'dark', r: 1.0, h: 0.9 },
+  p3d_prop_ruin: { k: 'grey', r: 0.5, h: 0.7 }, p3d_prop_c_bus: { k: 'dark', r: 0.5, h: 0.5 }, p3d_prop_c_rubble: { k: 'grey', r: 0.35, h: 0.4 },
+  p3d_prop_i_station: { k: 'steam', r: 1.2, h: 0.85, a: 0.35, s: 10, life: 1.8 }, p3d_prop_d_pump: { k: 'grey', r: 0.3, h: 0.5 },
+  p3d_prop_n_crypt: { k: 'mist', r: 0.8, h: 0.4 }, p3d_prop_h_gate: { k: 'ember', r: 3, h: 0.5, w: 0.25 }, p3d_prop_h_crystal: { k: 'ember', r: 0.8, h: 0.6 },
+};
 
 export class Renderer {
   constructor(canvas) {
@@ -135,6 +145,7 @@ export class Renderer {
   // ---------- level ----------
   setGame(game) {
     this.game = game;
+    (this.life || (this.life = new Life(this))).reset(game);
     this.biome = BIOMES[game.level.biome];
     this.makeBg();
     if (this.ground) { this.ground.canvas.width = 0; this.ground.canvas.height = 0; this.ground = null; }
@@ -577,6 +588,8 @@ export class Renderer {
     ctx.setTransform(dpr * z, 0, 0, dpr * z, dpr * tx, dpr * ty);
     const gr = this.ground;
     ctx.drawImage(gr.canvas, -gr.ox, -gr.oy, gr.W, gr.H);
+    // life in the landscape: cloud shadows and bird shadows on the ground
+    if (this.life) { this.life.update(game.cine ? 0 : dt); this.life.drawGround(ctx); }
 
     const bz = ui.buildCell ? game.heightAt(ui.buildCell.x, ui.buildCell.y) * ELEV_PX : 0;
     if (ui.buildCell && !bz) this.drawBuildPreview(ctx, ui, 0);
@@ -638,6 +651,7 @@ export class Renderer {
     for (const e of game.enemies) if (!e.air) list.push({ y: e.wy + (e.climbH || 0) * 40, o: e, k: 2 });   // climbing: in front of the barricade
     list.push({ y: game.baseW.y + HH, o: game.baseW, k: 3 });
     for (const g of game.gates) list.push({ y: g.y + HH, o: g, k: 4 });
+    if (this.life) this.life.addToList(list);
     list.sort((a, b) => a.y - b.y);
     const gs = this.ground.s;
     for (const it of list) {
@@ -649,7 +663,9 @@ export class Renderer {
       else if (it.k === 3) this.drawBase(ctx, game, it.o);
       else if (it.k === 4) this.drawGate(ctx, it.o);
       else if (it.k === 7) this.drawBarricade(ctx, it.o, ui);
+      else if (it.k === 8) this.life.drawTroop(ctx, it.o);
     }
+    if (this.life) this.life.drawFog(ctx);
     // units behind high ground: a faint silhouette on top (drawing a sprite over itself changes nothing where it is visible)
     ctx.globalAlpha = 0.32;
     for (const e of game.enemies) {
@@ -664,6 +680,7 @@ export class Renderer {
     if (ui.selected && !selBar && ui.selected.z) this.drawRange(ctx, ui.selected.gx, ui.selected.gy, ui.selected.stats.range, TOWERS[ui.selected.type].color, true, TOWERS[ui.selected.type].minRange, ui.selected.z);
     const air = game.enemies.filter(e => e.air).sort((a, b) => a.wy - b.wy);
     for (const e of air) this.drawEnemy(ctx, e);
+    if (this.life && !this.xray) this.life.drawAir(ctx, (c, d, b) => this.drawConstructionDrone(c, d, b));
 
     this.drawBeams(ctx, game);
     this.drawShots(ctx, game.shots);
@@ -1568,7 +1585,26 @@ export class Renderer {
 
   drawProp(ctx, p) {
     if (p.z) { ctx.globalAlpha = 0.9; Models.drawShadow(ctx, p.model, p.rot, p.wx, p.wy, p.s); ctx.globalAlpha = 1; }
-    Models.draw(ctx, p.model, p.rot, p.wx, p.wy, p.s);
+    if (p.sway === undefined) p.sway = /tree|pine|bush/.test(p.model) ? 0.6 + ((p.wx * 7 + p.wy * 3) % 10) / 10 : 0;
+    if (p.sway) {
+      // trees sway in the wind: a gentle shear around the trunk base (stronger in storms)
+      const w = this.game.weather && ['sandstorm', 'storm', 'blizzard'].includes(this.game.weather.type) ? 2.2 : 1;
+      const k = Math.sin(this.time * (1.1 + p.sway * 0.5) + p.wx * 0.013) * 0.022 * w + Math.sin(this.time * 3.1 + p.wy) * 0.004;
+      ctx.save(); ctx.translate(p.wx, p.wy); ctx.transform(1, 0, k, 1, 0, 0);
+      Models.draw(ctx, p.model, p.rot, 0, 0, p.s);
+      ctx.restore();
+    } else Models.draw(ctx, p.model, p.rot, p.wx, p.wy, p.s);
+    const E = PROP_SMOKE[p.model], dt = this._dt || 0;
+    if (E && dt && !this.game.cine && Math.random() < dt * E.r) {
+      const m = Models.meta(p.model);
+      if (m) {
+        const top = m.topPx * p.s * (E.h || 0.8), wd = m.w * m.scale * p.s * (E.w || 0.18);
+        const x = p.wx + (Math.random() - 0.5) * 2 * wd, y = p.wy - top;
+        if (E.k === 'ember') this.game.fx.add({ k: 'ember', x, y, vx: (Math.random() - 0.5) * 30, vy: -60 - Math.random() * 40, trail: 0, life: 1.2 });
+        else if (E.k === 'mist') this.game.fx.add({ k: 'glow', x, y: y + top * 0.6, s: 50, life: 1.6, spr: 'green' });
+        else this.game.fx.add({ k: 'smoke', x, y, vx: 8 + Math.random() * 6, vy: -22 - Math.random() * 14, s: E.s || 12, grow: (E.s || 12) * 3, life: E.life || 2.4, a: E.a || 0.4, dark: E.k === 'dark' });
+      }
+    }
   }
   // spawn gate: 3D bunker with a pulsing red glow in its opening (towards the road)
   drawGate(ctx, g) {
