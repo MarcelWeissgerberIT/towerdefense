@@ -1352,15 +1352,15 @@ async function startLevel(i, ch = null, restored = null) {
   }
   if (game.hole.on && !save.data.holeHint) {
     save.data.holeHint = true; save.write();
-    setTimeout(() => toast('Neu: SCHWARZES LOCH – saugt Gegner 10 Sekunden lang ein (Knopf rechts oben)', 'warn', 5000), 4200);
+    setTimeout(() => toast('Neu: SCHWARZES LOCH – saugt Gegner 10 Sekunden lang ein (im Arsenal, Knopf unten rechts)', 'warn', 5000), 4200);
   }
   if (game.nuke.on && !save.data.nukeHint) {
     save.data.nukeHint = true; save.write();
-    setTimeout(() => toast('Neu: ATOMBOMBE – lädt sich durch Abschüsse auf, verstrahlt das Gebiet; danach muss die Abschussrampe repariert werden (Knopf rechts)', 'warn', 5000), 3400);
+    setTimeout(() => toast('Neu: ATOMBOMBE – lädt sich durch Abschüsse auf, verstrahlt das Gebiet; danach muss die Abschussrampe repariert werden (im Arsenal, Knopf unten rechts)', 'warn', 5000), 3400);
   }
   if (game.orbital.on && !save.data.orbitalHint) {
     save.data.orbitalHint = true; save.write();
-    setTimeout(() => toast('Neu: ORBITALSCHLAG – Knopf unten rechts, dann Ziel antippen', 'warn', 4500), 2600);
+    setTimeout(() => toast('Neu: ORBITALSCHLAG – im Arsenal (Knopf unten rechts), dann Ziel antippen', 'warn', 4500), 2600);
   }
   if (!save.data.barHint) {
     save.data.barHint = true; save.write();

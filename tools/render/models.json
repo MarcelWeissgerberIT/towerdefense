@@ -350,5 +350,12 @@
   "size": 1.0,
   "yaw0": 180,
   "P": 128
+ },
+ "ally_bomber": {
+  "mode": "unit",
+  "frames": 32,
+  "size": 1.6,
+  "yaw0": 180,
+  "P": 128
  }
 }
