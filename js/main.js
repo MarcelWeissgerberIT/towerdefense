@@ -240,41 +240,69 @@ function updateTowerMenu(force) {
   if (!force && key === tmCache) return;
   tmCache = key;
   const spec = t.spec && SPECS[t.type].find(x => x.id === t.spec);
-  $('tm-name').innerHTML = spec ? `${def.name} <small class="tm-spec">◆ ${spec.name}</small>` : def.name;
-  // level III: choose a specialization
+  setHTML($('tm-name'), spec ? `${def.name} <small class="tm-spec">◆ ${spec.name}</small>` : def.name);
+  // level III: choose a specialization (the buttons stay the same elements while the menu is open; too
+  // expensive ones stay tappable and say so instead of silently ignoring the tap)
   const box = $('tm-specs');
   const choose = maxed && !t.spec && !t.upgrading && SPECS[t.type];
   box.classList.toggle('hidden', !choose);
-  if (choose) box.innerHTML = `<div class="tm-spec-head">SPEZIALISIERUNG · ${IC('credits')} ${sc}</div>` + SPECS[t.type].map(x =>
-    `<button class="tm-spec-btn" data-spec="${x.id}" ${game.credits < sc ? 'disabled' : ''}><b>${x.name}</b><span>${x.desc}</span></button>`).join('');
+  if (choose) {
+    setHTML(box, `<div class="tm-spec-head">SPEZIALISIERUNG · ${IC('credits')} ${sc}</div>` + SPECS[t.type].map(x =>
+      `<button class="tm-spec-btn" data-spec="${x.id}"><b>${x.name}</b><span>${x.desc}</span></button>`).join(''));
+    for (const b of box.querySelectorAll('[data-spec]')) b.classList.toggle('poor', game.credits < sc);
+  }
   $('tm-level').textContent = ['I', 'II', 'III'][t.level - 1];
   $('tm-hpfill').style.width = `${Math.max(0, t.hp / s.hp) * 100}%`;
   const next = maxed ? null : game.statsFor(t.type, t.level + 1, t.cx, t.cy);
   const dmg = def.dps ? `${Math.round(s.dps)}/s` : def.kind === 'hitscan' || def.kind === 'flak' ? `${Math.round(s.dmg)}×${s.rate.toFixed(1)}` : Math.round(s.dmg);
   const ndmg = next ? (def.dps ? Math.round(next.dps) : Math.round(next.dmg)) : null;
   const eff = Math.round(game.towerEff(t) * 100);
-  $('tm-stats').innerHTML = `<span>${IC('damage')} ${dmg}${ndmg ? `<em>→${ndmg}</em>` : ''}</span><span>${IC('range')} ${s.range.toFixed(1)}</span><span>${IC('kills')} ${t.kills}${t.rank ? ` <em class="rank">${IC('star').repeat(t.rank)}</em>` : ''}</span>`
-    + (eff < 99 ? `<span class="tm-eff ${eff < 70 ? 'bad' : ''}">${IC('wrench')} Kampfkraft ${eff} %</span>` : '');
+  setHTML($('tm-stats'), `<span>${IC('damage')} ${dmg}${ndmg ? `<em>→${ndmg}</em>` : ''}</span><span>${IC('range')} ${s.range.toFixed(1)}</span><span>${IC('kills')} ${t.kills}${t.rank ? ` <em class="rank">${IC('star').repeat(t.rank)}</em>` : ''}</span>`
+    + (eff < 99 ? `<span class="tm-eff ${eff < 70 ? 'bad' : ''}">${IC('wrench')} Kampfkraft ${eff} %</span>` : ''));
   const up = $('tm-upgrade');
   up.disabled = maxed || game.credits < cost || !!t.upgrading;
-  up.textContent = t.upgrading ? `⏳ ${prog} %` : maxed ? (t.spec ? '◆ MAX' : 'MAX') : `▲ ${cost} · ${Math.round(UPGRADE_TIME[t.level] * (1 - 0.12 * Math.round(game.perk.repair / 0.35)))} s`;
+  setElText(up, t.upgrading ? `⏳ ${prog} %` : maxed ? (t.spec ? '◆ MAX' : 'MAX') : `▲ ${cost} · ${Math.round(UPGRADE_TIME[t.level] * (1 - 0.12 * Math.round(game.perk.repair / 0.35)))} s`);
   up.classList.toggle('hidden', !!choose);
   const rp = $('tm-repair');
   rp.classList.toggle('hidden', rc <= 0 && !t.repairing);
-  rp.innerHTML = t.repairing ? `${IC('wrench')} ${Math.floor(t.repairing.t / t.repairing.dur * 100)} %` : `${IC('wrench')} ${rc}`;
+  setHTML(rp, t.repairing ? `${IC('wrench')} ${Math.floor(t.repairing.t / t.repairing.dur * 100)} %` : `${IC('wrench')} ${rc}`);
   rp.disabled = !!t.repairing || game.credits < rc;
   const ra = repairAllCost(), others = game.towers.filter(o => o !== t && game.repairCost(o) > 0).length;
   $('tm-repair-all').classList.toggle('hidden', !others);
-  $('tm-repair-all').innerHTML = `${IC('wrench')} ALLE ${ra}`;
-  $('tm-mode').innerHTML = `${IC('target')} ${MODES[t.mode]}`;
+  setHTML($('tm-repair-all'), `${IC('wrench')} ALLE ${ra}`);
+  setHTML($('tm-mode'), `${IC('target')} ${MODES[t.mode]}`);
   $('tm-mode').classList.toggle('hidden', !!def.static && def.kind !== 'emp');
-  $('tm-sell').innerHTML = `${IC('sell')} +${game.sellValue(t)}`;
+  setHTML($('tm-sell'), `${IC('sell')} +${game.sellValue(t)}`);
 }
+// only touch the DOM when the content really changed: iOS Safari drops a tap when the element under the
+// finger is replaced while the finger is down (the menu re-renders all the time while the tower takes hits)
+function setHTML(el, html) { if (el._html !== html) { el._html = html; el.innerHTML = html; } }
+function setElText(el, txt) { if (el._html !== txt) { el._html = txt; el.textContent = txt; } }
 $('tm-upgrade').onclick = (e) => { e.stopPropagation(); if (ui.selected && game.upgrade(ui.selected)) updateTowerMenu(true); };
+// specialization: act on lifting the finger (pointerup) - more robust on iPhones than waiting for the
+// click; the click that follows (or a click from a mouse/keyboard) is only a fallback
+let specDown = null, specDone = 0;
+function chooseSpec(id, viaPointer) {
+  specDone = performance.now();
+  // the menu changes under the finger: the click that follows must not hit e.g. the sell button now there
+  if (viaPointer) ghostUntil = specDone + 700;
+  if (ui.selected && game.specialize(ui.selected, id)) updateTowerMenu(true);
+}
+$('tm-specs').addEventListener('pointerdown', (e) => {
+  const b = e.target.closest('[data-spec]');
+  specDown = b ? { id: b.dataset.spec, x: e.clientX, y: e.clientY } : null;
+});
+$('tm-specs').addEventListener('pointerup', (e) => {
+  const d = specDown; specDown = null;
+  if (!d || holdSuppress || Math.hypot(e.clientX - d.x, e.clientY - d.y) > 20) return;
+  const el = document.elementFromPoint(e.clientX, e.clientY), b = el && el.closest('[data-spec]');
+  if (b && b.dataset.spec === d.id) chooseSpec(d.id, true);
+});
+$('tm-specs').addEventListener('pointercancel', () => { specDown = null; });
 $('tm-specs').onclick = (e) => {
   e.stopPropagation();
   const b = e.target.closest('[data-spec]');
-  if (b && ui.selected && game.specialize(ui.selected, b.dataset.spec)) updateTowerMenu(true);
+  if (b && performance.now() - specDone > 700) chooseSpec(b.dataset.spec);
 };
 function repairAllCost() { return game ? game.towers.reduce((a, o) => a + game.repairCost(o), 0) : 0; }
 $('tm-repair-all').onclick = (e) => { e.stopPropagation(); if (game) { const n = game.repairAll(); if (n) toast(`${n} Türme werden repariert`, '', 1500); updateTowerMenu(true); } };
@@ -482,9 +510,9 @@ function updateHold() {
   }
 }
 // the click that ends a long press must not also trigger the button (however long the finger stays down)
-let holdSuppress = false;
+let holdSuppress = false, ghostUntil = 0;
 document.addEventListener('pointerup', () => { if (holdSuppress) setTimeout(() => { holdSuppress = false; }, 60); }, true);
-document.addEventListener('click', (e) => { if (holdSuppress || performance.now() - holdFired < 300) { e.stopPropagation(); e.preventDefault(); } }, true);
+document.addEventListener('click', (e) => { if (holdSuppress || performance.now() - holdFired < 300 || performance.now() < ghostUntil) { e.stopPropagation(); e.preventDefault(); } }, true);
 document.addEventListener('contextmenu', (e) => { if (game) e.preventDefault(); });
 function attachHold(el, fn) {
   el.addEventListener('pointerdown', () => { const r = el.getBoundingClientRect(); holdStart(r.left + r.width / 2, r.top + r.height / 2, fn); });

@@ -74,14 +74,47 @@ function voices(key, max, life) {
   return 1 / Math.sqrt(list.length);
 }
 
-export function unlockAudio() {
-  init();
-  if (ctx && ctx.state !== 'running') ctx.resume();
+// iPhone: Web Audio obeys the ring/silent switch (the game was mute in silent mode) unless the page's audio
+// session is "playback" like a video. iOS 17+ has navigator.audioSession; older versions get there through a
+// silent looping <audio> element that runs while the game is visible.
+let keepAlive = null;
+const IOS = typeof navigator !== 'undefined' && (/iP(hone|ad|od)/.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1));
+function silentWav() {
+  const n = 4410, b = new ArrayBuffer(44 + n * 2), v = new DataView(b);
+  const w = (o, str) => { for (let i = 0; i < str.length; i++) v.setUint8(o + i, str.charCodeAt(i)); };
+  w(0, 'RIFF'); v.setUint32(4, 36 + n * 2, true); w(8, 'WAVEfmt '); v.setUint32(16, 16, true); v.setUint16(20, 1, true);
+  v.setUint16(22, 1, true); v.setUint32(24, 44100, true); v.setUint32(28, 88200, true); v.setUint16(32, 2, true);
+  v.setUint16(34, 16, true); w(36, 'data'); v.setUint32(40, n * 2, true);
+  return URL.createObjectURL(new Blob([b], { type: 'audio/wav' }));
 }
+function playbackSession() {
+  try { if (navigator.audioSession && navigator.audioSession.type !== 'playback') navigator.audioSession.type = 'playback'; } catch (e) { /* ignore */ }
+  if (!IOS || navigator.audioSession || document.hidden) return;
+  if (!keepAlive) {
+    keepAlive = document.createElement('audio');
+    keepAlive.src = silentWav(); keepAlive.loop = true; keepAlive.preload = 'auto';
+    keepAlive.setAttribute('playsinline', ''); keepAlive.setAttribute('x-webkit-airplay', 'deny');
+  }
+  if (keepAlive.paused) { const p = keepAlive.play(); if (p) p.catch(() => {}); }
+}
+
+export function unlockAudio() {
+  playbackSession();
+  init();
+  if (!ctx) return;
+  if (ctx.state !== 'running') {
+    ctx.resume();
+    // older iOS only really starts after a sound was started inside the touch
+    try { const s = ctx.createBufferSource(); s.buffer = ctx.createBuffer(1, 1, ctx.sampleRate); s.connect(ctx.destination); s.start(0); } catch (e) { /* ignore */ }
+  }
+}
+if (typeof document !== 'undefined') document.addEventListener('visibilitychange', () => {
+  if (document.hidden) { if (keepAlive) keepAlive.pause(); if (ctx && ctx.state === 'running') ctx.suspend(); }
+});
 
 if (typeof document !== 'undefined') for (const ev of ['touchend', 'click', 'keydown']) document.addEventListener(ev, () => { if (enabled) unlockAudio(); }, { capture: true, passive: true });
 
-export function setSound(on) { enabled = on; }
+export function setSound(on) { enabled = on; if (!on && keepAlive) keepAlive.pause(); }
 export function soundOn() { return enabled; }
 
 function throttle(key, ms) {
@@ -410,4 +443,4 @@ export function audioLevel() {
   let pk = 0; for (const v of d) pk = Math.max(pk, Math.abs(v));
   return 20 * Math.log10(pk + 1e-6);
 }
-export function audioStatus() { return { state: ctx && ctx.state, sprite: !!sprite, sounds: spriteMap ? Object.keys(spriteMap).length : 0 }; }
+export function audioStatus() { return { state: ctx && ctx.state, sprite: !!sprite, sounds: spriteMap ? Object.keys(spriteMap).length : 0, session: (navigator.audioSession && navigator.audioSession.type) || null, keepAlive: keepAlive ? !keepAlive.paused : null }; }
