@@ -1,5 +1,5 @@
 // Isometric canvas renderer
-import { HW, HH, TOWERS, BIOMES, TOWER_SCALE, ELEV_PX, NUKE, POWERUPS, HOLE, WEATHER } from './config.js';
+import { HW, HH, TOWERS, BIOMES, TOWER_SCALE, ELEV_PX, NUKE, POWERUPS, HOLE, WEATHER, ROD, NAPALM } from './config.js';
 import { toWorld, toGrid, mulberry32, clamp } from './iso.js';
 import { Assets, Models, drawIcon } from './assets.js';
 import { CELL } from './game.js';
@@ -492,6 +492,7 @@ export class Renderer {
       if (!Models.drawShadow(ctx, t.def.model, Models.frameFor(t.def.model, t.ang), t.wx, t.wy, TS)) ctx.drawImage(fx.shadow, t.wx - 66, t.wy - 22, 132, 58);
     }
     for (const p of game.puddles) this.drawPuddle(ctx, p);
+    this.drawNapalmGround(ctx, game);
     for (const z of game.radZones) this.drawRadiation(ctx, z);
     for (const h of game.holes) this.drawHoleGround(ctx, h);
     if (ui.aim) this.drawAimGround(ctx, ui);
@@ -554,6 +555,8 @@ export class Renderer {
     this.drawBeams(ctx, game);
     this.drawShots(ctx, game.shots);
     this.drawStrikes(ctx, game);
+    this.drawRods(ctx, game);
+    this.drawBombers(ctx, game);
     this.drawNukes(ctx, game);
     this.drawWeatherStrikes(ctx, game);
     for (const h of game.holes) this.drawHole(ctx, h);
@@ -571,6 +574,7 @@ export class Renderer {
     this.drawAmbient(ctx, dt);
     if (game.weather) this.drawWeather(ctx, game, dt);
     else this._wp = null;
+    this.drawIon(ctx, game);
     this.drawOffscreen(ctx, game);
     if (game.cine) {
       const c = game.cine, end = c.pre + c.freeze + c.slow + c.ramp;
@@ -738,6 +742,117 @@ export class Renderer {
     }
   }
 
+  // tungsten rod: a white targeting beam that tightens, then the rod comes down as a streak of light
+  drawRods(ctx, game) {
+    for (const r of game.rods) {
+      const c = toWorld(r.gx, r.gy), k = 1 - r.t / r.dur, pul = 0.5 + 0.5 * Math.sin(this.time * 24);
+      ctx.save();
+      ctx.strokeStyle = `rgba(190,225,255,${0.5 + 0.4 * pul})`; ctx.lineWidth = 3;
+      ctx.setLineDash([12, 9]); ctx.lineDashOffset = -this.time * 80;
+      const rr = ROD.splash * (1.1 - 0.4 * k);
+      ctx.beginPath(); ctx.ellipse(c.x, c.y, rr * HW * Math.SQRT2, rr * HH * Math.SQRT2, 0, 0, Math.PI * 2); ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.globalAlpha = 0.2 + 0.5 * k;
+      ctx.strokeStyle = 'rgba(140,200,255,1)'; ctx.lineWidth = 2 + 6 * k;
+      ctx.beginPath(); ctx.moveTo(c.x, c.y - 1600); ctx.lineTo(c.x, c.y); ctx.stroke();
+      const fall = Math.max(0, (k - 0.78) / 0.22);
+      if (fall > 0) {
+        const head = c.y - 1600 * (1 - fall);
+        ctx.globalAlpha = 1;
+        ctx.strokeStyle = 'rgba(255,255,255,1)'; ctx.lineWidth = 7;
+        ctx.beginPath(); ctx.moveTo(c.x, head - 420); ctx.lineTo(c.x, head); ctx.stroke();
+        ctx.drawImage(Assets.fx.white, c.x - 50, head - 50, 100, 100);
+      }
+      const g = 40 + 120 * k;
+      ctx.globalAlpha = 0.5 + 0.4 * k;
+      ctx.drawImage(Assets.fx.cyan, c.x - g / 2, c.y - g / 4, g, g / 2);
+      ctx.restore();
+    }
+  }
+  // napalm: scorched, glowing ground under the burning carpet
+  drawNapalmGround(ctx, game) {
+    for (const n of game.napalms) for (const p of n.pts) {
+      if (!p.on) continue;
+      const age = n.t - p.t0, life = NAPALM.burn, fade = Math.min(1, age / 0.3, (life - age) / 1.5);
+      if (fade <= 0) continue;
+      const w = toWorld(p.gx, p.gy), r = NAPALM.w * HW * 1.7;
+      ctx.globalAlpha = 0.55 * fade;
+      ctx.drawImage(Assets.fx.dark, w.x - r, w.y - r * 0.5, r * 2, r);
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.globalAlpha = (0.35 + 0.15 * Math.sin(this.time * 9 + p.gx * 3)) * fade;
+      ctx.drawImage(Assets.fx.lava, w.x - r, w.y - r * 0.5, r * 2, r);
+      ctx.globalCompositeOperation = 'source-over';
+    }
+    ctx.globalAlpha = 1;
+  }
+  // three bombers in a V sweep along the road at height, their shadows racing over the ground
+  drawBombers(ctx, game) {
+    for (const n of game.napalms) {
+      const span = n.pts.length * 0.07, t0 = NAPALM.delay - 0.9, u = (n.t - t0) / (span + 1.8);
+      if (u < 0 || u > 1) continue;
+      const a = n.pts[0], b = n.pts[n.pts.length - 1];
+      const dx = Math.cos(n.ang), dy = Math.sin(n.ang), ext = 6;
+      const gx = a.gx - dx * ext + (b.gx - a.gx + dx * 2 * ext) * u, gy = a.gy - dy * ext + (b.gy - a.gy + dy * 2 * ext) * u;
+      const w0 = toWorld(gx, gy), w1 = toWorld(gx + dx, gy + dy), sa = Math.atan2(w1.y - w0.y, w1.x - w0.x);
+      for (const [off, back] of [[0, 0], [-0.9, -0.8], [0.9, -0.8]]) {
+        const px = gx - dy * off + dx * back, py = gy + dx * off + dy * back, w = toWorld(px, py);
+        // shadow on the ground
+        ctx.save(); ctx.translate(w.x + 20, w.y + 6); ctx.rotate(sa); ctx.scale(1.3, 0.65);
+        ctx.fillStyle = 'rgba(0,0,0,0.3)'; this.jetPath(ctx, 1.0); ctx.fill(); ctx.restore();
+        // the jet
+        ctx.save(); ctx.translate(w.x, w.y - 150); ctx.rotate(sa); ctx.scale(1.3, 1.3);
+        ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = 0.8;
+        ctx.drawImage(Assets.fx.orange, -58, -16, 32, 32);
+        ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1;
+        ctx.fillStyle = '#3a4048'; ctx.strokeStyle = '#11151a'; ctx.lineWidth = 1.5;
+        this.jetPath(ctx, 1.0); ctx.fill(); ctx.stroke();
+        ctx.fillStyle = '#7fd0ff'; ctx.beginPath(); ctx.ellipse(14, 0, 6, 2.5, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.restore();
+      }
+    }
+  }
+  jetPath(ctx, s) {
+    ctx.beginPath();
+    ctx.moveTo(30 * s, 0); ctx.lineTo(-8 * s, -24 * s); ctx.lineTo(-18 * s, -24 * s); ctx.lineTo(-10 * s, -6 * s);
+    ctx.lineTo(-26 * s, -5 * s); ctx.lineTo(-26 * s, 5 * s); ctx.lineTo(-10 * s, 6 * s); ctx.lineTo(-18 * s, 24 * s); ctx.lineTo(-8 * s, 24 * s);
+    ctx.closePath();
+  }
+  // ion storm (screen space): blue charge-up at the edges with crackling arcs, then the flash of the wave
+  drawIon(ctx, game) {
+    const W = this.vw, H = this.vh;
+    const bolt = (x0, y0, x1, y1, w) => {
+      ctx.beginPath(); ctx.moveTo(x0, y0);
+      for (let i = 1; i < 8; i++) { const t = i / 8; ctx.lineTo(x0 + (x1 - x0) * t + (Math.random() - 0.5) * 40, y0 + (y1 - y0) * t + (Math.random() - 0.5) * 40); }
+      ctx.lineTo(x1, y1);
+      ctx.lineWidth = w; ctx.stroke();
+    };
+    if (game.ionCharge > 0) {
+      const k = 1 - game.ionCharge / 1.6;
+      const g = ctx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.25, W / 2, H / 2, Math.max(W, H) * 0.75);
+      g.addColorStop(0, 'rgba(60,160,255,0)'); g.addColorStop(1, `rgba(60,170,255,${0.15 + 0.4 * k})`);
+      ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+      ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.strokeStyle = 'rgba(170,230,255,0.85)';
+      for (let i = 0; i < 2 + k * 6; i++) { const e = Math.random() * 4 | 0, p = Math.random(); const [x0, y0] = [[p * W, 0], [W, p * H], [p * W, H], [0, p * H]][e]; bolt(x0, y0, x0 + (W / 2 - x0) * 0.35 * Math.random(), y0 + (H / 2 - y0) * 0.35 * Math.random(), 1.5 + 2 * k); }
+      ctx.restore();
+    }
+    if (game.ionFx) {
+      const t = game.ionFx.t, a = Math.max(0, 1 - t / 1.2);
+      ctx.fillStyle = `rgba(150,215,255,${0.7 * a})`; ctx.fillRect(0, 0, W, H);
+      // the wave itself: a bright ring racing outwards over the screen
+      const R = Math.hypot(W, H) * Math.min(1, t / 0.6);
+      ctx.save(); ctx.globalCompositeOperation = 'lighter';
+      ctx.strokeStyle = `rgba(190,240,255,${0.8 * a})`; ctx.lineWidth = 26 * a + 4;
+      ctx.beginPath(); ctx.arc(W / 2, H / 2, R, 0, Math.PI * 2); ctx.stroke();
+      ctx.restore();
+      if (t < 0.5) {
+        ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.strokeStyle = `rgba(210,240,255,${0.9 * a})`;
+        for (let i = 0; i < 10; i++) bolt(Math.random() * W, 0, Math.random() * W, H * (0.4 + Math.random() * 0.6), 2.5);
+        ctx.restore();
+      }
+    }
+  }
+
   // nuclear strike countdown: warning zone + warhead falling from the sky
   drawNukes(ctx, game) {
     for (const n of game.nukes) {
@@ -832,6 +947,9 @@ export class Renderer {
   }
   // ---- special weapons: aim preview (area of effect, ghost of the effect, marked targets) ----
   aimSpec(kind) {
+    if (kind === 'rod') return { r: ROD.r, outer: ROD.splash, col: '190,225,255' };
+    if (kind === 'napalm') return { r: NAPALM.w, col: '255,140,40', path: true };
+    if (kind === 'ion') return { r: 0, col: '120,220,255', global: true };
     if (kind === 'nuke') return { r: NUKE.radius, outer: NUKE.outer, col: '255,214,40' };
     if (kind === 'hole') return { r: HOLE.radius, col: '200,140,255' };
     return { r: 1.7, col: '255,80,60' };
@@ -839,6 +957,16 @@ export class Renderer {
   drawAimGround(ctx, ui) {
     const a = ui.aim, k = ui.targeting, c = toWorld(a.x, a.y), S = this.aimSpec(k);
     const pul = 0.5 + 0.5 * Math.sin(this.time * 6);
+    if (S.global) return;
+    if (S.path) {
+      // napalm: the stretch of road that will burn
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.globalAlpha = 0.35 + 0.15 * pul;
+      for (const p of this.napalmPreview(a)) { const w = toWorld(p.gx, p.gy), r = NAPALM.w * HW * 1.6; ctx.drawImage(Assets.fx.lava, w.x - r, w.y - r * 0.5, r * 2, r); }
+      ctx.restore();
+      return;
+    }
     if (k === 'hole') { this.drawHoleGround(ctx, { gx: a.x, gy: a.y, str: 0.55 + 0.2 * pul }); return; }
     const R = (S.outer || S.r) * HW * Math.SQRT2;
     ctx.save();
@@ -856,9 +984,47 @@ export class Renderer {
     }
     ctx.restore();
   }
+  napalmPreview(a) {
+    const key = `${a.x.toFixed(2)},${a.y.toFixed(2)}|${this.game.routes.map(r => r.total.toFixed(1)).join()}`;
+    if (!this._napPrev || this._napPrev.key !== key) this._napPrev = { key, pts: this.game.napalmPath(a.x, a.y) };
+    return this._napPrev.pts;
+  }
+  // global weapon (ion storm) / napalm along the road: their own previews
+  drawAimSpecial(ctx, game, ui, S) {
+    const a = ui.aim, z = this.cam.zoom, pul = 0.5 + 0.5 * Math.sin(this.time * 6), lw = Math.max(2, 3 / z);
+    ctx.save();
+    let hit = [];
+    if (S.global) hit = game.enemies.filter(e => e.alive);
+    else {
+      const pts = this.napalmPreview(a);
+      hit = game.enemies.filter(e => e.alive && !e.air && pts.some(p => (p.gx - e.gx) ** 2 + (p.gy - e.gy) ** 2 <= NAPALM.w * NAPALM.w * 2.2));
+      // flight path of the bombers + the burning stretch
+      if (pts.length) {
+        ctx.setLineDash([16, 10]); ctx.lineDashOffset = -this.time * 50;
+        ctx.strokeStyle = `rgba(${S.col},${0.75 + 0.25 * pul})`; ctx.lineWidth = lw * 1.4; ctx.lineCap = 'round';
+        ctx.beginPath(); pts.forEach((p, i) => { const w = toWorld(p.gx, p.gy); if (i) ctx.lineTo(w.x, w.y); else ctx.moveTo(w.x, w.y); }); ctx.stroke();
+        ctx.setLineDash([]);
+      } else {
+        const c = toWorld(a.x, a.y);
+        ctx.font = `800 ${17 / z}px "Rajdhani", system-ui, sans-serif`; ctx.textAlign = 'center';
+        ctx.lineWidth = 4 / z; ctx.strokeStyle = 'rgba(0,0,0,0.85)'; ctx.strokeText('NÄHER AN DIE STRASSE', c.x, c.y - 20);
+        ctx.fillStyle = '#ffb070'; ctx.fillText('NÄHER AN DIE STRASSE', c.x, c.y - 20);
+      }
+      const c = toWorld(a.x, a.y);
+      ctx.strokeStyle = `rgba(255,255,255,${0.75 + 0.25 * pul})`; ctx.lineWidth = lw;
+      ctx.beginPath(); ctx.ellipse(c.x, c.y, 24, 12, 0, 0, Math.PI * 2); ctx.stroke();
+    }
+    for (const e of hit) {
+      const rx = 30 + (e.def.boss ? 30 : 0);
+      ctx.strokeStyle = `rgba(${S.col},0.9)`; ctx.lineWidth = lw;
+      ctx.beginPath(); ctx.ellipse(e.wx, e.wy, rx, rx * 0.5, 0, 0, Math.PI * 2); ctx.stroke();
+    }
+    ctx.restore();
+  }
   drawAimTop(ctx, game, ui) {
     const a = ui.aim, k = ui.targeting, c = toWorld(a.x, a.y), S = this.aimSpec(k), z = this.cam.zoom;
     const pul = 0.5 + 0.5 * Math.sin(this.time * 6);
+    if (S.global || S.path) { this.drawAimSpecial(ctx, game, ui, S); return; }
     const ell = (r, x = c.x, y = c.y) => { ctx.beginPath(); ctx.ellipse(x, y, r * HW * Math.SQRT2, r * HH * Math.SQRT2, 0, 0, Math.PI * 2); };
     ctx.save();
     // ghost of the effect itself
@@ -882,7 +1048,7 @@ export class Renderer {
       // targeting laser from orbit
       ctx.globalCompositeOperation = 'lighter';
       ctx.globalAlpha = 0.22 + 0.25 * pul;
-      ctx.strokeStyle = 'rgba(255,80,60,1)'; ctx.lineWidth = 5;
+      ctx.strokeStyle = k === 'rod' ? 'rgba(150,200,255,1)' : 'rgba(255,80,60,1)'; ctx.lineWidth = 5;
       ctx.beginPath(); ctx.moveTo(c.x, c.y - 1400); ctx.lineTo(c.x, c.y); ctx.stroke();
       ctx.strokeStyle = 'rgba(255,230,210,1)'; ctx.lineWidth = 1.5;
       ctx.beginPath(); ctx.moveTo(c.x, c.y - 1400); ctx.lineTo(c.x, c.y); ctx.stroke();
@@ -1474,6 +1640,7 @@ export class Renderer {
     if (e.acidN > 0) Models.drawTinted(ctx, name, f, x, y, s, 'acid', 0.1 + 0.07 * e.acidN + 0.05 * Math.sin(this.time * 6 + e.id));
     if (e.radT > 0) Models.drawTinted(ctx, name, f, x, y, s, 'acid', Math.min(1, e.radT) * (0.18 + 0.14 * Math.sin(this.time * 9 + e.id)));
     if (e.rage) Models.drawTinted(ctx, name, f, x, y, s, 'rage', 0.16 + 0.14 * Math.sin(this.time * 7));
+    if (e.stunT > 0) Models.drawTinted(ctx, name, f, x, y, s, 'ice', Math.min(1, e.stunT) * (0.3 + 0.25 * Math.abs(Math.sin(this.time * 17 + e.id))));
   }
 
   // burrowed sand worm: a moving mound of sand with the drill tip breaking through now and then

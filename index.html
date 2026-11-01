@@ -45,9 +45,16 @@
   </div>
 
   <button id="btn-wave" class="hidden"><span id="wave-label">ANGRIFF STARTEN</span><small id="wave-sub"></small></button>
-  <button id="btn-orbital" class="hidden" aria-label="Orbitalschlag"><i class="ic ic-orbital ob-icon"></i><span class="ob-cd" id="orbital-cd"></span></button>
-  <button id="btn-nuke" class="hidden" aria-label="Atombombe"><i class="ic ic-nuke ob-icon"></i><span class="ob-cd" id="nuke-cd"></span></button>
-  <button id="btn-hole" class="hidden" aria-label="Schwarzes Loch"><i class="ic ic-hole ob-icon"></i><span class="ob-cd" id="hole-cd"></span></button>
+  <!-- special weapons: one button opens the arsenal (six weapons would not fit at the edge of a phone) -->
+  <button id="btn-arsenal" class="hidden" aria-label="Spezialwaffen"><i class="ic ic-arsenal ob-icon"></i><span class="ob-cd" id="arsenal-cd"></span></button>
+  <div id="arsenal" class="hidden">
+    <div class="ars-cell"><button id="btn-orbital" class="wbtn hidden" aria-label="Orbitalschlag"><i class="ic ic-orbital ob-icon"></i><span class="ob-cd" id="orbital-cd"></span></button><span class="ars-name">Orbital</span></div>
+    <div class="ars-cell"><button id="btn-rod" class="wbtn hidden" aria-label="Wolframstab"><i class="ic ic-rod ob-icon"></i><span class="ob-cd" id="rod-cd"></span></button><span class="ars-name">Wolframstab</span></div>
+    <div class="ars-cell"><button id="btn-napalm" class="wbtn hidden" aria-label="Napalm-Staffel"><i class="ic ic-napalm ob-icon"></i><span class="ob-cd" id="napalm-cd"></span></button><span class="ars-name">Napalm</span></div>
+    <div class="ars-cell"><button id="btn-ion" class="wbtn hidden" aria-label="Ionensturm"><i class="ic ic-ion ob-icon"></i><span class="ob-cd" id="ion-cd"></span></button><span class="ars-name">Ionensturm</span></div>
+    <div class="ars-cell"><button id="btn-hole" class="wbtn hidden" aria-label="Schwarzes Loch"><i class="ic ic-hole ob-icon"></i><span class="ob-cd" id="hole-cd"></span></button><span class="ars-name">Schw. Loch</span></div>
+    <div class="ars-cell"><button id="btn-nuke" class="wbtn hidden" aria-label="Atombombe"><i class="ic ic-nuke ob-icon"></i><span class="ob-cd" id="nuke-cd"></span></button><span class="ars-name">Atombombe</span></div>
+  </div>
   <div id="aim-bar" class="hidden">
     <div class="aim-info">
       <div id="aim-title"></div>
@@ -152,6 +159,7 @@
         <li><b>Turm antippen:</b> Upgrade bis Stufe III, Reparieren, Zielmodus, Verkaufen. Direkt nach dem Bauen gibt es 100 % zurück.</li>
         <li><b>Achtung:</b> Mechs, Panzer, Drohnen und Walker <b>beschießen deine Türme</b>. Türme reparieren sich langsam selbst und nach jeder Welle.</li>
         <li><b>Barrikaden:</b> Straße antippen. Gibt es einen Umweg, nehmen die Bodentruppen ihn (die Vorschau zeigt den neuen Weg) – so lenkst du sie an deinen Türmen vorbei. Ohne Umweg bleiben sie davor stehen und müssen sie zerstören. Flugeinheiten fliegen drüber.</li>
+        <li><b>Spezialwaffen:</b> Der Knopf unten rechts öffnet das Arsenal – Waffe antippen, Ziel wählen, AUSLÖSEN. Orbitalschlag · Napalm-Staffel (Brandteppich entlang der Straße) · Schwarzes Loch · Ionensturm (lähmt die ganze Karte, Flieger stürzen ab) · Wolframstab (Boss-Killer) · Atombombe. Lange drücken erklärt jede Waffe.</li>
         <li><b>Gebietsgegner:</b> Jedes Gebiet hat eine eigene Maschine – Schrottsammler (Ödland) baut aus Wracks Spinnen, Kletterer (Dschungel) steigen über Barrikaden, Sandwühler (Wüste) graben sich ein, Eisbrecher (Arktis) frieren nicht ein und tauen andere auf, Magma-Läufer (Vulkan) sind hitzefest und rösten Türme, Rammböcke (Metropole) zerlegen Barrikaden.</li>
         <li><b>Bosse:</b> Ist ein Boss außerhalb des Bildes, zeigt ein großer roter Pfeil mit Totenkopf seine Richtung – antippen, und die Kamera fährt hin.</li>
         <li><b>Kamera:</b> Ein Finger verschiebt, zwei Finger zoomen.</li>

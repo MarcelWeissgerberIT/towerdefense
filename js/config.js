@@ -226,8 +226,8 @@ export const ENEMIES = {
   climber: { cls: 'light', biome: 'jungle', info: 'Flinker Kletterroboter. Steigt einfach über Barrikaden hinweg, statt einen Umweg zu nehmen.', motion: 'spider', stride: 0.3, name: 'Kletterer', model: 'enemy_climber', hp: 140, speed: 1.25, armor: 1, reward: 12, leak: 1, cost: 3, scale: 0.85, climb: true },
   burrower: { cls: 'armored', biome: 'desert', info: 'Gräbt sich immer wieder in den Sand ein: unter der Erde ist er schneller und für Türme unerreichbar – nur Spezialwaffen treffen ihn dann. Barrikaden untertunnelt er.', motion: 'tracks', name: 'Sandwühler', model: 'enemy_burrower', hp: 360, speed: 0.7, armor: 4, reward: 26, leak: 2, cost: 7, scale: 0.85,
     burrow: { every: 6, dur: 2.6, speed: 1.6 } },
-  icebreaker: { cls: 'heavy', biome: 'ice', info: 'Schwerer Eisbrecher mit beheiztem Räumschild. Lässt sich nicht einfrieren und taut Maschinen in seiner Nähe wieder auf.', motion: 'tracks', name: 'Eisbrecher', model: 'enemy_icebreaker', hp: 600, speed: 0.5, armor: 6, reward: 34, leak: 3, cost: 11, scale: 0.85,
-    frostImmune: true, thaw: { range: 1.4 } },
+  icebreaker: { cls: 'heavy', biome: 'ice', info: 'Schwerer Eisbrecher mit beheiztem Räumschild. Lässt sich nicht einfrieren und taut Maschinen in seiner Nähe wieder auf.', motion: 'tracks', name: 'Eisbrecher', model: 'enemy_icebreaker', hp: 520, speed: 0.5, armor: 5, reward: 34, leak: 3, cost: 11, scale: 0.85,
+    frostImmune: true, thaw: { range: 1.2 } },
   magma: { cls: 'heavy', biome: 'volcano', info: 'Glühender Lava-Läufer. Feuer schadet ihm kaum, und seine Hitze setzt Türmen am Straßenrand zu.', motion: 'walker', stride: 0.7, name: 'Magma-Läufer', model: 'enemy_magma', hp: 820, speed: 0.45, armor: 6, reward: 40, leak: 3, cost: 13, scale: 0.85,
     burnImmune: true, heat: { range: 1.35, dps: 10 } },
   ram: { cls: 'heavy', biome: 'city', info: 'Gepanzerter Rammbock. Nimmt den direkten Weg und walzt Barrikaden in Sekunden nieder.', motion: 'tracks', name: 'Rammbock', model: 'enemy_ram', hp: 640, speed: 0.58, armor: 8, reward: 36, leak: 3, cost: 12, scale: 0.85, ram: 12 },
@@ -382,4 +382,10 @@ export const BAR = {
   ram: 4, ramCost: 3, boss: 3,           // damage per second of a blocked unit: (ram + cost * ramCost) * sqrt(hp scale)
   sell: 0.5, repair: 0.6,
 };
+// ion storm: an EMP wave over the whole map - machines paralysed, energy shields gone, aircraft crash
+export const ION = { unlock: 10, first: 80, cd: 200, charge: 1.6, stun: 5, bossStun: 1.5, airDmg: 0.75, groundDmg: 0.08, flat: 25 };
+// tungsten rod: a kinetic strike from orbit on one point - the boss killer
+export const ROD = { unlock: 12, first: 50, cd: 140, delay: 1.4, r: 0.65, splash: 1.5, dmg: 3600, bossFrac: 0.4, splashMul: 0.25 };
+// napalm squadron: three bombers lay a fire carpet along the road (len tiles to both sides of the target)
+export const NAPALM = { unlock: 6, first: 45, cd: 150, len: 4.5, delay: 1.6, burn: 8, dps: 70, w: 0.6 };
 export const HOLE = { unlock: 8, cd: 210, first: 90, dur: 10, radius: 2.6, pull: 1.4, dps: 0.07, flat: 30, bossSlow: 0.75, bossDps: 0.012, collapse: 0.3 };

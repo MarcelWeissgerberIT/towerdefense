@@ -60,6 +60,10 @@ function useAbilities(g) {
   if (g.hole.on && g.hole.cd <= 0) { const e = densest(g, C.HOLE.radius, 7); if (e) g.holeStrike(e.gx, e.gy); }
   if (g.nukeReady()) { const e = densest(g, C.NUKE.radius, 9); if (e) g.nukeStrike(e.gx, e.gy); }
   if (g.nuke.state === 'broken' && g.credits > g.nukeRepairCost() + 250) g.repairNuke();
+  // newer heavy weapons: rod on a boss (or a dense heavy group), napalm on a column, ion storm against air / masses
+  if (g.rod.on && g.rod.cd <= 0) { const b = g.enemies.find(e => e.alive && e.def.boss) || densest(g, 1.5, 5); if (b) g.rodStrike(b.gx, b.gy); }
+  if (g.napalm.on && g.napalm.cd <= 0) { const e = densest(g, 2.5, 6); if (e && !e.air) g.napalmStrike(e.gx, e.gy); }
+  if (g.ion.on && g.ion.cd <= 0) { const air = g.enemies.filter(e => e.alive && e.air).length; if (air >= 5 || g.enemies.length >= 18) g.ionStrike(); }
 }
 // BAR=1: barricades like a sensible player - one at a time where they force the longest detour (never a dead end)
 const BARS = process.env.BAR === '1';

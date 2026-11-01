@@ -651,7 +651,7 @@ body.aiming #btn-wave { display: none; }
 #nuke-flash { position: fixed; inset: 0; z-index: 12; pointer-events: none; background: #fffdf4; opacity: 0; }
 
 /* nuclear flash X-ray: a cyan negative of the battlefield - dark machines light up like bones */
-body.xray #game, body.xray #hud, body.xray #btn-wave, body.xray #btn-orbital, body.xray #btn-nuke, body.xray #btn-hole {
+body.xray #game, body.xray #hud, body.xray #btn-wave, body.xray #btn-orbital, body.xray #btn-nuke, body.xray #btn-hole, body.xray #btn-arsenal, body.xray #arsenal {
   filter: grayscale(1) invert(1) brightness(0.7) contrast(2.8) sepia(0.8) hue-rotate(165deg) saturate(3.5) brightness(1.3);
 }
 
@@ -711,9 +711,9 @@ body.boss #toasts { top: calc(100px + var(--sat)); }
 body.aiming #btn-replay { display: none; }
 #replay-label { position: fixed; z-index: 13; left: calc(16px + var(--sal)); top: calc(14px + var(--sat)); font-family: var(--font-title); font-weight: 800; font-size: 15px; letter-spacing: 0.12em; color: #fff; text-shadow: 0 1px 4px #000; pointer-events: none; }
 #replay-label i { display: inline-block; width: 11px; height: 11px; border-radius: 50%; background: #ff2a1a; margin-right: 6px; animation: obarm 0.5s infinite alternate; }
-body.replaying #hud, body.replaying #btn-wave, body.replaying #btn-orbital, body.replaying #btn-nuke, body.replaying #btn-hole, body.replaying #boss-bar, body.replaying #buffs { visibility: hidden; }
+body.replaying #hud, body.replaying #btn-wave, body.replaying #btn-orbital, body.replaying #btn-nuke, body.replaying #btn-hole, body.replaying #btn-arsenal, body.replaying #arsenal, body.replaying #boss-bar, body.replaying #buffs { visibility: hidden; }
 /* live nuclear strike: the HUD makes room for the mushroom cloud */
-body.nukecine #hud, body.nukecine #btn-wave, body.nukecine #btn-orbital, body.nukecine #btn-nuke, body.nukecine #btn-hole, body.nukecine #buffs, body.nukecine #towermenu, body.nukecine #builddrawer { visibility: hidden; }
+body.nukecine #hud, body.nukecine #btn-wave, body.nukecine #btn-orbital, body.nukecine #btn-nuke, body.nukecine #btn-hole, body.nukecine #btn-arsenal, body.nukecine #arsenal, body.nukecine #buffs, body.nukecine #towermenu, body.nukecine #builddrawer { visibility: hidden; }
 
 .tm-eff { flex-basis: 100%; color: #ffd27a; }
 .tm-eff.bad { color: #ff8a70; }
@@ -751,3 +751,57 @@ body.xray.glitch #game { transform: translate(7px, -3px) skewX(-3deg); filter: g
 
 /* chapter header (Gegenoffensive): name + short description */
 .biome-head small { display: block; margin-left: 12px; font-family: var(--font); font-size: 12px; letter-spacing: 0.02em; font-weight: 600; opacity: 0.85; text-transform: none; letter-spacing: 0.02em; line-height: 1.1; }
+
+/* ---------- arsenal: special weapons fold out of one button ---------- */
+#btn-arsenal {
+  position: fixed; z-index: 7;
+  right: calc(12px + var(--sar)); bottom: calc(12px + var(--sab));
+  width: 66px; height: 66px; border-radius: 50%; padding: 0; border: none; color: #fff; font: inherit;
+  background: conic-gradient(#ff5a3c calc(var(--p, 0) * 360deg), rgba(255,255,255,0.12) 0);
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.6);
+}
+#btn-arsenal::before { content: ''; position: absolute; inset: 4px; border-radius: 50%; background: radial-gradient(circle at 50% 35%, #3a2626, #131011); }
+#btn-arsenal > * { position: relative; }
+#btn-arsenal .ob-icon { width: 36px; height: 36px; font-size: 0; filter: grayscale(0.6) brightness(0.85); }
+#btn-arsenal .ob-cd { font-size: 10.5px; font-weight: 700; letter-spacing: 0.03em; color: #c9c3b8; margin-top: 1px; white-space: nowrap; }
+#btn-arsenal.ready .ob-icon, #btn-arsenal.open .ob-icon, #btn-arsenal.arming .ob-icon { filter: none; }
+#btn-arsenal.ready .ob-cd { color: #ffb43c; }
+#btn-arsenal.ready:not(.open) { animation: obpulse 1.6s infinite; }
+#btn-arsenal.open { background: conic-gradient(#ffb43c 360deg, #ffb43c 0); }
+#btn-arsenal.arming { background: conic-gradient(#ff3020 360deg, #ff3020 0); animation: obarm 0.5s infinite alternate; }
+#btn-arsenal.under-drawer, #arsenal.under-drawer { display: none; }
+#arsenal {
+  position: fixed; z-index: 7;
+  right: calc(86px + var(--sar)); bottom: calc(6px + var(--sab));
+  display: grid; grid-template-columns: repeat(3, 74px); gap: 4px 6px; padding: 8px 8px 6px;
+  background: rgba(10,12,14,0.96); border: 1px solid var(--line); border-radius: 14px;
+  box-shadow: 0 6px 24px rgba(0,0,0,0.6);
+  animation: arsin 0.16s ease-out;
+}
+@keyframes arsin { from { opacity: 0; transform: translateX(14px) scale(0.96); } to { opacity: 1; transform: none; } }
+#arsenal .ars-cell { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+#arsenal .ars-cell:has(> .wbtn.hidden) { display: none; }
+#arsenal > .ars-cell > button { position: relative; right: auto; bottom: auto; margin: 0; }
+#arsenal .ars-name { font-size: 10.5px; font-weight: 700; letter-spacing: 0.04em; color: #c9c3b8; text-transform: uppercase; white-space: nowrap; }
+/* generic look of the newer weapon buttons (colour per weapon) */
+#btn-ion, #btn-rod, #btn-napalm {
+  width: 66px; height: 66px; border-radius: 50%; padding: 0; border: none; color: #fff; font: inherit;
+  background: conic-gradient(var(--wc) calc(var(--p, 0) * 360deg), rgba(255,255,255,0.12) 0);
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.6);
+}
+#btn-ion { --wc: #5fd2ff; } #btn-rod { --wc: #d8e8ff; } #btn-napalm { --wc: #ff7a2a; }
+#btn-ion::before, #btn-rod::before, #btn-napalm::before { content: ''; position: absolute; inset: 4px; border-radius: 50%; background: radial-gradient(circle at 50% 35%, #26303a, #101215); }
+#btn-ion > *, #btn-rod > *, #btn-napalm > * { position: relative; }
+#btn-ion .ob-icon, #btn-rod .ob-icon, #btn-napalm .ob-icon, #btn-hole .ob-icon { width: 36px; height: 36px; font-size: 0; filter: grayscale(0.7) brightness(0.8); }
+#btn-ion .ob-cd, #btn-rod .ob-cd, #btn-napalm .ob-cd { font-size: 11px; font-weight: 700; color: #c9c3b8; margin-top: 1px; }
+#btn-ion.ready .ob-icon, #btn-rod.ready .ob-icon, #btn-napalm.ready .ob-icon, #btn-ion.arming .ob-icon, #btn-rod.arming .ob-icon, #btn-napalm.arming .ob-icon { filter: none; }
+#btn-ion.ready .ob-cd, #btn-rod.ready .ob-cd, #btn-napalm.ready .ob-cd { color: var(--wc); }
+#btn-ion.arming, #btn-rod.arming, #btn-napalm.arming { background: conic-gradient(#ff3020 360deg, #ff3020 0); animation: obarm 0.5s infinite alternate; }
+@media (max-height: 430px) {
+  #arsenal { grid-template-columns: repeat(3, 66px); gap: 2px 4px; padding: 6px 6px 4px; }
+  #arsenal .wbtn, #arsenal > .ars-cell > button { width: 58px; height: 58px; }
+  #arsenal .ob-icon { width: 30px !important; height: 30px !important; }
+  #arsenal .ars-name { font-size: 9.5px; }
+}

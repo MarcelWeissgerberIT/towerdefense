@@ -1,5 +1,5 @@
 // Iron Sentinel – app controller: screens, HUD, build drawer, tower menu, game loop.
-import { BAR, TOWERS, ENEMIES, TOWER_ORDER, MAX_LEVEL, BIOMES, BIOME_ORDER, UPGRADE_TIME, ELEV_RANGE, CLASS_NAME, EFFECT, POWERUPS, NUKE, HOLE, DIFFICULTY, SPECS, PERKS, PERK_COST, WEATHER, TOWER_DMG, SHATTER, FROST, specCost, effectOf, upgradeCost, towerStats } from './config.js';
+import { BAR, ION, ROD, NAPALM, TOWERS, ENEMIES, TOWER_ORDER, MAX_LEVEL, BIOMES, BIOME_ORDER, UPGRADE_TIME, ELEV_RANGE, CLASS_NAME, EFFECT, POWERUPS, NUKE, HOLE, DIFFICULTY, SPECS, PERKS, PERK_COST, WEATHER, TOWER_DMG, SHATTER, FROST, specCost, effectOf, upgradeCost, towerStats } from './config.js';
 import { LEVEL_SPECS, LEVEL_COUNT, getLevel, makeWaves, hpMultiplier } from './levels.js';
 import { CHAPTERS } from './level_specs.js';
 import { Assets, Models, drawIcon } from './assets.js';
@@ -63,7 +63,7 @@ function showScreen(id) { for (const s of document.querySelectorAll('.screen')) 
 function hideScreens() { for (const s of document.querySelectorAll('.screen')) s.classList.add('hidden'); }
 function setInGameUI(on) {
   for (const id of ['hud', 'btn-wave']) $(id).classList.toggle('hidden', !on);
-  if (!on) { closeBuildMenu(); closeTowerMenu(); endAim(); $('nuke-flash').style.opacity = 0; hudCache.nukeFlash = 0; setXray(false); camTween = null; endNukeCam(false); if (replay) endReplay(); $('btn-replay').classList.add('hidden'); $('boss-bar').classList.add('hidden'); document.body.classList.remove('boss'); hudCache.bossOn = false; }
+  if (!on) { closeBuildMenu(); closeTowerMenu(); endAim(); closeArsenal(); $('nuke-flash').style.opacity = 0; hudCache.nukeFlash = 0; setXray(false); camTween = null; endNukeCam(false); if (replay) endReplay(); $('btn-replay').classList.add('hidden'); $('boss-bar').classList.add('hidden'); document.body.classList.remove('boss'); hudCache.bossOn = false; }
 }
 function starsHTML(n) { let s = ''; for (let i = 0; i < 3; i++) s += i < n ? '★' : '<span class="off">★</span>'; return s; }
 
@@ -194,7 +194,8 @@ function openBuildMenu(cx, cy) {
     box.appendChild(b);
     bmButtons.push({ el: b, k: 'barricade' });
     $('builddrawer').classList.remove('hidden');
-    for (const id of ['btn-wave', 'btn-orbital', 'btn-nuke', 'btn-hole']) $(id).classList.add('under-drawer');
+    closeArsenal();
+    for (const id of ['btn-wave', 'btn-arsenal', 'arsenal']) $(id).classList.add('under-drawer');
     chooseTower('barricade');
     requestAnimationFrame(() => ensureCellVisible(cx, cy));
     return;
@@ -212,10 +213,8 @@ function openBuildMenu(cx, cy) {
   $('bd-info').innerHTML = '<span class="bd-hint">Turm wählen – die Reichweite wird auf der Karte angezeigt</span>';
   $('bd-build').classList.add('hidden');
   $('builddrawer').classList.remove('hidden');
-  $('btn-wave').classList.add('under-drawer');
-  $('btn-orbital').classList.add('under-drawer');
-  $('btn-nuke').classList.add('under-drawer');
-  $('btn-hole').classList.add('under-drawer');
+  closeArsenal();
+  for (const id of ['btn-wave', 'btn-arsenal', 'arsenal']) $(id).classList.add('under-drawer');
   requestAnimationFrame(() => ensureCellVisible(cx, cy));
   sfx('click');
 }
@@ -284,10 +283,7 @@ function buildChosen() {
 function closeBuildMenu() {
   ui.buildCell = null; ui.previewType = null; ui.barricadeShown = false;
   $('builddrawer').classList.add('hidden');
-  $('btn-wave').classList.remove('under-drawer');
-  $('btn-orbital').classList.remove('under-drawer');
-  $('btn-nuke').classList.remove('under-drawer');
-  $('btn-hole').classList.remove('under-drawer');
+  for (const id of ['btn-wave', 'btn-arsenal', 'arsenal']) $(id).classList.remove('under-drawer');
 }
 $('bd-build').onclick = (e) => { e.stopPropagation(); buildChosen(); };
 $('bd-close').onclick = (e) => { e.stopPropagation(); closeBuildMenu(); sfx('click'); };
@@ -586,6 +582,8 @@ function onTap(p) {
   unlockAudio();
   if (replay || performance.now() - holdFired < 900) return;
   if (!game || paused || game.state === 'won' || game.state === 'lost') return;
+  if (ui.arsenalOpen) { closeArsenal(); return; }
+  if (ui.targeting && AIM[ui.targeting].global) return;
   if (ui.targeting) {
     const g = aimAt(p);
     // mouse: the reticle already follows the cursor, a click fires. Touch: a tap moves the reticle,
@@ -715,6 +713,26 @@ function abilityInfoHTML(kind) {
     <li>Am Ende kollabiert das Loch mit einer Druckwelle.</li>
     <li>Wiederaufladung: ${Math.round(g ? g.hole.max : HOLE.cd)} Sekunden (erstes Loch nach ${Math.round(g ? HOLE.first * (g.mods.cd || 1) * (1 - g.perk.cd) : HOLE.first)} s).</li>
     <li>Tipp: an Engstellen oder Kreuzungen mehrerer Pfade setzen.</li></ul>`;
+  const cdOf = (W, k) => Math.round(g ? g[k].max : W.cd);
+  if (kind === 'ion') return `<div class="info-head"><i class="ic ic-ion"></i><div><div class="info-name">Ionensturm</div><div class="info-sub">EMP-Welle über die ganze Karte</div></div></div>
+    <ul class="info-list"><li>Trifft <b>jede</b> Maschine auf der Karte – kein Zielen nötig, nur <b>AUSLÖSEN</b>.</li>
+    <li>Nach ${num(ION.charge)} Sekunden Aufladung: alle Maschinen ${ION.stun} Sekunden gelähmt (Bosse ${num(ION.bossStun)} s), sie laufen und schießen nicht.</li>
+    <li>Alle Energieschilde brechen zusammen, Hacker verlieren die Verbindung, Getarnte werden sichtbar, Sandwühler tauchen auf.</li>
+    <li>Drohnen und Flieger verlieren ${Math.round(ION.airDmg * 100)} % ihrer Lebensenergie – die meisten stürzen ab.</li>
+    <li>Wiederaufladung: ${cdOf(ION, 'ion')} Sekunden.</li>
+    <li>Tipp: gegen Luftangriffe, Schildträger und als Notbremse vor dem Hauptquartier.</li></ul>`;
+  if (kind === 'rod') return `<div class="info-head"><i class="ic ic-rod"></i><div><div class="info-name">Wolframstab</div><div class="info-sub">Kinetischer Schlag aus dem Orbit</div></div></div>
+    <ul class="info-list"><li>Ein Satellit wirft einen Wolframstab mit Überschallgeschwindigkeit ab – Einschlag nach ${num(ROD.delay)} Sekunden.</li>
+    <li>Gewaltiger Schaden im Kern (${num(ROD.r)} Felder), ${Math.round(ROD.splashMul * 100)} % im Umkreis bis ${num(ROD.splash)} Felder; ignoriert Panzerung.</li>
+    <li>Bosse verlieren mindestens ${Math.round(ROD.bossFrac * 100)} % ihrer Lebensenergie.</li>
+    <li>Wiederaufladung: ${cdOf(ROD, 'rod')} Sekunden.</li>
+    <li>Tipp: der Boss-Killer – genau auf das größte Ziel setzen.</li></ul>`;
+  if (kind === 'napalm') return `<div class="info-head"><i class="ic ic-napalm"></i><div><div class="info-name">Napalm-Staffel</div><div class="info-sub">Drei Bomber, ein Feuerteppich</div></div></div>
+    <ul class="info-list"><li>Punkt auf einer Straße wählen: die Bomber legen einen Brandteppich ${num(NAPALM.len * 2)} Felder lang <b>entlang der Straße</b>.</li>
+    <li>Der Teppich brennt ${NAPALM.burn} Sekunden, setzt Bodentruppen in Brand und ignoriert Panzerung. Flieger bleiben verschont.</li>
+    <li>Hitzefeste Maschinen (Magma-Läufer) nehmen kaum Schaden.</li>
+    <li>Wiederaufladung: ${cdOf(NAPALM, 'napalm')} Sekunden.</li>
+    <li>Tipp: auf lange gerade Straßenstücke, auf denen sich eine Kolonne staut.</li></ul>`;
   const n = g && g.nuke;
   return `<div class="info-head"><i class="ic ic-nuke"></i><div><div class="info-name">Atombombe</div><div class="info-sub">Die letzte Option</div></div></div>
     <ul class="info-list"><li>Lädt sich durch Abschüsse auf (jede Maschine gibt ihre Belohnung als Ladung).</li>
@@ -732,7 +750,7 @@ function powerupInfoHTML(type) {
     <div class="info-desc">${p.desc}</div><ul class="info-list"><li>Kisten fallen selten von zerstörten Maschinen, bei Bossen immer.</li><li>Antippen zum Einsammeln – nach ${DROP_LIFE()} Sekunden zerfallen sie.</li></ul>`;
 }
 const DROP_LIFE = () => Math.round(25 * (1 + (game ? game.perk.drops * 4 / 3 : 0)));
-for (const [id, kind] of [['btn-orbital', 'orbital'], ['btn-nuke', 'nuke'], ['btn-hole', 'hole']]) attachHold($(id), () => showAbilityInfo(kind));
+for (const [id, kind] of [['btn-orbital', 'orbital'], ['btn-nuke', 'nuke'], ['btn-hole', 'hole'], ['btn-ion', 'ion'], ['btn-rod', 'rod'], ['btn-napalm', 'napalm']]) attachHold($(id), () => showAbilityInfo(kind));
 
 // ---------------- special weapons: aim preview ----------------
 // tapping a weapon icon shows its real area of effect (ghost effect, hit markers, count) before anything happens
@@ -743,6 +761,12 @@ const AIM = {
     fire: (a) => game.nukeStrike(a.x, a.y) && toast('ATOMSCHLAG EINGELEITET – IN DECKUNG!', 'bad', 2200) },
   hole: { name: 'SCHWARZES LOCH', icon: 'hole', btn: 'btn-hole', r: HOLE.radius,
     fire: (a) => game.holeStrike(a.x, a.y) && toast('SCHWARZES LOCH GEÖFFNET', 'warn', 1600) },
+  rod: { name: 'WOLFRAMSTAB', icon: 'rod', btn: 'btn-rod', r: ROD.splash,
+    fire: (a) => game.rodStrike(a.x, a.y) && toast('WOLFRAMSTAB AUSGEKLINKT', 'warn', 1400) },
+  napalm: { name: 'NAPALM-STAFFEL', icon: 'napalm', btn: 'btn-napalm', r: 1.2,
+    fire: (a) => game.napalmStrike(a.x, a.y) && toast('BOMBERSTAFFEL IM ANFLUG', 'warn', 1600) },
+  ion: { name: 'IONENSTURM', icon: 'ion', btn: 'btn-ion', r: 0, global: true,
+    fire: () => game.ionStrike() && toast('IONENSTURM LÄDT …', 'warn', 1400) },
 };
 const finePointer = matchMedia('(hover: hover) and (pointer: fine)').matches;
 function aimAt(p) {
@@ -763,7 +787,9 @@ function startAim(kind) {
   ui.aim = aimAt({ x: window.innerWidth / 2, y: window.innerHeight * 0.45 });
   const A = AIM[kind];
   $('aim-title').innerHTML = `${IC(A.icon)}<span>${A.name}</span>`;
-  $('aim-hint').textContent = finePointer ? 'Maus bewegen, Klick setzt das Ziel' : 'Karte antippen oder Ziel ziehen';
+  $('aim-hint').textContent = A.global ? 'Trifft die ganze Karte – AUSLÖSEN drücken' : kind === 'napalm' ? 'Punkt auf einer Straße wählen – der Teppich folgt der Straße'
+    : finePointer ? 'Maus bewegen, Klick setzt das Ziel' : 'Karte antippen oder Ziel ziehen';
+  closeArsenal();
   const bar = $('aim-bar');
   bar.dataset.kind = kind;
   bar.classList.remove('hidden');
@@ -788,8 +814,13 @@ function updateAim() {
   if (!game || game.state === 'won' || game.state === 'lost') { endAim(); return; }
   const k = ui.targeting, a = ui.aim;
   const r = k === 'nuke' ? NUKE.radius : AIM[k].r;
-  const n = game.enemiesInRange(a.x, a.y, r, true, true).length;
+  let n = game.enemiesInRange(a.x, a.y, r, true, true).length;
+  if (k === 'ion') n = game.enemies.filter(e => e.alive).length;
+  if (k === 'napalm') { const pts = game.napalmPath(a.x, a.y); n = game.enemies.filter(e => e.alive && !e.air && pts.some(p => (p.gx - e.gx) ** 2 + (p.gy - e.gy) ** 2 <= NAPALM.w * NAPALM.w * 2.2)).length; }
   let html = n ? `<b>${n}</b> Gegner im Wirkungsbereich` : 'Keine Gegner im Wirkungsbereich';
+  if (k === 'ion') { const air = game.enemies.filter(e => e.alive && e.air && !e.def.boss).length; html += ` · ${ION.stun} s gelähmt${air ? ` · ${air} Flieger stürzen ab` : ''}`; }
+  if (k === 'napalm') html += ` · brennt ${NAPALM.burn} s entlang der Straße`;
+  if (k === 'rod') html += ' · Boss-Killer: mind. 40 % beim Boss';
   if (k === 'nuke') {
     const own = game.towers.filter(t => Math.hypot(t.gx - a.x, t.gy - a.y) <= NUKE.towerRadius).length;
     if (own) html += ` · <em>${own} eigene${own === 1 ? 'r Turm' : ' Türme'} beschädigt</em>`;
@@ -823,7 +854,7 @@ const input = new Input(canvas, renderer, {
   hover: (p) => { if (game && ui.targeting && p) ui.aim = aimAt(p); },
   // touch: dragging that starts on the reticle moves it (anywhere else still pans the camera)
   dragStart: (p) => {
-    if (!game || !ui.targeting || paused) return false;
+    if (!game || !ui.targeting || paused || AIM[ui.targeting].global) return false;
     const sp = aimScreen(), z = renderer.cam.zoom, r = AIM[ui.targeting].r;
     const rx = Math.max(56, r * 64 * Math.SQRT2 * z), ry = Math.max(40, r * 32 * Math.SQRT2 * z);
     if (((p.x - sp.x) / rx) ** 2 + ((p.y - sp.y) / ry) ** 2 > 1) return false;
@@ -873,6 +904,74 @@ $('btn-hole').onclick = () => {
   startAim('hole');
   sfx('click');
 };
+// the newer cooldown weapons share one handler
+for (const [kind, label] of [['ion', 'Ionensturm'], ['rod', 'Wolframstab'], ['napalm', 'Napalm-Staffel']]) {
+  $('btn-' + kind).onclick = () => {
+    const W = game && game[kind];
+    if (!W || paused || !W.on) return;
+    unlockAudio();
+    if (ui.targeting === kind) { endAim(); sfx('click'); return; }
+    if (kind === 'ion' && game.ionCharge > 0) return;
+    if (W.cd > 0) { sfx('error'); toast(`${label} lädt noch ${Math.ceil(W.cd)} s`, 'bad', 1400); return; }
+    startAim(kind);
+    sfx('click');
+  };
+}
+function updateCdWeapon(kind) {
+  const b = $('btn-' + kind), W = game[kind];
+  b.classList.toggle('hidden', !W.on);
+  if (!W.on) return;
+  const ready = W.cd <= 0 && !(kind === 'ion' && game.ionCharge > 0);
+  b.style.setProperty('--p', (1 - W.cd / W.max).toFixed(3));
+  b.classList.toggle('ready', ready && ui.targeting !== kind);
+  setText(kind + '-cd', ui.targeting === kind ? 'ZIEL' : ready ? 'BEREIT' : `${Math.ceil(W.cd)} s`);
+}
+// ---- arsenal: all special weapons behind one button ----
+const WEAPONS = ['orbital', 'rod', 'napalm', 'ion', 'hole', 'nuke'];
+function weaponReady(k) {
+  const W = game[k];
+  if (!W || !W.on) return false;
+  if (k === 'nuke') return game.nukeReady();
+  if (k === 'ion' && game.ionCharge > 0) return false;
+  return W.cd <= 0;
+}
+function weaponProgress(k) {
+  const W = game[k];
+  if (k === 'nuke') return W.state ? 0 : W.charge / W.need;
+  return 1 - W.cd / W.max;
+}
+function openArsenal() {
+  closeBuildMenu(); closeTowerMenu();
+  ui.arsenalOpen = true;
+  $('arsenal').classList.remove('hidden');
+  $('btn-arsenal').classList.add('open');
+  sfx('click');
+}
+function closeArsenal() {
+  if (!ui.arsenalOpen) return;
+  ui.arsenalOpen = false;
+  $('arsenal').classList.add('hidden');
+  $('btn-arsenal').classList.remove('open');
+}
+$('btn-arsenal').onclick = (e) => {
+  e.stopPropagation();
+  if (!game || paused) return;
+  unlockAudio();
+  if (ui.targeting) { endAim(); sfx('click'); return; }
+  if (ui.arsenalOpen) { closeArsenal(); sfx('click'); } else openArsenal();
+};
+function updateArsenal() {
+  const avail = WEAPONS.filter(k => game[k] && game[k].on);
+  const b = $('btn-arsenal');
+  b.classList.toggle('hidden', !avail.length);
+  if (!avail.length) { closeArsenal(); return; }
+  const ready = avail.filter(weaponReady).length;
+  const best = Math.max(...avail.map(weaponProgress));
+  b.style.setProperty('--p', Math.min(1, best).toFixed(3));
+  b.classList.toggle('ready', ready > 0 && !ui.targeting);
+  b.classList.toggle('arming', !!ui.targeting);
+  setText('arsenal-cd', ui.targeting ? 'ABBRUCH' : ui.arsenalOpen ? 'ZU' : ready ? `${ready} BEREIT` : 'WAFFEN');
+}
 function updateHole() {
   const b = $('btn-hole'), o = game.hole;
   b.classList.toggle('hidden', !o.on);
@@ -1014,6 +1113,8 @@ function updateHUD() {
   updateOrbital();
   updateNuke();
   updateHole();
+  for (const k of ['ion', 'rod', 'napalm']) updateCdWeapon(k);
+  updateArsenal();
   updateAim();
   updateBossBar();
   updateBuffs();
@@ -1159,6 +1260,7 @@ function processEvents() {
     else if (ev.type === 'bossSpawn') bossIntro(ev.e);
     else if (ev.type === 'towerDamaged') { if (!save.data.dmgHint) { save.data.dmgHint = true; save.write(); toast('Beschädigte Türme schießen schwächer – antippen und reparieren (kostet Credits und ein paar Sekunden)', 'warn', 4200); } }
     else if (ev.type === 'repaired') { if (ui.selected === ev.t) updateTowerMenu(true); }
+    else if (ev.type === 'ionStorm') toast(`IONENSTURM – ${ev.n} Maschinen gelähmt, Schilde zerstört`, 'warn', 2200);
     else if (ev.type === 'barricade') toast(ev.detour ? 'Barrikade steht – die Maschinen nehmen den Umweg' : 'Barrikade steht – kein Umweg: Bodentruppen müssen sie durchbrechen', '', 2600);
     else if (ev.type === 'barricadeLost') { if (ui.selected === ev.b) closeTowerMenu(); }
     else if (ev.type === 'nukeRepaired') toast('ABSCHUSSRAMPE REPARIERT – ATOMBOMBE BEREIT', 'warn', 2400);
@@ -1241,9 +1343,12 @@ async function startLevel(i, ch = null, restored = null) {
     save.data.bigMapHint = true; save.write();
     setTimeout(() => toast('Große Karte: mit zwei Fingern zoomen und verschieben – rote Pfeile zeigen Gegner außerhalb', '', 5000), 1200);
   } else if (game.routes.length > 1) setTimeout(() => toast(`${game.routes.length} Angriffspfade – verteidige alle Zugänge!`, '', 3200), 1400);
-  if (freePlay() && game.hole.on && game.nuke.on && game.orbital.on && !(save.data.holeHint && save.data.nukeHint && save.data.orbitalHint)) {
-    save.data.holeHint = save.data.nukeHint = save.data.orbitalHint = true; save.write();
-    setTimeout(() => toast('Spezialwaffen rechts: Orbitalschlag (lädt nach), Atombombe (lädt durch Abschüsse, danach Reparatur), Schwarzes Loch – antippen, dann Ziel wählen', 'warn', 6000), 2400);
+  if (!save.data.arsenalHint && (game.orbital.on || game.napalm.on)) {
+    save.data.arsenalHint = save.data.holeHint = save.data.nukeHint = save.data.orbitalHint = true; save.write();
+    setTimeout(() => toast('Spezialwaffen: der Knopf unten rechts öffnet das Arsenal – Waffe antippen, Ziel wählen, AUSLÖSEN. Lange drücken erklärt die Waffe', 'warn', 6000), 2400);
+  }
+  for (const [k, name, what] of [['napalm', 'NAPALM-STAFFEL', 'Brandteppich entlang einer Straße'], ['ion', 'IONENSTURM', 'lähmt die ganze Karte, Flieger stürzen ab'], ['rod', 'WOLFRAMSTAB', 'kinetischer Schlag, der Boss-Killer']]) {
+    if (game[k].on && !freePlay() && !save.data[k + 'Hint']) { save.data[k + 'Hint'] = true; save.write(); setTimeout(() => toast(`Neu im Arsenal: ${name} – ${what}`, 'warn', 4500), 3200); }
   }
   if (game.hole.on && !save.data.holeHint) {
     save.data.holeHint = true; save.write();

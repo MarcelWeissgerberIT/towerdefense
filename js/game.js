@@ -1,6 +1,6 @@
 // Core simulation: grid, routes, towers (turret aiming), enemies (attack towers), projectiles, waves.
 import {
-  HW, TOWERS, ENEMIES, BIOMES, BOSS, BAR, resistOf, SPECS, PERKS, WEATHER, BIOME_WEATHER, WEATHER_CFG, TOWER_DMG, specCost, EFFECT, FROST, SHATTER, THERMAL, ACID_ARMOR, NUKE, POWERUPS, DROP, HOLE, ELEV_PX, ELEV_RANGE, MAX_LEVEL, TOWER_SCALE, UPGRADE_TIME, WAVE_GAP, SELL_RATE, FULL_REFUND_TIME, towerStats, upgradeCost, totalInvested,
+  HW, TOWERS, ENEMIES, BIOMES, BOSS, BAR, resistOf, ION, ROD, NAPALM, SPECS, PERKS, WEATHER, BIOME_WEATHER, WEATHER_CFG, TOWER_DMG, specCost, EFFECT, FROST, SHATTER, THERMAL, ACID_ARMOR, NUKE, POWERUPS, DROP, HOLE, ELEV_PX, ELEV_RANGE, MAX_LEVEL, TOWER_SCALE, UPGRADE_TIME, WAVE_GAP, SELL_RATE, FULL_REFUND_TIME, towerStats, upgradeCost, totalInvested,
 } from './config.js';
 import { getLevel, makeWaves, makeBossRush, hpMultiplier } from './levels.js';
 import { toWorld, rand, mulberry32 } from './iso.js';
@@ -122,6 +122,14 @@ export class Game {
     this.strikesW = [];
     this.hole = { cd: Math.round(HOLE.first * (M.cd || 1) * (1 - this.perk.cd)), max: Math.round(HOLE.cd * (M.cd || 1) * (1 - this.perk.cd)), on: (L.number >= HOLE.unlock || M.unlockAll) && !M.noAbilities };
     this.holes = [];
+    // the newer heavy weapons: ion storm (whole map), tungsten rod (one point), napalm squadron (along the road)
+    const cdm = (M.cd || 1) * (1 - this.perk.cd), weapon = (W) => ({ cd: Math.round(W.first * cdm), max: Math.round(W.cd * cdm), on: (L.number >= W.unlock || M.unlockAll) && !M.noAbilities });
+    this.ion = weapon(ION);
+    this.rod = weapon(ROD);
+    this.napalm = weapon(NAPALM);
+    this.ionCharge = 0;      // > 0: the storm is building up
+    this.rods = [];
+    this.napalms = [];
     this.radZones = [];
     this.drops = [];
     this.lastDrop = -99;
@@ -1091,6 +1099,7 @@ export class Game {
     slow = Math.max(slow, (e.frost / FROST.max) * (def.boss ? FROST.bossSlow : FROST.slow));
     sp *= 1 - slow;
     if (e.frozenT > 0) sp = 0;
+    if (e.stunT > 0) { e.stunT -= dt; sp = 0; if (Math.random() < dt * 6) this.fx.sparks(e.wx + rand(-14, 14), this.bodyY(e) + rand(-14, 8), 2, '#9fe8ff', 120); }
     if (this.buffs.timestop > 0) sp *= def.boss ? 0.3 : 0;
     if (e.holeSlow) { sp *= 1 - e.holeSlow; e.holeSlow = 0; }
     if (this.weather) { const W = WEATHER[this.weather.type]; sp *= (e.air ? W.airSpeed : W.speed) || 1; }
@@ -1192,7 +1201,7 @@ export class Game {
     }
     // cloak
     if (def.cloak) { e.cloakT += dt; if (e.revealT > 0) e.revealT -= dt; }
-    const stopped = e.frozenT > 0 || (this.buffs.timestop > 0 && !def.boss);
+    const stopped = e.frozenT > 0 || e.stunT > 0 || (this.buffs.timestop > 0 && !def.boss);
     // bomber: carpet of bombs on towers below
     if (def.bomb && !stopped) {
       e.bombT -= dt;
@@ -1234,7 +1243,7 @@ export class Game {
       }
     }
     // attack towers
-    if (def.atk && e.frozenT <= 0 && !(this.buffs.timestop > 0 && !def.boss)) {
+    if (def.atk && e.frozenT <= 0 && !(e.stunT > 0) && !(this.buffs.timestop > 0 && !def.boss)) {
       e.atkCool -= dt * (e.atkMul || 1);
       if (e.atkCool <= 0) {
         const a = def.atk;
@@ -1525,6 +1534,7 @@ export class Game {
     this.updateStrikes(dt);
     this.updateNukes(dt);
     this.updateHoles(dt);
+    this.updateHeavy(dt);
     this.updateDrops(dt);
     this.updateWeather(dt);
     this.updateNukeRepair(dt);
@@ -1662,6 +1672,124 @@ export class Game {
   stars() {
     const r = this.lives / this.maxLives;
     return r >= 0.9 ? 3 : r >= 0.5 ? 2 : 1;
+  }
+
+  // ---------------- heavy weapons: ion storm, tungsten rod, napalm squadron ----------------
+  ionStrike() {
+    const W = this.ion;
+    if (!W.on || W.cd > 0 || this.ionCharge > 0) return false;
+    W.cd = W.max;
+    this.ionCharge = ION.charge;
+    sfx('holeOpen');
+    this.emit('ionCharge', {});
+    return true;
+  }
+  ionRelease() {
+    const hpm = Math.pow(hpMultiplier(this.level.power, Math.max(1, this.wave)), 0.85);
+    this.fx.flash = Math.max(this.fx.flash, 0.55);
+    this.fx.shake = Math.max(this.fx.shake, 10);
+    this.ionFx = { t: 0 };
+    let n = 0;
+    for (const e of [...this.enemies]) {
+      if (!e.alive) continue;
+      e.stunT = Math.max(e.stunT || 0, e.def.boss ? ION.bossStun : ION.stun);
+      if (e.shield > 0 || e.maxShield) { if (e.shield > 0) this.fx.shieldBreak(e.wx, this.bodyY(e)); e.shield = 0; e.shieldHit = this.time; }
+      if (e.hacking) this.endHack(e);
+      if (e.cloaked) e.revealT = Math.max(e.revealT, ION.stun);
+      if (e.burrowed) this.surface(e);
+      // aircraft lose their electronics and fall out of the sky; ground units take a jolt
+      const dmg = e.air && !e.def.boss ? e.maxHp * ION.airDmg + ION.flat * hpm : e.maxHp * ION.groundDmg * (e.def.boss ? 0.4 : 1) + ION.flat * hpm;
+      this.damage(e, dmg, { ignoreArmor: true });
+      if (n++ < 26) this.fx.add({ k: 'line', x1: e.wx + rand(-160, 160), y1: this.bodyY(e) - rand(160, 320), x2: e.wx, y2: this.bodyY(e), w: 3, life: 0.35, c: 'rgba(150,230,255,' });
+    }
+    this.emit('ionStorm', { n });
+    sfx('emp'); sfx('thunder'); sfx('explosion', true);
+  }
+  rodStrike(gx, gy) {
+    const W = this.rod;
+    if (!W.on || W.cd > 0) return false;
+    W.cd = W.max;
+    this.rods.push({ gx, gy, t: ROD.delay, dur: ROD.delay });
+    sfx('orbital');
+    return true;
+  }
+  rodImpact(r) {
+    const hpm = Math.pow(hpMultiplier(this.level.power, Math.max(1, this.wave)), 0.9);
+    for (const e of this.enemiesInRange(r.gx, r.gy, ROD.splash, true, true)) {
+      const d = Math.hypot(e.gx - r.gx, e.gy - r.gy);
+      const core = d <= ROD.r;
+      let dmg = ROD.dmg * hpm * (core ? 1 : ROD.splashMul);
+      if (e.def.boss) dmg = Math.max(dmg * 0.5, e.maxHp * ROD.bossFrac * (core ? 1 : 0.3));
+      this.damage(e, dmg, { ignoreArmor: true });
+    }
+    const w = toWorld(r.gx, r.gy);
+    this.fx.bigExplosion(w.x, w.y - 30, 2.2, 'heavy');
+    this.fx.boom(w.x, w.y + 10, 300, 1.2, 'ground');
+    this.fx.add({ k: 'ring', x: w.x, y: w.y, r0: 10, r1: 300, life: 0.6, c: '220,240,255' });
+    this.fx.add({ k: 'ring', x: w.x, y: w.y, r0: 6, r1: 160, life: 0.35, c: '255,255,255' });
+    this.fx.add({ k: 'glow', x: w.x, y: w.y - 30, s: 360, life: 0.3, spr: 'white' });
+    this.fx.debris(w.x, w.y - 20, 26, 420);
+    this.fx.flash = Math.max(this.fx.flash, 0.8);
+    this.fx.shake = Math.max(this.fx.shake, 20);
+    this.decals.push({ x: w.x, y: w.y, s: 170 });
+    sfx('explosion', true); sfx('rail');
+  }
+  // the stretch of road the napalm carpet covers: along the route closest to the target point
+  napalmPath(gx, gy) {
+    let best = null, bd = Infinity;
+    for (const r of this.routes) for (let d = 0; d <= r.total; d += 0.25) {
+      const p = routePos(r, d), dd = (p.x - gx) ** 2 + (p.y - gy) ** 2;
+      if (dd < bd) { bd = dd; best = { r, d }; }
+    }
+    if (!best || bd > 2.5 * 2.5) return [];
+    const pts = [];
+    for (let d = Math.max(0, best.d - NAPALM.len); d <= Math.min(best.r.total, best.d + NAPALM.len); d += 0.45) {
+      const p = routePos(best.r, d);
+      pts.push({ gx: p.x, gy: p.y });
+    }
+    return pts;
+  }
+  napalmStrike(gx, gy) {
+    const W = this.napalm;
+    if (!W.on || W.cd > 0) return false;
+    const pts = this.napalmPath(gx, gy);
+    if (!pts.length) { this.emit('toast', { text: 'Napalm braucht eine Straße – näher an den Weg zielen', bad: true }); sfx('error'); return false; }
+    W.cd = W.max;
+    const a = pts[0], b = pts[pts.length - 1];
+    pts.forEach((p, i) => { p.t0 = NAPALM.delay + i * 0.07; p.on = false; });
+    this.napalms.push({ pts, t: 0, dur: NAPALM.delay + pts.length * 0.07 + NAPALM.burn, ang: Math.atan2(b.gy - a.gy, b.gx - a.gx), cx: (a.gx + b.gx) / 2, cy: (a.gy + b.gy) / 2 });
+    sfx('dive');
+    return true;
+  }
+  updateHeavy(dt) {
+    for (const W of [this.ion, this.rod, this.napalm]) if (W.on && this.wave > 0 && W.cd > 0) W.cd = Math.max(0, W.cd - dt);
+    if (this.ionCharge > 0 && (this.ionCharge -= dt) <= 0) { this.ionCharge = 0; this.ionRelease(); }
+    if (this.ionFx && (this.ionFx.t += dt) > 1.2) this.ionFx = null;
+    for (const r of this.rods) { r.t -= dt; if (r.t <= 0) { r.done = true; this.rodImpact(r); } }
+    if (this.rods.some(r => r.done)) this.rods = this.rods.filter(r => !r.done);
+    const hpm = Math.pow(hpMultiplier(this.level.power, Math.max(1, this.wave)), 0.8);
+    for (const n of this.napalms) {
+      n.t += dt;
+      for (const p of n.pts) {
+        if (n.t < p.t0 || n.t > p.t0 + NAPALM.burn) continue;
+        if (!p.on) {
+          p.on = true;
+          const w = toWorld(p.gx, p.gy);
+          this.fx.boom(w.x, w.y, 110, 0.7, 'fire');
+          if (Math.random() < 0.35) sfx('explosion');
+        }
+        const w = toWorld(p.gx, p.gy);
+        if (Math.random() < dt * 9) this.fx.burn(w.x + rand(-26, 26), w.y - rand(0, 16));
+        for (const e of this.enemiesInRange(p.gx, p.gy, NAPALM.w, false, true)) {
+          if (e.napalmT === this.time) continue;      // one patch per unit and frame
+          e.napalmT = this.time;
+          this.damage(e, NAPALM.dps * hpm * dt * (e.def.burnImmune ? 0.4 : 1), { ignoreArmor: true, dot: true });
+          if (!e.def.burnImmune) { e.burnT = Math.max(e.burnT, 2.5); e.burnDps = Math.max(e.burnDps, NAPALM.dps * 0.25 * hpm); }
+        }
+      }
+      if (n.t >= n.dur) n.done = true;
+    }
+    if (this.napalms.some(n => n.done)) this.napalms = this.napalms.filter(n => !n.done);
   }
 
   // ---------------- road network: routing and barricades ----------------
@@ -1923,4 +2051,4 @@ export class Game {
 const SNAP_V = 1;
 const SNAP_KEYS = ['time', 'credits', 'lives', 'maxLives', 'wave', 'queue', 'state', 'nextWaveIn', 'waveLeft', 'kills', 'lost',
   'orbital', 'strikes', 'nuke', 'nukes', 'nukeBlasts', 'weather', 'strikesW', 'hole', 'radZones', 'drops', 'lastDrop', 'buffs', 'puddles',
-  '_elevHint', '_dmgHint', 'barricades'];
+  '_elevHint', '_dmgHint', 'barricades', 'ion', 'rod', 'napalm', 'ionCharge', 'rods', 'napalms'];
