@@ -355,6 +355,22 @@ const SFX = {
     tone(t, 0.35, { type: 'sine', f0: 70, f1: 35, gain: 0.5 });
     noise(t, 0.3, { freq: 400, type: 'lowpass', gain: 0.35 });
   },
+  // old-school bomber squadron: three radial engines droning in, swelling up and fading away
+  propeller() {
+    if (!throttle('prop', 1500)) return;
+    const t = ctx.currentTime, dur = 3.4;
+    [[68, 0, 21], [74, 0.06, 24], [81, 0.12, 27]].forEach(([f, d, tr]) => {
+      const o = ctx.createOscillator(); o.type = 'sawtooth';
+      o.frequency.setValueAtTime(f * 1.08, t + d); o.frequency.linearRampToValueAtTime(f * 0.92, t + dur);   // Doppler as they pass
+      const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 520; lp.Q.value = 0.9;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t + d); g.gain.linearRampToValueAtTime(0.12, t + dur * 0.45); g.gain.linearRampToValueAtTime(0.0001, t + dur);
+      const lfo = ctx.createOscillator(), lg = ctx.createGain(); lfo.frequency.value = tr; lg.gain.value = 0.05;   // propeller beat
+      lfo.connect(lg).connect(g.gain);
+      o.connect(lp).connect(g).connect(master);
+      o.start(t + d); lfo.start(t + d); o.stop(t + dur + 0.05); lfo.stop(t + dur + 0.05);
+    });
+  },
   dive() {
     if (!throttle('dive', 300)) return;
     tone(ctx.currentTime, 0.6, { type: 'sawtooth', f0: 900, f1: 300, gain: 0.05 });

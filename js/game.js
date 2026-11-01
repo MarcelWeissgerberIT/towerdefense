@@ -1758,7 +1758,7 @@ export class Game {
     const a = pts[0], b = pts[pts.length - 1];
     pts.forEach((p, i) => { p.t0 = NAPALM.delay + i * 0.07; p.on = false; });
     this.napalms.push({ pts, t: 0, dur: NAPALM.delay + pts.length * 0.07 + NAPALM.burn, ang: Math.atan2(b.gy - a.gy, b.gx - a.gx), cx: (a.gx + b.gx) / 2, cy: (a.gy + b.gy) / 2 });
-    sfx('dive');
+    sfx('propeller');
     return true;
   }
   updateHeavy(dt) {

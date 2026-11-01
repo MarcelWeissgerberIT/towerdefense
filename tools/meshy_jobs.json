@@ -134,5 +134,9 @@
  "enemy_ram": {
   "image_url": "https://cdn.openart.ai/openart-ai/production/2026-11/create-image/wRD6PTxSzjxZwjWN69MC/gpt-image-2-1_1793548030594_90f9c247.png",
   "polycount": 40000
+ },
+ "ally_bomber": {
+  "image_url": "https://cdn.openart.ai/openart-ai/production/2026-11/create-image/wRD6PTxSzjxZwjWN69MC/gpt-image-2-1_1793553405812_978122d0.png",
+  "polycount": 40000
  }
 }
