@@ -690,7 +690,7 @@ export class Renderer {
       ctx.restore();
     }
     if (a > 0.003) {
-      const warm = Math.min(1, Math.max(0, (t - 0.75) / 1.1));
+      const warm = Math.min(1, Math.max(0, (t - NUKE.whiteEnd) / 1.1));
       ctx.fillStyle = `rgba(255,${Math.round(255 - 30 * warm)},${Math.round(255 - 90 * warm)},${a})`;
       ctx.fillRect(0, 0, W, H);
     }

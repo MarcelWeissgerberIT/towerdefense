@@ -120,6 +120,12 @@ function tone(t0, dur, { type = 'sine', f0 = 440, f1 = null, gain = 0.3, attack 
   o.stop(t0 + dur + 0.05);
 }
 
+function heartbeat(t0, k = 1) {
+  tone(t0, 0.16, { type: 'sine', f0: 78, f1: 46, gain: 0.95 * k, attack: 0.004 });
+  tone(t0, 0.12, { type: 'triangle', f0: 156, f1: 92, gain: 0.32 * k, attack: 0.004 });
+  noise(t0, 0.07, { freq: 320, q: 0.7, type: 'lowpass', gain: 0.55 * k, attack: 0.002 });
+}
+
 const SFX = {
   gatling() {
     if (!throttle('gat', 55)) return;
@@ -223,19 +229,21 @@ const SFX = {
       try { sirenH.g.gain.cancelScheduledValues(t); sirenH.g.gain.setValueAtTime(sirenH.g.gain.value, t); sirenH.g.gain.linearRampToValueAtTime(0, t + 0.08); } catch (e) { /* ignore */ }
       sirenH = null;
     }
-    // flash crack
-    noise(ctx.currentTime, 0.35, { freq: 2500, q: 0.4, type: 'highpass', gain: 0.6, attack: 0.002 });
-    if (play('nuke', { gain: 1 })) {
-      // extra sub-bass weight under the recording
-      const t = ctx.currentTime;
-      tone(t, 3.2, { type: 'sine', f0: 55, f1: 24, gain: 0.3, attack: 0.02 });
+    const t = ctx.currentTime;
+    // flash crack, then the frozen X-ray moment: ringing ears and a heartbeat - the blast arrives after it
+    noise(t, 0.35, { freq: 2500, q: 0.4, type: 'highpass', gain: 0.6, attack: 0.002 });
+    tone(t + 0.1, 2.1, { type: 'sine', f0: 3600, f1: 3300, gain: 0.035, attack: 0.25 });
+    for (const [i, h] of [0.35, 0.57, 1.3, 1.52].entries()) heartbeat(t + h, i % 2 ? 0.75 : 1);
+    const boom = 2.15;
+    if (play('nuke', { gain: 1, delay: boom })) {
+      tone(t + boom, 3.2, { type: 'sine', f0: 55, f1: 24, gain: 0.3, attack: 0.02 });
       return;
     }
-    const t = ctx.currentTime;
-    tone(t, 3.2, { type: 'sine', f0: 70, f1: 18, gain: 0.9, attack: 0.01 });
-    tone(t, 1.6, { type: 'sawtooth', f0: 110, f1: 30, gain: 0.25 });
-    noise(t, 3.5, { freq: 900, q: 0.4, type: 'lowpass', gain: 0.9, sweepTo: 80, attack: 0.01 });
-    noise(t + 0.4, 3, { freq: 300, q: 0.5, type: 'lowpass', gain: 0.5, attack: 0.3 });
+    const tb = t + boom;
+    tone(tb, 3.2, { type: 'sine', f0: 70, f1: 18, gain: 0.9, attack: 0.01 });
+    tone(tb, 1.6, { type: 'sawtooth', f0: 110, f1: 30, gain: 0.25 });
+    noise(tb, 3.5, { freq: 900, q: 0.4, type: 'lowpass', gain: 0.9, sweepTo: 80, attack: 0.01 });
+    noise(tb + 0.4, 3, { freq: 300, q: 0.5, type: 'lowpass', gain: 0.5, attack: 0.3 });
   },
   thunder() {
     if (!throttle('thu', 400)) return;

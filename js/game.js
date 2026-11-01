@@ -1250,13 +1250,13 @@ export class Game {
       const w = toWorld(n.gx, n.gy);
       // snapshot of the battlefield for the replay (intact machines, before the blast wave)
       this.nukeReplay = { gx: n.gx, gy: n.gy, enemies: this.enemies.filter(e => e.alive).map(e => ({ ...e })), at: this.time };
-      // flash and X-ray first - the blast wave hits a moment later, so the machines show up in the X-ray
+      // flash and a frozen X-ray moment first - the blast wave hits after it, so the machines show up intact
       this.fx.nuke(w.x, w.y);
-      this.startCinematic();
+      this.startCinematic(NUKE.cine);
       this.decals.push({ x: w.x, y: w.y, s: 420 });
       this.emit('nukeHit', {});
       sfx('nuke');
-      this.nukeBlasts.push({ gx: n.gx, gy: n.gy, t: 0.5 });
+      this.nukeBlasts.push({ gx: n.gx, gy: n.gy, t: NUKE.blastDelay });
     }
     for (const n of this.nukeBlasts) {
       n.t -= dt;

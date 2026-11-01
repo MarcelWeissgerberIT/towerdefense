@@ -1,5 +1,5 @@
 // Iron Sentinel – app controller: screens, HUD, build drawer, tower menu, game loop.
-import { TOWERS, ENEMIES, TOWER_ORDER, MAX_LEVEL, BIOMES, BIOME_ORDER, UPGRADE_TIME, ELEV_RANGE, CLASS_NAME, EFFECT, POWERUPS, NUKE, HOLE, DIFFICULTY, SPECS, PERKS, PERK_COST, WEATHER, TOWER_DMG, specCost, effectOf, upgradeCost, towerStats } from './config.js';
+import { TOWERS, ENEMIES, TOWER_ORDER, MAX_LEVEL, BIOMES, BIOME_ORDER, UPGRADE_TIME, ELEV_RANGE, CLASS_NAME, EFFECT, POWERUPS, NUKE, HOLE, DIFFICULTY, SPECS, PERKS, PERK_COST, WEATHER, TOWER_DMG, SHATTER, FROST, specCost, effectOf, upgradeCost, towerStats } from './config.js';
 import { LEVEL_SPECS, LEVEL_COUNT, getLevel, makeWaves, hpMultiplier } from './levels.js';
 import { Assets, Models, drawIcon } from './assets.js';
 import { Renderer } from './render.js';
@@ -135,6 +135,7 @@ function openBuildMenu(cx, cy) {
     b.className = 'bd-card';
     b.innerHTML = `<img src="${icons[k] || ''}" alt=""><span class="bd-name">${def.name}</span><span class="bd-cost">${IC('credits')}${def.cost}</span>`;
     b.onclick = (e) => { e.stopPropagation(); chooseTower(k); };
+    attachHold(b, () => showTowerInfo(k));
     box.appendChild(b);
     bmButtons.push({ el: b, k });
   }
@@ -427,7 +428,7 @@ function openCatalog() {
 // ---------------- map interaction ----------------
 function onTap(p) {
   unlockAudio();
-  if (replay) return;
+  if (replay || performance.now() - holdFired < 900) return;
   if (!game || paused || game.state === 'won' || game.state === 'lost') return;
   if (ui.targeting) {
     const g = aimAt(p);
@@ -449,8 +450,7 @@ function onTap(p) {
   const t = inMap ? game.towerAt(c.x, c.y) : null;
   if (t) { if (ui.selected === t) closeTowerMenu(); else openTowerMenu(t); return; }
   if (!(inMap && game.canBuild(c.x, c.y))) {
-    const e = enemyAt(p);
-    if (e) { closeBuildMenu(); closeTowerMenu(); showIntel(e.type, false); return; }
+
   }
   if (ui.buildCell && inMap && game.canBuild(c.x, c.y) && (c.x !== ui.buildCell.x || c.y !== ui.buildCell.y)) {
     const keep = ui.previewType;
@@ -461,6 +461,122 @@ function onTap(p) {
   if (ui.buildCell || ui.selected) { closeBuildMenu(); closeTowerMenu(); return; }
   if (inMap && game.canBuild(c.x, c.y)) openBuildMenu(c.x, c.y);
 }
+// ---------------- long press: hold 5 s for a detailed explanation ----------------
+// (a ring fills around the finger; a normal tap never opens these, so nothing pops up by accident)
+const HOLD_MS = 5000, HOLD_SHOW = 300;
+let hold = null, holdFired = 0;
+function holdStart(x, y, fn) { holdCancel(); hold = { x, y, t0: performance.now(), fn }; }
+function holdCancel() { if (!hold) return; hold = null; $('hold-ring').classList.add('hidden'); }
+function updateHold() {
+  if (!hold) return;
+  const dt = performance.now() - hold.t0, el = $('hold-ring');
+  if (dt < HOLD_SHOW) return;
+  el.classList.remove('hidden');
+  el.style.left = hold.x + 'px'; el.style.top = hold.y + 'px';
+  el.style.setProperty('--p', Math.min(1, (dt - HOLD_SHOW) / (HOLD_MS - HOLD_SHOW)).toFixed(3));
+  if (dt >= HOLD_MS) {
+    const fn = hold.fn;
+    holdCancel(); holdFired = performance.now(); holdSuppress = true;
+    if (navigator.vibrate) try { navigator.vibrate(30); } catch (e) { /* ignore */ }
+    fn();
+  }
+}
+// the click that ends a long press must not also trigger the button (however long the finger stays down)
+let holdSuppress = false;
+document.addEventListener('pointerup', () => { if (holdSuppress) setTimeout(() => { holdSuppress = false; }, 60); }, true);
+document.addEventListener('click', (e) => { if (holdSuppress || performance.now() - holdFired < 300) { e.stopPropagation(); e.preventDefault(); } }, true);
+document.addEventListener('contextmenu', (e) => { if (game) e.preventDefault(); });
+function attachHold(el, fn) {
+  el.addEventListener('pointerdown', () => { const r = el.getBoundingClientRect(); holdStart(r.left + r.width / 2, r.top + r.height / 2, fn); });
+  for (const ev of ['pointerup', 'pointerleave', 'pointercancel']) el.addEventListener(ev, holdCancel);
+}
+// explanation card; the game pauses while it is open
+function infoModal(title, html) {
+  const wasPaused = paused;
+  paused = true;
+  sfx('click');
+  modal(title, 'intel-title', html, 0, [['OK', 'primary', () => { closeModal(); paused = wasPaused; }]]);
+  $('modal').classList.add('intel-modal');
+}
+const num = (v, d = 1) => (Math.round(v * 10 ** d) / 10 ** d).toString().replace('.', ',');
+const TOWER_TIPS = {
+  gatling: ['Sehr hohe Feuerrate – ideal gegen Schwärme leichter Einheiten und Drohnen.', 'Panzerung wird von jedem einzelnen Treffer abgezogen: gegen Panzer und Bosse kaum Wirkung.'],
+  missile: ['Zielsuchende Raketen mit Flächenschaden – trifft auch dicht gedrängte Gruppen.', 'Stark gegen Luftziele (×1,8).', `Zerschmettert gefrorene Gegner (×${num(SHATTER.mul)}).`],
+  plasma: ['Ignoriert Panzerung vollständig – die Waffe gegen Panzer und Bosse.', 'Zerreißt Energieschilde doppelt so schnell.', 'Trifft keine Luftziele.'],
+  emp: ['Kettenblitz springt auf mehrere Ziele und verlangsamt sie.', 'Reißt Energieschilde ein (×4).', 'Deckt getarnte Infiltratoren in seiner Reichweite auf.'],
+  flak: ['Reine Flugabwehr: Splitterwolken zerfetzen Drohnen, Bomber und Mutterschiffe.', 'Trifft keine Bodenziele.'],
+  flame: ['Trifft alles im Flammenkegel und setzt Maschinen in Brand.', 'Kurze Reichweite – gehört direkt an die Straße.', 'Feuer auf vereiste Gegner löst einen Thermoschock aus (Bonusschaden).'],
+  rail: ['Das Geschoss durchschlägt alles in einer Linie – stelle ihn längs einer Geraden auf.', 'Extreme Reichweite, langsame Feuerrate.', `Zerschmettert gefrorene Gegner (×${num(SHATTER.mul)}).`],
+  laser: ['Dauerstrahl, der sich auf demselben Ziel bis zum Dreifachen aufheizt.', 'Ideal gegen einzelne, zähe Gegner und Bosse.'],
+  acid: ['Säure zerfrisst die Panzerung (stapelbar) und brennt nach.', 'Hinterlässt Säurepfützen, die nachfolgende Gegner verätzen.', 'Trifft keine Luftziele.'],
+  mortar: ['Artillerie mit riesigem Wirkungsradius und großer Reichweite.', `Mindestreichweite ${num(TOWERS.mortar.minRange)} – direkt daneben trifft er nicht.`, `Zerschmettert gefrorene Gegner (×${num(SHATTER.mul)}).`],
+  cryo: ['Kältestrahl verlangsamt stark und friert Gegner schließlich ein (Bosse werden nur verlangsamt).', `Gefrorene zerspringen unter Railgun, Mörser und Raketen (×${num(SHATTER.mul)}).`, 'Feuer auf Vereiste löst einen Thermoschock aus.'],
+};
+function towerInfoHTML(k, t) {
+  const def = TOWERS[k], E = EFFECT[k];
+  const s1 = towerStats(k, 1), s3 = towerStats(k, MAX_LEVEL);
+  const dmg = (s) => def.dps ? `${Math.round(s.dps)}/s` : def.kind === 'hitscan' || def.kind === 'flak' ? `${Math.round(s.dmg)} × ${num(s.rate)}/s` : `${Math.round(s.dmg)}`;
+  const grid = [
+    ['Schaden', `${dmg(s1)} → <b>${dmg(s3)}</b>`],
+    ['Reichweite', `${num(s1.range)} → <b>${num(s3.range)}</b>`],
+    !def.dps && def.kind !== 'hitscan' && def.kind !== 'flak' ? ['Feuerrate', `${num(s1.rate, 2)}/s → <b>${num(s3.rate, 2)}/s</b>`] : null,
+    s1.splash ? ['Flächenradius', `${num(s1.splash)} → <b>${num(s3.splash)}</b>`] : null,
+    ['Ziele', def.ground && def.air ? 'Boden + Luft' : def.air ? 'nur Luft' : 'nur Boden'],
+    ['Kosten', `${def.cost} · Upgrades ${[1, 2].map(l => upgradeCost(k, l)).join(' / ')}`],
+    ['Haltbarkeit', `${s1.hp} → <b>${s3.hp}</b>`],
+  ].filter(Boolean);
+  const vs = ['light', 'armored', 'heavy', 'air'].map(c => {
+    const m = c === 'air' ? (def.air ? E[c] : 0) : (def.ground ? E[c] : 0);
+    return `<span class="${!m ? 'n' : m >= 1.2 ? 'g' : m <= 0.6 ? 'b' : ''}">${CLASS_NAME[c]}: ${m ? '×' + num(m) : 'trifft nicht'}</span>`;
+  }).join('');
+  const specs = (SPECS[k] || []).map(x => `<li><b>${x.name}</b> – ${x.desc}</li>`).join('');
+  let now = '';
+  if (t) {
+    const sp = t.spec && SPECS[k].find(x => x.id === t.spec);
+    now = `<div class="info-now">Dieser Turm: Stufe ${['I', 'II', 'III'][t.level - 1]}${sp ? ` · ◆ ${sp.name}` : ''} · Kampfkraft ${Math.round(game.towerEff(t) * 100)} % · ${t.kills} Abschüsse${t.rank ? ` · Rang ${'★'.repeat(t.rank)}` : ''}${t.z ? ` · Anhöhe: +${Math.round(game.heightAt(t.cx, t.cy) * ELEV_RANGE * 100)} % Reichweite` : ''}</div>`;
+  }
+  return `<div class="info-head"><img src="${icons[k] || ''}" alt=""><div><div class="info-name">${def.name}</div><div class="info-sub">${def.desc}</div></div></div>
+    <div class="info-grid">${grid.map(([a, b]) => `<span>${a}: ${b}</span>`).join('')}</div>
+    <div class="info-sec">WIRKUNG GEGEN</div><div class="info-vs">${vs}</div>
+    <div class="info-sec">TAKTIK</div><ul class="info-list">${(TOWER_TIPS[k] || []).map(x => `<li>${x}</li>`).join('')}
+      <li>Auf Anhöhen +${Math.round(ELEV_RANGE * 100)} % Reichweite pro Stufe. Beschädigte Türme schießen schwächer – rechtzeitig reparieren.</li></ul>
+    ${specs ? `<div class="info-sec">SPEZIALISIERUNG AB STUFE III · ${specCost(k)} CREDITS</div><ul class="info-list">${specs}</ul>` : ''}${now}`;
+}
+function showTowerInfo(k, t) { infoModal('TURM-DATENBLATT', towerInfoHTML(k, t)); }
+function abilityInfoHTML(kind) {
+  const g = game;
+  if (kind === 'orbital') return `<div class="info-head"><i class="ic ic-orbital"></i><div><div class="info-name">Orbitalschlag</div><div class="info-sub">Satellitengestützter Energiestrahl</div></div></div>
+    <ul class="info-list"><li>Knopf antippen, Ziel auf der Karte wählen (Vorschau mit Radius), <b>AUSLÖSEN</b>.</li>
+    <li>Nach 1,2 Sekunden schlägt ein Energiestrahl im Radius 1,7 Felder ein – ignoriert jede Panzerung, Flieger erleiden 60 %.</li>
+    <li>Volle Wirkung im Zentrum, 60 % am Rand.</li>
+    <li>Lädt sich während der Wellen von selbst wieder auf: ${Math.round(g ? g.orbital.max : 85)} Sekunden.</li>
+    <li>Tipp: auf dichte Gruppen oder einen Boss mit Eskorte zielen.</li></ul>`;
+  if (kind === 'hole') return `<div class="info-head"><i class="ic ic-hole"></i><div><div class="info-name">Schwarzes Loch</div><div class="info-sub">Künstliche Singularität</div></div></div>
+    <ul class="info-list"><li>Öffnet sich für ${HOLE.dur} Sekunden im Radius ${num(HOLE.radius)} Felder.</li>
+    <li>Saugt alle Maschinen (auch Flieger) in den Wirbel, zerquetscht sie und hält sie fest.</li>
+    <li>Bosse werden nicht eingesaugt, aber stark gebremst und beschädigt.</li>
+    <li>Am Ende kollabiert das Loch mit einer Druckwelle.</li>
+    <li>Wiederaufladung: ${Math.round(g ? g.hole.max : HOLE.cd)} Sekunden (erstes Loch nach ${Math.round(g ? HOLE.first * (g.mods.cd || 1) * (1 - g.perk.cd) : HOLE.first)} s).</li>
+    <li>Tipp: an Engstellen oder Kreuzungen mehrerer Pfade setzen.</li></ul>`;
+  const n = g && g.nuke;
+  return `<div class="info-head"><i class="ic ic-nuke"></i><div><div class="info-name">Atombombe</div><div class="info-sub">Die letzte Option</div></div></div>
+    <ul class="info-list"><li>Lädt sich durch Abschüsse auf (jede Maschine gibt ihre Belohnung als Ladung).</li>
+    <li>Nach dem Auslösen heult die Sirene, nach ${num(NUKE.delay)} Sekunden detoniert der Sprengkopf: Blitz, Röntgenbild, Zeitlupe.</li>
+    <li>Voller Schaden im Radius ${num(NUKE.radius)} Felder, 40 % bis ${num(NUKE.outer)} Felder. Bosse verlieren ${Math.round(NUKE.bossFrac * 100)} % ihrer Lebensenergie.</li>
+    <li><b>Achtung:</b> Eigene Türme im Zentrum (${num(NUKE.towerRadius)} Felder) werden schwer beschädigt.</li>
+    <li>Verstrahlung: ${NUKE.radT} Sekunden lang verliert jede Maschine in der Zone ${Math.round(NUKE.radDps * 100)} % ihrer Lebensenergie pro Sekunde und nimmt ${Math.round((NUKE.radVuln - 1) * 100)} % mehr Schaden.</li>
+    <li>Danach ist die Abschussrampe beschädigt: Reparatur kostet ${n ? g.nukeRepairCost() : NUKE.repairCost(1, 1)} Credits (jedes Mal 40 % mehr) und dauert ${Math.round(NUKE.repairTime * (g ? (g.mods.cd || 1) * (1 - g.perk.cd) : 1))} Sekunden.</li>
+    <li>Eine Atom-Kiste lädt +50 %, startet die Reparatur gratis oder halbiert die Reparaturzeit.</li></ul>`;
+}
+function showAbilityInfo(kind) { infoModal('SPEZIALWAFFE', abilityInfoHTML(kind)); }
+function powerupInfoHTML(type) {
+  const p = POWERUPS[type];
+  return `<div class="info-head"><i class="ic ic-${p.icon}"></i><div><div class="info-name" style="color:${p.color}">${p.name}</div><div class="info-sub">Power-up-Kiste</div></div></div>
+    <div class="info-desc">${p.desc}</div><ul class="info-list"><li>Kisten fallen selten von zerstörten Maschinen, bei Bossen immer.</li><li>Antippen zum Einsammeln – nach ${DROP_LIFE()} Sekunden zerfallen sie.</li></ul>`;
+}
+const DROP_LIFE = () => Math.round(25 * (1 + (game ? game.perk.drops * 4 / 3 : 0)));
+for (const [id, kind] of [['btn-orbital', 'orbital'], ['btn-nuke', 'nuke'], ['btn-hole', 'hole']]) attachHold($(id), () => showAbilityInfo(kind));
+
 // ---------------- special weapons: aim preview ----------------
 // tapping a weapon icon shows its real area of effect (ghost effect, hit markers, count) before anything happens
 const AIM = {
@@ -528,8 +644,24 @@ function updateAim() {
 $('aim-fire').onclick = () => { unlockAudio(); fireAim(); };
 $('aim-cancel').onclick = () => { endAim(); sfx('click'); };
 
+// what a long press on the map explains (null = nothing there, no ring)
+function holdTarget(p) {
+  if (!game || paused || ui.targeting || replay) return null;
+  for (const d of game.drops) {
+    const sp = renderer.worldToScreen(d.wx, d.wy - 46);
+    if (Math.hypot(sp.x - p.x, sp.y - p.y) < Math.max(34, 52 * renderer.cam.zoom)) return () => infoModal('POWER-UP', powerupInfoHTML(d.type));
+  }
+  const c = renderer.screenToCell(p.x, p.y);
+  const t = game.towerAt(c.x, c.y);
+  if (t) return () => { closeTowerMenu(); showTowerInfo(t.type, t); };
+  const e = enemyAt(p);
+  if (e) return () => { closeBuildMenu(); closeTowerMenu(); showIntel(e.type, false); };
+  return null;
+}
 const input = new Input(canvas, renderer, {
   tap: onTap,
+  holdStart: (p) => { const fn = holdTarget(p); if (fn) holdStart(p.x, p.y, fn); },
+  holdCancel,
   // desktop: the reticle follows the mouse
   hover: (p) => { if (game && ui.targeting && p) ui.aim = aimAt(p); },
   // touch: dragging that starts on the reticle moves it (anywhere else still pans the camera)
@@ -1025,6 +1157,7 @@ const STEP = 1 / 60;
 let acc = 0;
 function frame(now) {
   requestAnimationFrame(frame);
+  updateHold();
   let dt = (now - last) / 1000;
   last = now;
   if (dt > 0.1) dt = 0.1;
@@ -1037,9 +1170,10 @@ function frame(now) {
     game.fx.screen(dt);
     // the nuclear flash also blinds the HUD; in between, the whole screen turns into an X-ray negative
     const st = game.fx.blindState();
-    const ha = !st || st.xray ? 0 : st.t < 0.75 ? 1 : Math.max(0, 1 - (st.t - 0.75) / 0.5);
+    const ha = !st || st.xray ? 0 : st.t < NUKE.whiteEnd ? 1 : Math.max(0, 1 - (st.t - NUKE.whiteEnd) / 0.5);
     if (hudCache.nukeFlash !== ha) { hudCache.nukeFlash = ha; $('nuke-flash').style.opacity = ha.toFixed(3); }
     setXray(!!(st && st.xray));
+    if (hudCache.beat !== !!(st && st.beat)) { hudCache.beat = !!(st && st.beat); document.body.classList.toggle('beat', hudCache.beat); }
     if (replay) updateReplay(dt);
     else {
       updateCamTween(dt);
@@ -1079,7 +1213,7 @@ function startReplay() {
   const w = toWorld(R.gx, R.gy);
   c.zoom = Math.max(c.zoom, Math.min(renderer.maxZoom, 0.62)); c.x = w.x; c.y = w.y - 120; renderer.clampCam();
   game.fx.nuke(w.x, w.y);
-  game.startCinematic();
+  game.startCinematic(NUKE.cine);
   sfx('nuke');
   $('btn-replay').classList.add('hidden');
   $('replay-label').classList.remove('hidden');
@@ -1090,7 +1224,7 @@ function updateReplay(dt) {
   game.advanceCinematic(dt);
   game.fx.update(dt * ts);
   replay.t += dt; replay.gt += dt * ts;
-  if (!replay.blasted && replay.gt >= 0.5) {
+  if (!replay.blasted && replay.gt >= NUKE.blastDelay) {
     replay.blasted = true;
     const R = game.nukeReplay;
     let n = 0;
@@ -1113,7 +1247,7 @@ function endReplay() {
 }
 $('btn-replay').onclick = (e) => { e.stopPropagation(); unlockAudio(); startReplay(); };
 
-function setXray(on) { if (hudCache.xray !== on) { hudCache.xray = on; document.body.classList.toggle('xray', on); } }
+function setXray(on) { if (hudCache.xray !== on) { hudCache.xray = on; document.body.classList.toggle('xray', on); if (!on) document.body.classList.remove('beat'); } }
 
 async function boot() {
   setSound(save.data.sound !== false);

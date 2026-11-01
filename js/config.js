@@ -321,6 +321,10 @@ export const NUKE = {
   // after every launch the launch pad is damaged: repairing it costs credits (more each time) and takes time
   repairCost: (lv, uses) => Math.round((420 + 20 * lv) * (1 + 0.4 * Math.max(0, uses - 1))),
   repairTime: 80,
+  // detonation timeline (real time): flash, ~2 s frozen X-ray with heartbeat, white-out, then the blast wave
+  xray: [0.14, 2.2], whiteEnd: 2.75, heartbeats: [0.35, 0.57, 1.3, 1.52],
+  cine: { pre: 0.1, freeze: 2.6, slow: 2.6, scale: 0.12, ramp: 1.6 },
+  blastDelay: 0.12,                           // game time; lands right after the freeze
 };
 // power-up crates dropped by destroyed machines (tap to activate)
 export const POWERUPS = {
@@ -333,7 +337,7 @@ export const POWERUPS = {
 // difficulty for the campaign: modifiers applied on top of every mission
 export const DIFFICULTY = [
   { id: 'easy', name: 'LEICHT', desc: 'Die bisherige Balance – zum Kennenlernen.', mods: {} },
-  { id: 'medium', name: 'MITTEL', desc: 'Zähere und mehr Gegner, weniger Credits pro Abschuss.', mods: { hp: 1.24, count: 1.12, reward: 0.85 } },
+  { id: 'medium', name: 'MITTEL', desc: 'Zähere und mehr Gegner, weniger Credits pro Abschuss.', mods: { hp: 1.15, count: 1.08, reward: 0.9 } },
   { id: 'hard', name: 'SCHWER', desc: 'Starke, schnelle Wellen, knappes Budget, nur 10 Leben, Fähigkeiten laden langsamer.', mods: { hp: 1.42, count: 1.18, speed: 1.06, armor: 1.1, reward: 0.8, lives: 10, cd: 1.25 } },
 ];
 // combine two modifier sets: factors multiply, lives take the stricter value, flags/lists of b win

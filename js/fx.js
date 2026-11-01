@@ -1,5 +1,6 @@
 // Particle / effect system (world space). Video-based explosions + procedural particles.
 import { Assets, Models } from './assets.js';
+import { NUKE } from './config.js';
 import { rand } from './iso.js';
 
 const MAX_PARTICLES = 900;
@@ -312,16 +313,17 @@ export class FX {
   blindState() {
     const b = this.blind;
     if (!b) return null;
-    const t = b.t;
-    const xray = (t > 0.06 && t < 0.24) || (t > 0.29 && t < 0.56);
-    const white = xray ? 0 : t < 0.75 ? 1 : Math.pow(Math.max(0, 1 - (t - 0.75) / 1.1), 1.6);
-    return { t, x: b.x, y: b.y, xray, white, glow: xray ? 0 : 0.95 * Math.pow(Math.max(0, 1 - t / 3.2), 1.3) };
+    const t = b.t, [x0, x1] = NUKE.xray, we = NUKE.whiteEnd;
+    const xray = t > x0 && t < x1;
+    const white = xray ? 0 : t < 0.08 ? 1 : t < x0 ? 0.55 : t < we ? 1 : Math.pow(Math.max(0, 1 - (t - we) / 1.1), 1.6);
+    const beat = xray && NUKE.heartbeats.some(h => t >= h && t < h + 0.09);
+    return { t, x: b.x, y: b.y, xray, beat, white, glow: t < we ? 0 : 0.95 * Math.pow(Math.max(0, 1 - (t - we + 0.4) / 3.2), 1.3) };
   }
   screen(dt) {
     this.shake = Math.max(0, this.shake - dt * 18);
     this.flash = Math.max(0, this.flash - dt * 1.6);
     this.whiteout = Math.max(0, this.whiteout - dt * 1.6);
-    if (this.blind && (this.blind.t += dt) > 3.2) this.blind = null;
+    if (this.blind && (this.blind.t += dt) > NUKE.whiteEnd + 3) this.blind = null;
     this.lightning = Math.max(0, this.lightning - dt * 4);
   }
 

@@ -691,3 +691,30 @@ body.replaying #hud, body.replaying #btn-wave, body.replaying #btn-orbital, body
 .tm-eff { flex-basis: 100%; color: #ffd27a; }
 .tm-eff.bad { color: #ff8a70; }
 #tm-repair-all { grid-column: 1 / -1; }
+
+/* ---------- long press (hold 5 s) for explanations ---------- */
+#hold-ring { position: fixed; z-index: 40; width: 74px; height: 74px; margin: -37px 0 0 -37px; border-radius: 50%; pointer-events: none;
+  background: conic-gradient(var(--amber) calc(var(--p, 0) * 360deg), rgba(255,255,255,0.18) 0);
+  -webkit-mask: radial-gradient(circle, transparent 29px, #000 30px); mask: radial-gradient(circle, transparent 29px, #000 30px);
+  filter: drop-shadow(0 0 6px rgba(255,178,30,0.7)); }
+#hold-ring span { position: absolute; left: 50%; top: -18px; transform: translateX(-50%); font: 800 10px var(--font-title); letter-spacing: 0.1em; color: var(--amber); text-shadow: 0 1px 3px #000; }
+button, .bd-card, #game { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+.info-head { display: flex; gap: 12px; align-items: center; }
+.info-head img, .info-head .ic { width: 64px; height: 64px; flex: none; }
+.info-name { font-size: 20px; font-weight: 800; color: #fff; }
+.info-sub { font-size: 13px; color: var(--muted); }
+.info-desc { margin: 8px 0; font-size: 15px; line-height: 1.3; }
+.info-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 4px 12px; margin: 6px 0; font-size: 14px; }
+.info-grid b { color: var(--amber); font-weight: 700; }
+.info-sec { margin-top: 10px; font-family: var(--font-title); font-weight: 800; font-size: 12px; letter-spacing: 0.12em; color: var(--amber); }
+.info-list { margin: 4px 0 0; padding-left: 18px; font-size: 14px; line-height: 1.3; }
+.info-list li { margin-bottom: 3px; }
+.info-vs { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.info-vs span { padding: 3px 8px; font-size: 13px; border: 1px solid var(--line); background: rgba(255,255,255,0.05); }
+.info-vs .g { color: #ffd27a; border-color: rgba(255,178,30,0.5); }
+.info-vs .b { color: #9aa4ad; }
+.info-vs .n { color: #ff8a70; }
+.info-now { margin-top: 8px; padding: 6px 10px; background: rgba(95,208,255,0.08); border-left: 3px solid #5fd0ff; font-size: 14px; }
+
+/* heartbeat during the X-ray: the negative pulses brighter on every beat */
+body.xray.beat #game { filter: grayscale(1) invert(1) brightness(0.8) contrast(3.2) sepia(0.8) hue-rotate(165deg) saturate(3.8) brightness(1.65); }

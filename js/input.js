@@ -34,7 +34,9 @@ export class Input {
       this.downAt = { x: e.clientX, y: e.clientY, t: performance.now(), id: e.pointerId, type: e.pointerType };
       this.panning = false;
       this.dragging = false;
+      this.h.holdStart && this.h.holdStart({ x: e.clientX, y: e.clientY });
     } else if (this.pointers.size === 2) {
+      this.h.holdCancel && this.h.holdCancel();
       if (this.dragging) { this.dragging = false; this.h.dragEnd && this.h.dragEnd(); }
       const [a, b] = [...this.pointers.values()];
       this.pinch = { d: Math.hypot(a.x - b.x, a.y - b.y), cx: (a.x + b.x) / 2, cy: (a.y + b.y) / 2 };
@@ -63,6 +65,7 @@ export class Input {
     if (this.downAt && !this.panning && !this.dragging) {
       const moved = Math.hypot(e.clientX - this.downAt.x, e.clientY - this.downAt.y);
       if (moved > 9) {
+        this.h.holdCancel && this.h.holdCancel();
         if (this.h.dragStart && this.h.dragStart(this.downAt)) this.dragging = true;
         else this.panning = true;
       }
@@ -73,6 +76,7 @@ export class Input {
   }
 
   up(e) {
+    this.h.holdCancel && this.h.holdCancel();
     const had = this.pointers.has(e.pointerId);
     this.pointers.delete(e.pointerId);
     if (!had) return;
@@ -86,6 +90,7 @@ export class Input {
   }
 
   cancel(e) {
+    this.h.holdCancel && this.h.holdCancel();
     this.pointers.delete(e.pointerId);
     if (this.pointers.size < 2) this.pinch = null;
     if (this.pointers.size === 0) { this.downAt = null; this.panning = false; if (this.dragging) { this.dragging = false; this.h.dragEnd && this.h.dragEnd(); } }
