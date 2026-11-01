@@ -1715,8 +1715,16 @@ function initOffline() {
     if (!had) { swSend('fill'); swSend('status'); return; }     // first install: start the background download
     swUpdate = true;
     if (onMenuScreen()) applySwUpdate();
+    else if (game) toast('Neue Version geladen – sie startet, sobald du ins Menü wechselst', 'warn', 4500);
   });
-  navigator.serviceWorker.register('sw.js').catch((e) => console.warn('service worker', e));
+  let reg = null, lastCheck = 0;
+  // the browser only looks for a new sw.js on a page load - an app resumed from the background (home screen
+  // app on iPhone / iPad) would keep running the old version: check when it comes back and every 15 minutes
+  const check = () => { if (reg && navigator.onLine !== false && Date.now() - lastCheck > 60000) { lastCheck = Date.now(); reg.update().catch(() => {}); } };
+  navigator.serviceWorker.register('sw.js').then((r) => { reg = r; }).catch((e) => console.warn('service worker', e));
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') check(); });
+  window.addEventListener('focus', check);
+  setInterval(() => { if (document.visibilityState === 'visible') check(); }, 15 * 60 * 1000);
   try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {}); } catch (e) { /* ignore */ }
   if (had) { swSend('status'); setTimeout(() => swSend('fill'), 3000); }
 }

@@ -174,11 +174,11 @@ button {
   touch-action: pan-y;
 }
 .title-bg {
-  background: #000 url('../assets/title.jpg') center / cover no-repeat;
+  background: #05070c url('../assets/title.jpg') center 88% / cover no-repeat;
 }
 .title-bg::before {
   content: ''; position: absolute; inset: 0;
-  background: linear-gradient(180deg, rgba(0,0,0,0.55) 0%, rgba(0,0,0,0.15) 40%, rgba(0,0,0,0.75) 100%);
+  background: linear-gradient(180deg, rgba(0,0,0,0.3) 0%, rgba(0,0,0,0.06) 45%, rgba(0,0,0,0.25) 100%);
   pointer-events: none;
 }
 .title-bg.dim::before { background: rgba(5,6,8,0.78); }
