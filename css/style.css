@@ -718,3 +718,6 @@ button, .bd-card, #game { -webkit-touch-callout: none; -webkit-user-select: none
 
 /* heartbeat during the X-ray: the negative pulses brighter on every beat */
 body.xray.beat #game { filter: grayscale(1) invert(1) brightness(0.8) contrast(3.2) sepia(0.8) hue-rotate(165deg) saturate(3.8) brightness(1.65); }
+
+/* X-ray glitch frames: the picture jumps and tears for a moment */
+body.xray.glitch #game { transform: translate(7px, -3px) skewX(-3deg); filter: grayscale(1) invert(1) brightness(0.6) contrast(3.4) sepia(0.9) hue-rotate(140deg) saturate(4) brightness(1.4); }

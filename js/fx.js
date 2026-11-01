@@ -16,6 +16,7 @@ export class FX {
       this.p = this.p.filter(q => q.keep || n++ >= 40);
     }
     o.t = 0;
+    if (this.rtMode) o.rt = true;
     this.p.push(o);
     return o;
   }
@@ -196,27 +197,39 @@ export class FX {
     for (let i = 1; i < pts.length; i++) this.add({ k: 'glow', x: pts[i][0], y: pts[i][1], s: 46, life: 0.18, spr: 'violet' });
   }
   // nuclear detonation: white-out, mushroom cloud, shock waves, a ring of dust and burning debris
+  // nuclear detonation, part 1: the flash - X-ray and white-out are drawn by the renderer (real time);
+  // random white frames and glitches make the X-ray flicker
   nuke(x, y) {
-    // blinding flash (real time, drawn by the renderer): double flash, white-out, burn-in glow around ground zero
-    this.blind = { t: 0, x, y: y - 120 };
+    const flick = [];
+    for (let t = 0.5; t < NUKE.xray[1] - 0.2; t += rand(0.3, 0.75)) flick.push([t, rand(0.04, 0.09), Math.random() < 0.55 ? 'w' : 'g']);
+    this.blind = { t: 0, x, y: y - 120, flick };
     this.flash = 1;
+    this.shake = 22;
+  }
+  // part 2, when the light fades: fireball, mushroom cloud, shock rings, debris - in real time, so the
+  // mushroom cloud rises at full speed no matter how slow the world around it runs
+  nukeBlast(x, y) {
+    const rt = (fn) => { this.rtMode = true; try { fn(); } finally { this.rtMode = false; } };
     this.shake = 36;
-    this.boom(x, y + 20, 820, 6.5, Assets.vfx.nuke ? 'nuke' : 'heavy');
-    this.add({ k: 'glow', x, y: y - 60, s: 900, life: 0.9, spr: 'white', keep: true });
-    this.add({ k: 'glow', x, y: y - 40, s: 600, life: 1.6, spr: 'orange', keep: true });
-    for (const [r1, life, c] of [[1100, 1.4, '255,255,255'], [800, 1.1, '255,200,120'], [520, 0.8, '255,150,60']]) this.add({ k: 'ring', x, y, r0: 30, r1, life, c, keep: true });
-    this.later(450, () => this.add({ k: 'ring', x, y, r0: 60, r1: 1300, life: 1.8, c: '220,200,180' }));
-    for (let i = 0; i < 46; i++) {
-      const a = Math.random() * Math.PI * 2, v = rand(160, 420);
-      this.add({ k: 'smoke', x: x + Math.cos(a) * 40, y: y + Math.sin(a) * 20, vx: Math.cos(a) * v, vy: Math.sin(a) * v * 0.5, s: rand(30, 50), grow: 120, life: rand(1.6, 2.6), a: 0.7, dark: Math.random() < 0.6 });
-    }
-    for (let i = 0; i < 40; i++) this.add({ k: 'ember', x: x + rand(-60, 60), y: y - rand(0, 80), vx: rand(-420, 420), vy: rand(-620, -120), trail: 0, life: rand(1.0, 1.8) });
-    this.debris(x, y, 30, 520);
-    for (let i = 0; i < 10; i++) this.later(300 + i * 160, () => {
+    this.flash = Math.max(this.flash, 0.8);
+    rt(() => {
+      this.boom(x, y + 20, 820, 6.5, Assets.vfx.nuke ? 'nuke' : 'heavy');
+      this.add({ k: 'glow', x, y: y - 60, s: 900, life: 0.9, spr: 'white', keep: true });
+      this.add({ k: 'glow', x, y: y - 40, s: 600, life: 1.6, spr: 'orange', keep: true });
+      for (const [r1, life, c] of [[1100, 1.4, '255,255,255'], [800, 1.1, '255,200,120'], [520, 0.8, '255,150,60']]) this.add({ k: 'ring', x, y, r0: 30, r1, life, c, keep: true });
+      for (let i = 0; i < 46; i++) {
+        const a = Math.random() * Math.PI * 2, v = rand(160, 420);
+        this.add({ k: 'smoke', x: x + Math.cos(a) * 40, y: y + Math.sin(a) * 20, vx: Math.cos(a) * v, vy: Math.sin(a) * v * 0.5, s: rand(30, 50), grow: 120, life: rand(1.6, 2.6), a: 0.7, dark: Math.random() < 0.6 });
+      }
+      for (let i = 0; i < 40; i++) this.add({ k: 'ember', x: x + rand(-60, 60), y: y - rand(0, 80), vx: rand(-420, 420), vy: rand(-620, -120), trail: 0, life: rand(1.0, 1.8) });
+      this.debris(x, y, 30, 520);
+    });
+    this.later(450, () => rt(() => this.add({ k: 'ring', x, y, r0: 60, r1: 1300, life: 1.8, c: '220,200,180' })));
+    for (let i = 0; i < 10; i++) this.later(300 + i * 160, () => rt(() => {
       const a = Math.random() * Math.PI * 2, r = rand(120, 360);
       this.boom(x + Math.cos(a) * r, y + Math.sin(a) * r * 0.5, rand(110, 190), 1.0, Math.random() < 0.5 ? 'ground' : 'fire');
       this.shake = Math.max(this.shake, 8);
-    });
+    }));
   }
   // light and debris orbiting into a black hole (cx, cy = core)
   orbit(cx, cy, r, debris = false) {
@@ -252,13 +265,15 @@ export class FX {
   text(x, y, str, color = '#ffd34d') { this.add({ k: 'text', x, y, str, c: color, life: 0.9 }); }
   trail(x, y) { this.add({ k: 'smoke', x, y, vx: rand(-6, 6), vy: rand(-10, -2), s: 9, grow: 22, life: 0.6, a: 0.45 }); }
 
-  update(dt) {
+  // rt = true advances only the real-time particles (nuclear blast), false only the normal ones
+  update(dt, rt = false) {
     const p = this.p;
     const spawned = [];
     let w = 0;
     const n = p.length;
     for (let i = 0; i < n; i++) {
       const o = p[i];
+      if (!!o.rt !== rt) { p[w++] = o; continue; }
       o.t += dt;
       if (o.t >= o.life) continue;
       switch (o.k) {
@@ -304,7 +319,7 @@ export class FX {
     // particles added by add() during this frame (after index n) are kept as well
     for (let i = n; i < p.length; i++) p[w++] = p[i];
     p.length = w;
-    for (const o of spawned) if (p.length < MAX_PARTICLES) p.push(o);
+    for (const o of spawned) if (p.length < MAX_PARTICLES) { if (rt) o.rt = true; p.push(o); }
     if (!this.realtimeScreen) this.screen(dt);
   }
 
@@ -314,10 +329,11 @@ export class FX {
     const b = this.blind;
     if (!b) return null;
     const t = b.t, [x0, x1] = NUKE.xray, we = NUKE.whiteEnd;
-    const xray = t > x0 && t < x1;
-    const white = xray ? 0 : t < 0.08 ? 1 : t < x0 ? 0.55 : t < we ? 1 : Math.pow(Math.max(0, 1 - (t - we) / 1.1), 1.6);
+    let xray = t > x0 && t < x1, glitch = false;
+    let white = xray ? 0 : t < 0.08 ? 1 : t < x0 ? 0.55 : t < we ? 1 : Math.pow(Math.max(0, 1 - (t - we) / 1.1), 1.6);
+    if (xray && b.flick) for (const [a, d, k] of b.flick) if (t >= a && t < a + d) { if (k === 'w') { xray = false; white = 0.85; } else glitch = true; }
     const beat = xray && NUKE.heartbeats.some(h => t >= h && t < h + 0.09);
-    return { t, x: b.x, y: b.y, xray, beat, white, glow: t < we ? 0 : 0.95 * Math.pow(Math.max(0, 1 - (t - we + 0.4) / 3.2), 1.3) };
+    return { t, x: b.x, y: b.y, xray, beat, glitch, white, glow: t < we ? 0 : 0.95 * Math.pow(Math.max(0, 1 - (t - we + 0.4) / 3.2), 1.3) };
   }
   screen(dt) {
     this.shake = Math.max(0, this.shake - dt * 18);

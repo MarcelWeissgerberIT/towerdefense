@@ -1,6 +1,8 @@
 // Sound effects with WebAudio: recorded effects from one audio sprite (assets/audio/sfx.mp3, cut from
 // the audio tracks of generated sound clips) with procedural synthesis as fallback and for UI blips.
 
+import { NUKE } from './config.js';
+
 let ctx = null, master = null, noiseBuf = null;
 let sprite = null, spriteMap = null, spriteLoading = null;
 let sirenH = null, outNode = null, meter = null;
@@ -232,9 +234,9 @@ const SFX = {
     const t = ctx.currentTime;
     // flash crack, then the frozen X-ray moment: ringing ears and a heartbeat - the blast arrives after it
     noise(t, 0.35, { freq: 2500, q: 0.4, type: 'highpass', gain: 0.6, attack: 0.002 });
-    tone(t + 0.1, 2.1, { type: 'sine', f0: 3600, f1: 3300, gain: 0.035, attack: 0.25 });
-    for (const [i, h] of [0.35, 0.57, 1.3, 1.52].entries()) heartbeat(t + h, i % 2 ? 0.75 : 1);
-    const boom = 2.15;
+    tone(t + 0.1, NUKE.xray[1], { type: 'sine', f0: 3600, f1: 3200, gain: 0.03, attack: 0.4 });
+    NUKE.heartbeats.forEach((h, i) => heartbeat(t + h, (i % 2 ? 0.75 : 1) * (0.85 + 0.15 * h / NUKE.xray[1])));
+    const boom = NUKE.xray[1] + 0.05;
     if (play('nuke', { gain: 1, delay: boom })) {
       tone(t + boom, 3.2, { type: 'sine', f0: 55, f1: 24, gain: 0.3, attack: 0.02 });
       return;

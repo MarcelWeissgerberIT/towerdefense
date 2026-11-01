@@ -1253,7 +1253,6 @@ export class Game {
       // flash and a frozen X-ray moment first - the blast wave hits after it, so the machines show up intact
       this.fx.nuke(w.x, w.y);
       this.startCinematic(NUKE.cine);
-      this.decals.push({ x: w.x, y: w.y, s: 420 });
       this.emit('nukeHit', {});
       sfx('nuke');
       this.nukeBlasts.push({ gx: n.gx, gy: n.gy, t: NUKE.blastDelay });
@@ -1276,6 +1275,9 @@ export class Game {
       }
       this._nuking = false;
       this.radZones.push({ gx: n.gx, gy: n.gy, r: NUKE.radR, r0: NUKE.radR, t: NUKE.radT, life: NUKE.radT });
+      const bw = toWorld(n.gx, n.gy);
+      this.fx.nukeBlast(bw.x, bw.y);
+      this.decals.push({ x: bw.x, y: bw.y, s: 420 });
     }
     if (this.nukeBlasts.some(n => n.done)) this.nukeBlasts = this.nukeBlasts.filter(n => !n.done);
     if (this.nukes.some(n => n.done)) this.nukes = this.nukes.filter(n => !n.done);

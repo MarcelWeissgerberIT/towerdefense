@@ -321,10 +321,12 @@ export const NUKE = {
   // after every launch the launch pad is damaged: repairing it costs credits (more each time) and takes time
   repairCost: (lv, uses) => Math.round((420 + 20 * lv) * (1 + 0.4 * Math.max(0, uses - 1))),
   repairTime: 80,
-  // detonation timeline (real time): flash, ~2 s frozen X-ray with heartbeat, white-out, then the blast wave
-  xray: [0.14, 2.2], whiteEnd: 2.75, heartbeats: [0.35, 0.57, 1.3, 1.52],
-  cine: { pre: 0.1, freeze: 2.6, slow: 2.6, scale: 0.12, ramp: 1.6 },
-  blastDelay: 0.12,                           // game time; lands right after the freeze
+  // detonation timeline (real time): flash, 5 s frozen, flickering X-ray with a quickening heartbeat,
+  // white-out, then the blast wave and the mushroom cloud (which plays in real time, unaffected by slow motion)
+  xray: [0.14, 5.14], whiteEnd: 5.7,
+  heartbeats: [0.35, 0.57, 1.25, 1.46, 2.08, 2.27, 2.82, 2.99, 3.48, 3.63, 4.05, 4.18, 4.55, 4.67],
+  cine: { pre: 0, freeze: 5.8, slow: 1.6, scale: 0.25, ramp: 1.0 },
+  blastDelay: 0.02,                           // game time; lands right after the freeze
 };
 // power-up crates dropped by destroyed machines (tap to activate)
 export const POWERUPS = {

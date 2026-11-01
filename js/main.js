@@ -1170,10 +1170,12 @@ function frame(now) {
     game.fx.screen(dt);
     // the nuclear flash also blinds the HUD; in between, the whole screen turns into an X-ray negative
     const st = game.fx.blindState();
-    const ha = !st || st.xray ? 0 : st.t < NUKE.whiteEnd ? 1 : Math.max(0, 1 - (st.t - NUKE.whiteEnd) / 0.5);
+    const ha = !st || st.xray ? 0 : st.t < NUKE.whiteEnd ? st.white : Math.max(0, 1 - (st.t - NUKE.whiteEnd) / 0.5);
     if (hudCache.nukeFlash !== ha) { hudCache.nukeFlash = ha; $('nuke-flash').style.opacity = ha.toFixed(3); }
     setXray(!!(st && st.xray));
     if (hudCache.beat !== !!(st && st.beat)) { hudCache.beat = !!(st && st.beat); document.body.classList.toggle('beat', hudCache.beat); }
+    if (hudCache.glitch !== !!(st && st.glitch)) { hudCache.glitch = !!(st && st.glitch); document.body.classList.toggle('glitch', hudCache.glitch); }
+    game.fx.update(dt, true);   // real-time particles (nuclear blast) keep full speed during slow motion
     if (replay) updateReplay(dt);
     else {
       updateCamTween(dt);
@@ -1227,6 +1229,8 @@ function updateReplay(dt) {
   if (!replay.blasted && replay.gt >= NUKE.blastDelay) {
     replay.blasted = true;
     const R = game.nukeReplay;
+    const bw = toWorld(R.gx, R.gy);
+    game.fx.nukeBlast(bw.x, bw.y);
     let n = 0;
     game.enemies = game.enemies.filter(e => {
       if (Math.hypot(e.gx - R.gx, e.gy - R.gy) > NUKE.radius && !e.def.boss) return true;
@@ -1247,7 +1251,7 @@ function endReplay() {
 }
 $('btn-replay').onclick = (e) => { e.stopPropagation(); unlockAudio(); startReplay(); };
 
-function setXray(on) { if (hudCache.xray !== on) { hudCache.xray = on; document.body.classList.toggle('xray', on); if (!on) document.body.classList.remove('beat'); } }
+function setXray(on) { if (hudCache.xray !== on) { hudCache.xray = on; document.body.classList.toggle('xray', on); if (!on) document.body.classList.remove('beat', 'glitch'); } }
 
 async function boot() {
   setSound(save.data.sound !== false);
