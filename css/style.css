@@ -312,6 +312,13 @@ button {
 .bd-cost { font-size: 13px; font-weight: 700; color: var(--amber); }
 .bd-card.sel { border-color: #6dff9d; box-shadow: inset 0 0 0 2px #6dff9d; background: radial-gradient(circle at 50% 35%, #2f4a38, #10180f 75%); }
 .bd-card.poor { filter: grayscale(1) brightness(0.55); }
+/* tower that cannot stand on this foundation (heavy platform / power grid missing) */
+.bd-card { position: relative; }
+.bd-card.blocked img { filter: grayscale(1) brightness(0.5); }
+.bd-card.blocked .bd-name { color: #8d897f; }
+.bd-need { position: absolute; top: 4px; left: 3px; right: 3px; font-size: 9px; font-weight: 800; letter-spacing: 0.04em; color: #ffcf5a; background: rgba(0,0,0,0.7); border: 1px solid rgba(255,207,90,0.5); padding: 1px 0; text-align: center; }
+.bd-block { margin-top: 4px; font-size: 13px; color: #ffcf8a; }
+.bd-hint .pw { color: #6fe8ff; }
 .bd-card.poor .bd-cost { color: #ff7b6b; }
 #btn-wave.under-drawer { display: none; }
 @media (max-height: 430px) and (min-aspect-ratio: 1/1) {

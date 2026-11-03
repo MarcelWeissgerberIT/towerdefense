@@ -107,11 +107,11 @@ function play(levelIdx, skill = 1) {
     if (g.credits >= cost && g.towers.length < 34) {
       let best = null, bv = -1;
       for (let y = 0; y < g.N; y++) for (let x = 0; x < g.N; x++) {
-        if (!g.canBuild(x, y)) continue;
+        if (g.buildBlock(type, x, y)) continue;      // foundations, heavy platforms, power grid
         const v = coverage(g, x, y, Math.min(C.TOWERS[type].range, 3.5)) * skill + Math.random() * (1 - skill) * 6;
         if (v > bv) { bv = v; best = [x, y]; }
       }
-      if (best) { g.build(type, best[0], best[1]); k++; }
+      if (best) { g.build(type, best[0], best[1]); k++; } else k++;   // no fitting spot left for this type
     } else if (g.towers.length >= 6) {
       const cand = g.towers.filter(o => o.level < 3).sort((a, b) => a.level - b.level)[0];
       if (cand && g.credits >= C.upgradeCost(cand.type, cand.level) + 80) g.upgrade(cand);
@@ -122,8 +122,9 @@ function play(levelIdx, skill = 1) {
     // plan the route first (before the first tower), later only repairs
     if (BARS && t === 0) { for (let i = 0; i < 2; i++) useBarricades(g, true); }
     if (BARS && Math.round(t / dt) % 30 === 0) for (const b of g.barricades) if (b.hp < b.maxHp * 0.5 && g.credits > g.barricadeRepairCost(b) + 100) g.repairBarricade(b);
-    const before = g.towers.length;
+    const before = g.towers.length, lv0 = g.lives;
     g.update(dt);
+    if (trace && g.lives < lv0) console.log(`    t=${t.toFixed(1)} base hit ${lv0 - g.lives} by ${g.enemies.filter(e => e.siege).map(e => e.type).join(',') || '?'} (wave ${g.wave})`);
     lost += Math.max(0, before - g.towers.length);
     g.events.length = 0; g.decals.length = 0;
     if (trace && g.wave !== lw) { lw = g.wave; console.log(`  w${g.wave} t=${Math.round(t)} credits ${g.credits} towers ${g.towers.length} (lvl ${g.towers.reduce((a, o) => a + o.level, 0)}) lives ${g.lives} lostTowers ${lost} alive ${g.enemies.length}`); }

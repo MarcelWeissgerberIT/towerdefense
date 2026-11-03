@@ -1,5 +1,5 @@
 // Isometric canvas renderer
-import { HW, HH, TOWERS, BIOMES, TOWER_SCALE, ELEV_PX, NUKE, POWERUPS, HOLE, WEATHER, ROD, NAPALM } from './config.js';
+import { HW, HH, TOWERS, BIOMES, TOWER_SCALE, ELEV_PX, NUKE, POWERUPS, HOLE, WEATHER, ROD, NAPALM, BUILD } from './config.js';
 import { toWorld, toGrid, mulberry32, clamp } from './iso.js';
 import { Assets, Models, drawIcon } from './assets.js';
 import { CELL, upgradeDrones } from './game.js';
@@ -20,6 +20,52 @@ function convexHull(pts) {
 const T0 = 128;         // top-down px per tile for ground composition (small maps)
 const DEPTH = 70;       // slab thickness in world px
 
+// a build plot on the top-down ground canvas: a concrete foundation, or a steel heavy platform with a hazard
+// border and a landing ring; powered plots get a small cyan socket
+function drawSlab(g, x, y, T, heavy, powered, rng) {
+  const i = T * 0.07, s = T - 2 * i, x0 = x + i, y0 = y + i;
+  g.fillStyle = 'rgba(0,0,0,0.32)'; g.fillRect(x0 + T * 0.03, y0 + T * 0.04, s, s);
+  g.fillStyle = heavy ? '#50555a' : '#8d887d'; g.fillRect(x0, y0, s, s);
+  for (let k = 0; k < 46; k++) {
+    g.fillStyle = `rgba(${rng() < 0.5 ? '255,248,235' : '0,0,0'},${0.04 + rng() * 0.09})`;
+    g.fillRect(x0 + rng() * (s - 6), y0 + rng() * (s - 5), 2 + rng() * 6, 2 + rng() * 4);
+  }
+  g.lineWidth = T * 0.025;
+  g.strokeStyle = 'rgba(255,250,240,0.28)';
+  g.beginPath(); g.moveTo(x0, y0 + s); g.lineTo(x0, y0); g.lineTo(x0 + s, y0); g.stroke();
+  g.strokeStyle = 'rgba(0,0,0,0.5)';
+  g.beginPath(); g.moveTo(x0 + s, y0); g.lineTo(x0 + s, y0 + s); g.lineTo(x0, y0 + s); g.stroke();
+  if (heavy) {
+    // hazard band along the edge, landing ring with a cross in the middle
+    const b = T * 0.1;
+    g.save();
+    g.beginPath(); g.rect(x0, y0, s, s); g.rect(x0 + b, y0 + b, s - 2 * b, s - 2 * b); g.clip('evenodd');
+    for (let k = -s; k < s * 2; k += T * 0.16) {
+      g.fillStyle = (Math.round(k / (T * 0.16)) % 2) ? 'rgba(235,185,40,0.95)' : 'rgba(22,20,18,0.95)';
+      g.beginPath(); g.moveTo(x0 + k, y0); g.lineTo(x0 + k + T * 0.08, y0); g.lineTo(x0 + k + T * 0.08 - s, y0 + s); g.lineTo(x0 + k - s, y0 + s); g.fill();
+    }
+    g.restore();
+    const cx = x + T / 2, cy = y + T / 2;
+    g.strokeStyle = 'rgba(240,195,60,0.9)'; g.lineWidth = T * 0.035;
+    g.beginPath(); g.arc(cx, cy, T * 0.24, 0, Math.PI * 2); g.stroke();
+    g.lineWidth = T * 0.03;
+    g.beginPath(); g.moveTo(cx - T * 0.1, cy); g.lineTo(cx + T * 0.1, cy); g.moveTo(cx, cy - T * 0.1); g.lineTo(cx, cy + T * 0.1); g.stroke();
+  } else {
+    // expansion joints and anchor bolts
+    g.strokeStyle = 'rgba(0,0,0,0.28)'; g.lineWidth = T * 0.014;
+    g.beginPath(); g.moveTo(x + T / 2, y0 + 3); g.lineTo(x + T / 2, y0 + s - 3); g.moveTo(x0 + 3, y + T / 2); g.lineTo(x0 + s - 3, y + T / 2); g.stroke();
+    g.fillStyle = 'rgba(40,38,34,0.75)';
+    for (const [u, v] of [[0.16, 0.16], [0.84, 0.16], [0.16, 0.84], [0.84, 0.84]]) { g.beginPath(); g.arc(x + T * u, y + T * v, T * 0.03, 0, Math.PI * 2); g.fill(); }
+  }
+  if (powered) {
+    const px = x0 + s - T * 0.2, py = y0 + s - T * 0.2, w = T * 0.13;
+    const gr = g.createRadialGradient(px + w / 2, py + w / 2, 0, px + w / 2, py + w / 2, w * 1.6);
+    gr.addColorStop(0, 'rgba(90,230,255,0.55)'); gr.addColorStop(1, 'rgba(90,230,255,0)');
+    g.fillStyle = gr; g.fillRect(px - w, py - w, w * 3, w * 3);
+    g.fillStyle = '#1b2a30'; g.fillRect(px, py, w, w);
+    g.fillStyle = '#6fe8ff'; g.fillRect(px + w * 0.25, py + w * 0.2, w * 0.5, w * 0.6);
+  }
+}
 function makeCanvas(w, h) {
   const c = document.createElement('canvas');
   c.width = Math.max(1, Math.round(w));
@@ -349,6 +395,25 @@ export class Renderer {
       grd.addColorStop(0, 'rgba(60,8,4,0.85)'); grd.addColorStop(0.5, 'rgba(25,8,6,0.55)'); grd.addColorStop(1, 'rgba(0,0,0,0)');
       g.fillStyle = grd; g.fillRect(x - r, y - r, r * 2, r * 2);
     }
+    // fortress courtyard: concrete inside the wall ring
+    if (game.fort) {
+      const F = game.fort, x0 = Math.max(0, F.x0) * T, y0 = Math.max(0, F.y0) * T, x1 = Math.min(N, F.x1) * T, y1 = Math.min(N, F.y1) * T;
+      g.fillStyle = 'rgba(96,92,85,1)'; g.fillRect(x0, y0, x1 - x0, y1 - y0);
+      if (rtex) { g.globalAlpha = 0.4; g.drawImage(rtex, x0, y0, x1 - x0, y1 - y0); g.globalAlpha = 1; }
+      g.strokeStyle = 'rgba(0,0,0,0.22)'; g.lineWidth = 2;
+      g.beginPath();
+      for (let k = x0; k <= x1; k += T / 2) { g.moveTo(k, y0); g.lineTo(k, y1); }
+      for (let k = y0; k <= y1; k += T / 2) { g.moveTo(x0, k); g.lineTo(x1, k); }
+      g.stroke();
+    }
+    // build plots (foundations, heavy platforms, power sockets)
+    if (game.plot) {
+      const pr = mulberry32(N * 53 + game.levelIdx * 17 + 5);
+      for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+        const p = game.plot[game.idx(x, y)];
+        if (p) drawSlab(g, x * T, y * T, T, p === 2, game.powered(x, y), pr);
+      }
+    }
     {
       const [bx, by] = L.base;
       const x = bx * T - 10, y = by * T - 10, s = 2 * T + 20;
@@ -593,6 +658,9 @@ export class Renderer {
     // life in the landscape: cloud shadows and bird shadows on the ground
     if (this.life) { this.life.update(game.cine ? 0 : dt); this.life.drawGround(ctx); }
 
+    if (ui.buildCell && ui.previewType && ui.previewType !== 'barricade') this.drawSpots(ctx, ui.previewType);
+    else if (this.plotFlash > 0) this.drawSpots(ctx, null);
+    if (this.plotFlash > 0) this.plotFlash -= dt || 0;
     const bz = ui.buildCell ? game.heightAt(ui.buildCell.x, ui.buildCell.y) * ELEV_PX : 0;
     if (ui.buildCell && !bz) this.drawBuildPreview(ctx, ui, 0);
     const selBar = ui.selected && ui.selected.kind === 'barricade';
@@ -610,6 +678,11 @@ export class Renderer {
     for (const p of game.props) if (!p.z) Models.drawShadow(ctx, p.model, p.rot, p.wx, p.wy, p.s);
     for (const p of game.decor) if (!p.z) Models.drawShadow(ctx, p.model, p.rot, p.wx, p.wy, p.s);
     Models.drawShadow(ctx, this.hqName(), 0, game.baseW.x, game.baseW.y);
+    if (game.fort) {
+      for (const p of game.fort.walls) Models.drawShadow(ctx, 'p3d_fort_wall', p.rot, p.wx, p.wy);
+      for (const p of game.fort.gates) Models.drawShadow(ctx, 'p3d_fort_gate', p.rot, p.wx, p.wy);
+      for (const t of game.fort.towers) Models.drawShadow(ctx, 'p3d_fort_tower', Models.frameFor('p3d_fort_tower', t.ang), t.wx, t.wy);
+    }
     for (const g of game.gates) Models.drawShadow(ctx, this.biome.gate || 'p3d_spawn_gate', g.rot, g.x, g.y);
     for (const b of game.barricades) Models.drawShadow(ctx, 'p3d_prop_barrier', b.rot, b.wx, b.wy, BAR_SCALE);
     for (const t of game.towers) {
@@ -652,6 +725,11 @@ export class Renderer {
     }
     for (const e of game.enemies) if (!e.air) list.push({ y: e.wy + (e.climbH || 0) * 40, o: e, k: 2 });   // climbing: in front of the barricade
     list.push({ y: game.baseW.y + HH, o: game.baseW, k: 3 });
+    if (game.fort) {
+      for (const p of game.fort.walls) list.push({ y: p.wy + p.z, o: p, k: 9 });
+      for (const p of game.fort.gates) list.push({ y: p.wy + p.z, o: p, k: 11 });
+      for (const t of game.fort.towers) list.push({ y: t.wy + t.z, o: t, k: 10 });
+    }
     for (const g of game.gates) list.push({ y: g.y + HH, o: g, k: 4 });
     if (this.life) this.life.addToList(list);
     list.sort((a, b) => a.y - b.y);
@@ -666,6 +744,9 @@ export class Renderer {
       else if (it.k === 4) this.drawGate(ctx, it.o);
       else if (it.k === 7) this.drawBarricade(ctx, it.o, ui);
       else if (it.k === 8) this.life.drawTroop(ctx, it.o);
+      else if (it.k === 9) Models.draw(ctx, 'p3d_fort_wall', it.o.rot, it.o.wx, it.o.wy);
+      else if (it.k === 11) this.drawFortGate(ctx, it.o);
+      else if (it.k === 10) this.drawFortTower(ctx, it.o);
     }
     if (this.life) this.life.drawFog(ctx);
     // units behind high ground: a faint silhouette on top (drawing a sprite over itself changes nothing where it is visible)
@@ -1512,6 +1593,56 @@ export class Renderer {
       ctx.globalAlpha = 0.7;
       this.drawTower(ctx, { def, type: ui.previewType, wx: w.x, wy: w.y - z, ang: Math.PI / 4, recoil: 0, built: 1, level: 1, ghost: true }, ui);
       ctx.globalAlpha = 1;
+    }
+  }
+  // where the chosen tower type may be built: green cells (and the power grids for energy weapons);
+  // type null: all foundations (after a tap on bare ground)
+  drawSpots(ctx, type) {
+    const game = this.game, N = game.N, a = 0.22 + 0.08 * Math.sin(this.time * 5);
+    if (type && TOWERS[type].energy) {
+      ctx.save();
+      ctx.setLineDash([8, 8]); ctx.lineDashOffset = -this.time * 20;
+      ctx.strokeStyle = 'rgba(90,230,255,0.75)'; ctx.lineWidth = 2;
+      const F = game.fort, grids = [[F.cx, F.cy, BUILD.hqPowerR, 0], ...game.gens.map(g => [g.gx, g.gy, BUILD.powerR, g.z])];
+      for (const [gx, gy, r, z] of grids) {
+        const c = toWorld(gx, gy);
+        ctx.beginPath(); ctx.ellipse(c.x, c.y - z, r * HW * Math.SQRT2, r * HH * Math.SQRT2, 0, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(90,230,255,0.05)'; ctx.fill(); ctx.stroke();
+      }
+      ctx.restore();
+    }
+    ctx.beginPath();
+    for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+      if (type ? game.buildBlock(type, x, y) : !game.canBuild(x, y)) continue;
+      this.cellPath(ctx, x, y, 0.1, game.heightAt(x, y) * ELEV_PX);
+    }
+    ctx.fillStyle = `rgba(110,255,160,${a})`; ctx.fill();
+    ctx.strokeStyle = `rgba(150,255,190,${a + 0.3})`; ctx.lineWidth = 1.5; ctx.stroke();
+  }
+  drawFortGate(ctx, p) {
+    const hit = this.game.time - (p.hitT || -9) < 0.1;
+    Models.draw(ctx, 'p3d_fort_gate', p.rot, p.wx + (hit ? (Math.random() - 0.5) * 3 : 0), p.wy);
+    // red warning lamps while the fortress is under attack
+    if (this.game.enemies.some(e => e.siege)) {
+      const m = Models.meta('p3d_fort_gate');
+      if (m) {
+        ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = 0.35 + 0.3 * Math.sin(this.time * 10);
+        ctx.drawImage(Assets.fx.red, p.wx - 40, p.wy - m.topPx - 30, 80, 80);
+        ctx.restore();
+      }
+    }
+  }
+  drawFortTower(ctx, t) {
+    const name = 'p3d_fort_tower', m = Models.meta(name);
+    if (!m) return;
+    if (m.baseImg) Models.drawBase(ctx, name, t.wx, t.wy);
+    const f = Models.frameFor(name, t.ang);
+    Models.draw(ctx, name, f, t.wx, t.wy);
+    if (t.flash > 0 && m.muzzles) {
+      const [mx, my] = m.muzzles[f], k = m.scale;
+      ctx.save(); ctx.globalCompositeOperation = 'lighter';
+      ctx.drawImage(Assets.fx.orange || Assets.fx.red, t.wx + mx * k - 18, t.wy + my * k - 18, 36, 36);
+      ctx.restore();
     }
   }
   // the ways the machines take (gate -> HQ): moving chevrons along the route

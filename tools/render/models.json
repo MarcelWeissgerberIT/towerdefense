@@ -610,5 +610,16 @@
    "frames": 12,
    "rootFacing": true
   }
+ },
+ "p3d_fort_tower": {
+  "url": "glb/p3d_fort_tower.glb",
+  "mode": "tower",
+  "frames": 32,
+  "size": 0.86,
+  "cut": 0.66,
+  "P": 136,
+  "capR": "auto",
+  "shadow": true,
+  "yaw0": 0
  }
 }

@@ -1,6 +1,6 @@
 // Core simulation: grid, routes, towers (turret aiming), enemies (attack towers), projectiles, waves.
 import {
-  HW, TOWERS, ENEMIES, BIOMES, BOSS, BAR, resistOf, ION, ROD, NAPALM, FACTIONS, SPECS, PERKS, WEATHER, BIOME_WEATHER, WEATHER_CFG, TOWER_DMG, specCost, EFFECT, FROST, SHATTER, THERMAL, ACID_ARMOR, NUKE, POWERUPS, DROP, HOLE, ELEV_PX, ELEV_RANGE, MAX_LEVEL, TOWER_SCALE, UPGRADE_TIME, WAVE_GAP, SELL_RATE, FULL_REFUND_TIME, towerStats, upgradeCost, totalInvested,
+  HW, TOWERS, ENEMIES, BIOMES, BOSS, BAR, BUILD, FORT, resistOf, ION, ROD, NAPALM, FACTIONS, SPECS, PERKS, WEATHER, BIOME_WEATHER, WEATHER_CFG, TOWER_DMG, specCost, EFFECT, FROST, SHATTER, THERMAL, ACID_ARMOR, NUKE, POWERUPS, DROP, HOLE, ELEV_PX, ELEV_RANGE, MAX_LEVEL, TOWER_SCALE, UPGRADE_TIME, WAVE_GAP, SELL_RATE, FULL_REFUND_TIME, towerStats, upgradeCost, totalInvested,
 } from './config.js';
 import { getLevel, makeWaves, makeBossRush, hpMultiplier } from './levels.js';
 import { toWorld, rand, mulberry32 } from './iso.js';
@@ -10,7 +10,7 @@ import { Models } from './assets.js';
 
 export const RANKS = [10, 30, 70, 140];
 const TALL_DECOR = new Set(['prop_tree', 'prop_j_tree', 'prop_i_pine', 'prop_v_spire']);
-export const CELL = { FREE: 0, ROAD: 1, BLOCK: 2, SPAWN: 3, BASE: 4, TOWER: 5 };
+export const CELL = { FREE: 0, ROAD: 1, BLOCK: 2, SPAWN: 3, BASE: 4, TOWER: 5, WALL: 6 };
 const TAU = Math.PI * 2;
 let uid = 1;
 
@@ -71,6 +71,18 @@ function straighten(pts) {
   return out;
 }
 const angDiff = (a, b) => { let d = (b - a) % TAU; if (d > Math.PI) d -= TAU; if (d < -Math.PI) d += TAU; return d; };
+// smooth value noise in [0, 1] with features about `s` cells wide (for clustered build plots)
+function valueNoise(N, rnd, s) {
+  const G = Math.ceil(N / s) + 2, g = [];
+  for (let i = 0; i < G * G; i++) g.push(rnd());
+  return (x, y) => {
+    const fx = x / s, fy = y / s, ix = Math.floor(fx), iy = Math.floor(fy), tx = fx - ix, ty = fy - iy;
+    const sx = tx * tx * (3 - 2 * tx), sy = ty * ty * (3 - 2 * ty);
+    const a = g[iy * G + ix], b = g[iy * G + ix + 1], c = g[(iy + 1) * G + ix], d = g[(iy + 1) * G + ix + 1];
+    return (a * (1 - sx) + b * sx) * (1 - sy) + (c * (1 - sx) + d * sx) * sy;
+  };
+}
+const sizeIdx = (N) => N <= 13 ? 0 : N <= 17 ? 1 : N <= 21 ? 2 : 3;
 
 export class Game {
   // mods (difficulty, challenges): speed, hp, count, armor, credits, reward, cd, lives, towers[], noRewards, noAbilities, bossRush, endless
@@ -158,6 +170,7 @@ export class Game {
     this.spawnTiles = L.paths.map(p => p.cells[0]);
     for (const p of L.paths) for (let dy = 0; dy < 2; dy++) for (let dx = 0; dx < 2; dx++) this.setCell(p.spawn[0] + dx, p.spawn[1] + dy, CELL.SPAWN);
     for (let dy = 0; dy < 2; dy++) for (let dx = 0; dx < 2; dx++) this.setCell(L.base[0] + dx, L.base[1] + dy, CELL.BASE);
+    this.setupFort();
     for (const [sprite, x, y] of L.props) {
       if (this.cell(x, y) !== CELL.FREE) continue;
       this.setCell(x, y, CELL.BLOCK);
@@ -201,13 +214,145 @@ export class Game {
       const rot = (((th - 1) % 4) + 4) % 4;
       return { x: w.x, y: w.y, rot, dir: th };
     });
+    this.setupPlots();
+  }
+
+  // ---- fortress: a wall ring around the 2x2 headquarters, guard towers on the corners, a gate where the road comes in ----
+  setupFort() {
+    const N = this.N, [bx, by] = this.level.base;
+    const F = this.fort = { walls: [], towers: [], gates: [], x0: bx - 1, y0: by - 1, x1: bx + 3, y1: by + 3, cx: bx + 1, cy: by + 1 };
+    const core = (x, y) => x >= bx && x <= bx + 1 && y >= by && y <= by + 1;
+    for (let y = by - 1; y <= by + 2; y++) for (let x = bx - 1; x <= bx + 2; x++) {
+      if (core(x, y) || x < 0 || y < 0 || x >= N || y >= N) continue;
+      const c = this.cell(x, y);
+      const corner = (x === bx - 1 || x === bx + 2) && (y === by - 1 || y === by + 2);
+      const horiz = y === by - 1 || y === by + 2;          // this side of the wall runs along x
+      if (c === CELL.ROAD) {
+        // the road into the base gets a gate across it; a road passing along the wall leaves a gap
+        if (!corner && DIR4.some(([dx, dy]) => core(x + dx, y + dy))) F.gates.push(this.fortPiece(x, y, horiz));
+        continue;
+      }
+      if (c !== CELL.FREE) continue;
+      this.setCell(x, y, CELL.WALL);
+      if (corner) {
+        const out = Math.atan2(y + 0.5 - F.cy, x + 0.5 - F.cx);
+        F.towers.push({ ...this.fortPiece(x, y, horiz), ang: out, rest: out, cool: Math.random() * 0.2, target: null, flash: 0, id: uid++ });
+      } else F.walls.push(this.fortPiece(x, y, horiz));
+    }
+  }
+  fortPiece(x, y, horiz) {
+    const w = toWorld(x + 0.5, y + 0.5), z = this.heightAt(x, y) * ELEV_PX;
+    return { cx: x, cy: y, gx: x + 0.5, gy: y + 0.5, wx: w.x, wy: w.y - z, z, rot: horiz ? 0 : 1 };
+  }
+
+  // ---- build plots: concrete foundations along the roads (BUILD.plots of the free ground), a few heavy platforms
+  // for the heavy weapons, and power generators whose grid the energy weapons need. Fixed per map (seeded). ----
+  setupPlots() {
+    const N = this.N, L = this.level, rnd = mulberry32((L.seed || L.number) * 131 + 17), si = sizeIdx(N);
+    const plot = this.plot = new Uint8Array(N * N);
+    const free = [], road = [];
+    for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+      const c = this.cell(x, y);
+      if (c === CELL.FREE) free.push([x, y]); else if (c === CELL.ROAD) road.push([x, y]);
+    }
+    const roadNear = (x, y, r2) => { let v = 0; for (const [rx, ry] of road) { const d2 = (rx - x) ** 2 + (ry - y) ** 2; if (d2 <= r2) v += d2 <= 2.1 ? 1 : 0.5; } return v; };
+    const noise = valueNoise(N, rnd, 2.4);
+    const val = new Map();
+    let vmax = 1;
+    for (const [x, y] of free) { const v = roadNear(x, y, 6.6); val.set(this.idx(x, y), v); vmax = Math.max(vmax, v); }
+    // only ground within reach of a road counts; of that about half becomes foundations, grouped into patches by
+    // the noise (useful spots with lots of road in reach are a little more likely)
+    const useful = free.filter(([x, y]) => val.get(this.idx(x, y)) > 0);
+    const scored = useful.map(([x, y]) => {
+      const v = val.get(this.idx(x, y));
+      return { x, y, s: 0.35 * v / vmax + 0.65 * noise(x, y) + (this.heightAt(x, y) ? 0.05 : 0) };
+    }).sort((a, b) => b.s - a.s);
+    const want = Math.round(useful.length * BUILD.plots);
+    for (let i = 0; i < want && i < scored.length; i++) plot[this.idx(scored[i].x, scored[i].y)] = 1;
+    // no stretch of the enemy routes without a foundation in reach
+    for (const r of this.routes) for (const s of r.seg) for (let k = 0; k <= s.len; k += 0.5) {
+      const px = s.ax + s.dx * k, py = s.ay + s.dy * k;
+      let ok = false, best = null, bv = -1;
+      for (const [x, y] of free) {
+        const d2 = (x + 0.5 - px) ** 2 + (y + 0.5 - py) ** 2;
+        if (d2 > 2.3 * 2.3) continue;
+        if (plot[this.idx(x, y)]) { ok = true; break; }
+        const v = val.get(this.idx(x, y)) + noise(x, y);
+        if (v > bv) { bv = v; best = [x, y]; }
+      }
+      if (!ok && best) plot[this.idx(best[0], best[1])] = 1;
+    }
+    // foundations are swept clean of loose decoration
+    this.decor = this.decor.filter(d => !plot[this.idx(d.cx, d.cy)]);
+    // heavy platforms: the foundations that see the most road at artillery range, spread over the map
+    const pads = [], plots = free.filter(([x, y]) => plot[this.idx(x, y)]);
+    const F = this.fort;
+    for (let n = 0; n < BUILD.heavy[si]; n++) {
+      let best = null, bv = 0;
+      for (const [x, y] of plots) {
+        if (plot[this.idx(x, y)] === 2 || this.heightAt(x, y)) continue;
+        if (pads.some(([px, py]) => (px - x) ** 2 + (py - y) ** 2 < 4.5 * 4.5)) continue;
+        if ((x + 0.5 - F.cx) ** 2 + (y + 0.5 - F.cy) ** 2 < 3 * 3) continue;
+        const v = roadNear(x, y, 4.5 * 4.5) * (0.85 + 0.3 * rnd());
+        if (v > bv) { bv = v; best = [x, y]; }
+      }
+      if (!best) break;
+      pads.push(best); plot[this.idx(best[0], best[1])] = 2;
+    }
+    // power: the fortress has its own generator, the field generators go where they feed the most foundations
+    const power = this.power = new Uint8Array(N * N);
+    const feed = (gx, gy, R) => { for (const [x, y] of plots) if ((x + 0.5 - gx) ** 2 + (y + 0.5 - gy) ** 2 <= R * R) power[this.idx(x, y)] = 1; };
+    feed(F.cx, F.cy, BUILD.hqPowerR);
+    this.gens = [];
+    const R = BUILD.powerR;
+    for (let n = 0; n < BUILD.gens[si]; n++) {
+      let best = null, bv = 0;
+      for (const [x, y] of free) {
+        if (this.cell(x, y) !== CELL.FREE || plot[this.idx(x, y)]) continue;
+        if (this.gens.some(g => (g.cx - x) ** 2 + (g.cy - y) ** 2 < (R * 1.3) ** 2)) continue;
+        let v = 0;
+        for (const [px, py] of plots) {
+          const i = this.idx(px, py);
+          if (power[i] || (px - x) ** 2 + (py - y) ** 2 > R * R) continue;
+          v += plot[i] === 2 ? 4 : this.heightAt(px, py) ? 2 : 1;
+        }
+        v *= 0.9 + 0.2 * rnd();
+        if (v > bv) { bv = v; best = [x, y]; }
+      }
+      if (!best || bv < 2) break;
+      const [x, y] = best, w = toWorld(x + 0.5, y + 0.5), z = this.heightAt(x, y) * ELEV_PX;
+      this.setCell(x, y, CELL.BLOCK);
+      const g = { cx: x, cy: y, gx: x + 0.5, gy: y + 0.5, wx: w.x, wy: w.y - z, z };
+      this.gens.push(g);
+      this.props.push({ model: 'p3d_generator', cx: x, cy: y, wx: g.wx, wy: g.wy, z, rot: (x + y) & 3, s: 1, gen: true });
+      this.decor = this.decor.filter(d => d.cx !== x || d.cy !== y);
+      feed(x + 0.5, y + 0.5, R);
+    }
   }
 
   emit(type, data) { this.events.push({ type, ...data }); }
 
   // ---------------- building ----------------
   unlocked(type) { return (this.mods.unlockAll || TOWERS[type].unlock <= this.level.number) && (!this.mods.towers || this.mods.towers.includes(type)); }
-  canBuild(cx, cy) { return this.cell(cx, cy) === CELL.FREE; }
+  // only on a foundation (build plot)
+  canBuild(cx, cy) { return this.cell(cx, cy) === CELL.FREE && !!this.plot && this.plot[this.idx(cx, cy)] > 0; }
+  // why `type` cannot be built on (cx, cy): '' = it can, 'plot' = no foundation, 'heavy' = needs a heavy platform or
+  // high ground, 'power' = outside the power grid
+  buildBlock(type, cx, cy) {
+    if (!this.canBuild(cx, cy)) return 'plot';
+    const d = TOWERS[type];
+    if (d.heavy && !this.heavyOk(cx, cy)) return 'heavy';
+    if (d.energy && !this.powered(cx, cy)) return 'power';
+    return '';
+  }
+  heavyOk(cx, cy) { return this.plot[this.idx(cx, cy)] === 2 || this.heightAt(cx, cy) > 0; }
+  powered(cx, cy) { return !!(this.power && this.power[this.idx(cx, cy)]); }
+  blockText(type, why) {
+    const n = TOWERS[type] ? TOWERS[type].name : 'Turm';
+    return why === 'heavy' ? `${n} braucht eine Schwerlast-Plattform oder eine Anhöhe`
+      : why === 'power' ? `${n} braucht Strom – nur im Netz eines Generators`
+      : 'Nur auf Bauflächen (Betonfundamente) bauen';
+  }
   towerAt(cx, cy) { return this.towers.find(t => t.cx === cx && t.cy === cy); }
 
   // terrain height of a cell (0 = ground, 1-2 = plateau)
@@ -313,7 +458,8 @@ export class Game {
 
   build(type, cx, cy) {
     const def = TOWERS[type];
-    if (!this.canBuild(cx, cy)) { this.emit('toast', { text: 'Hier kann nicht gebaut werden', bad: true }); sfx('error'); return null; }
+    const why = this.buildBlock(type, cx, cy);
+    if (why) { this.emit('toast', { text: this.blockText(type, why), bad: true }); sfx('error'); return null; }
     if (this.credits < def.cost) { this.emit('toast', { text: 'Nicht genug Credits', bad: true }); sfx('error'); return null; }
     this.credits -= def.cost;
     const w = toWorld(cx + 0.5, cy + 0.5);
@@ -1178,7 +1324,7 @@ export class Game {
     // sand burrower: digs in every few seconds - faster and out of reach underground
     if (def.burrow) {
       e.burrowT = (e.burrowT ?? def.burrow.every * 0.6) - dt;
-      if (e.burrowT <= 0) { if (e.burrowed) this.surface(e); else this.burrowDown(e); }
+      if (e.burrowT <= 0 && !e.siege) { if (e.burrowed) this.surface(e); else this.burrowDown(e); }
       if (e.burrowed) { sp *= def.burrow.speed; if (Math.random() < dt * 9) this.fx.footDust(e.wx + rand(-8, 8), e.wy, 0.7); }
     }
     // climber: over a barricade it slows down and climbs (lifted in the drawing)
@@ -1219,6 +1365,9 @@ export class Game {
       }
       if (def.heat && Math.random() < dt * 5) this.fx.burn(e.wx + rand(-16, 16), e.wy - rand(0, 10));
     }
+    // at the fortress: stop in front of the wall and attack it until destroyed
+    if (!e.siege && e.d + sp * dt >= this.siegeStop(e)) { if (e.burrowed) this.surface(e); this.startSiege(e); }
+    if (e.siege) { sp = 0; this.updateSiege(e, dt); if (!e.alive) return; }
     e.d += sp * dt;
     // footfalls: two per animation cycle (or per configured stride for unanimated gaits)
     const stepLen = Models.meta(def.model)?.af ? Models.cycleOf(def) / 2 : (def.stride || 0.6);
@@ -1329,6 +1478,147 @@ export class Game {
           this.enemyFire(e, best, a);
         } else e.atkCool = 0.3;
       }
+    }
+  }
+
+  // ---------------- the fortress under attack ----------------
+  // route distance at which a unit stops: in front of the wall (ground units queue up, aircraft hover over it)
+  siegeD(route) {
+    if (route.siegeAt != null) return route.siegeAt;
+    const F = this.fort;
+    let d = route.total;
+    for (let k = 0; k <= route.total; k += 0.05) {
+      const p = routePos(route, k);
+      if (p.x >= F.x0 && p.x < F.x1 && p.y >= F.y0 && p.y < F.y1) { d = k; break; }
+    }
+    return (route.siegeAt = d);
+  }
+  siegeStop(e) {
+    if (e.siegeOff == null) e.siegeOff = e.air ? -0.4 : 0.3 + Math.random() * 0.75 + (e.def.boss ? 0.45 : 0);
+    return Math.max(0, Math.min(e.route.total - 0.05, this.siegeD(e.route) - e.siegeOff));
+  }
+  startSiege(e) {
+    e.siege = true; e.siegeHits = 0;
+    e.siegeT = FORT.windup * rand(0.8, 1.25);
+    e.siegeLat = rand(-0.4, 0.4);
+    if (!this._siegeMsg || this.time - this._siegeMsg > 14) { this._siegeMsg = this.time; this.emit('toast', { text: 'Die Festung wird angegriffen!', bad: true }); }
+  }
+  updateSiege(e, dt) {
+    e.off += (e.siegeLat - e.off) * Math.min(1, dt * 1.5);      // spread out in front of the gate
+    if (e.frozenT > 0 || e.stunT > 0 || e.stone || e.down > 0 || e.hacking || (this.buffs.timestop > 0 && !e.def.boss)) return;
+    e.siegeT -= dt * (e.atkMul || 1);
+    if (e.siegeT > 0) return;
+    e.siegeT = FORT.every * rand(0.9, 1.1);
+    const leak = e.def.leak || 1;
+    this.siegeStrike(e, e.siegeHits++ ? Math.max(1, Math.ceil(leak * FORT.later)) : leak);
+  }
+  // the fortress piece next to a unit (gate first), or the headquarters itself
+  fortTarget(e, core) {
+    const F = this.fort, b = this.baseW;
+    if (!core) {
+      let best = null, bd = 9;
+      for (const p of [...F.gates, ...F.walls, ...F.towers]) { const d = (p.gx - e.gx) ** 2 + (p.gy - e.gy) ** 2 - (F.gates.includes(p) ? 0.6 : 0); if (d < bd) { bd = d; best = p; } }
+      if (best) return { x: best.wx + rand(-18, 18), y: best.wy - 22 + rand(-12, 6) };
+    }
+    return { x: b.x + rand(-34, 34), y: b.y - 50 + rand(-20, 10) };
+  }
+  siegeStrike(e, dmg) {
+    const def = e.def, a = def.atk, from = { x: e.wx, y: this.bodyY(e) };
+    if (def.dive) {             // kamikaze: straight into the headquarters
+      const to = this.fortTarget(e, true);
+      e.alive = false;
+      this.fx.bigExplosion(to.x, to.y, 1.1);
+      this.fortHit(dmg, to.x, to.y);
+      return;
+    }
+    if (def.bomb) {             // bomber: a bomb carpet on the headquarters
+      for (let i = 0; i < 3; i++) { const to = this.fortTarget(e, true); this.shots.push({ k: 'bomb', x: e.wx, y: e.wy - def.lift, tx: to.x, ty: to.y + 30, t0: -i * 0.12, dur: 0.55, sx: e.wx + rand(-14, 14), sy: e.wy - def.lift, tgx: this.fort.cx, tgy: this.fort.cy, fort: i ? 0 : dmg, enemy: true }); }
+      sfx('dive');
+      return;
+    }
+    const to = this.fortTarget(e, e.air || (a && a.kind === 'shell'));
+    if (!a) {                   // no gun: claws, rams and fists against the gate
+      const heavy = def.cls === 'heavy' || def.boss;
+      this.fx.sparks(to.x, to.y, heavy ? 12 : 6, '#ffd29a', heavy ? 260 : 160);
+      this.fx.dust(to.x, to.y + 18, heavy ? 1.1 : 0.6);
+      if (heavy) this.fx.shake = Math.max(this.fx.shake, 5);
+      this.fortHit(dmg, to.x, to.y, true);
+      return;
+    }
+    switch (a.kind) {
+      case 'laser':
+        this.fx.tracer(from.x, from.y, to.x, to.y, 'rgba(255,70,50,');
+        this.fx.muzzle(from.x, from.y, 'red', 26);
+        this.fx.sparks(to.x, to.y, 4, '#ff9070', 120);
+        sfx('enemyShot');
+        this.fortHit(dmg, to.x, to.y, true);
+        break;
+      case 'cannon': case 'plasma':
+        this.shots.push({ k: a.kind === 'plasma' ? 'eplasma' : 'ebullet', x: from.x, y: from.y, tx: to.x, ty: to.y, sp: a.kind === 'plasma' ? 420 : 620, fort: dmg, dmg: 0, life: 2 });
+        this.fx.muzzle(from.x, from.y, a.kind === 'plasma' ? 'red' : 'orange', 38);
+        sfx('enemyCannon');
+        break;
+      case 'missile':
+        this.shots.push({ k: 'emissile', x: from.x, y: from.y, vx: rand(-60, 60), vy: -120, sp: 220, tx: to.x, ty: to.y, fort: dmg, dmg: 0, trail: 0, life: 3 });
+        sfx('missile');
+        break;
+      case 'shell':
+        this.shots.push({ k: 'shell', sx: from.x, sy: from.y, x: from.x, y: from.y, tx: to.x, ty: to.y, tgx: this.fort.cx, tgy: this.fort.cy, t0: 0, dur: 1.4, arc: 180, fort: dmg, dmg: 0, splash: 0, enemy: true });
+        this.fx.muzzle(from.x, from.y, 'orange', 60);
+        sfx('mortar');
+        break;
+    }
+  }
+  // muzzle of a guard tower's machine guns (world px), turning with the gun
+  fortMuzzle(t) {
+    const m = Models.meta('p3d_fort_tower');
+    if (!m || !m.muzzles) return { x: t.wx, y: t.wy - 70 };
+    const [mx, my] = m.muzzles[Models.frameFor('p3d_fort_tower', t.ang)];
+    return { x: t.wx + mx * m.scale, y: t.wy + my * m.scale };
+  }
+  // a hit on the fortress costs base lives (impact flash on the wall / the headquarters)
+  fortHit(dmg, x, y, small = false) {
+    if (!dmg || this.state === 'won' || this.state === 'lost') return;
+    this.lives = Math.max(0, this.lives - dmg);
+    this.lost += dmg;
+    if (!small) this.fx.explosion(x, y, 0.4 + 0.1 * Math.min(dmg, 6), 'fire');
+    else this.fx.add({ k: 'glow', x, y, s: 60 + dmg * 10, life: 0.25, spr: 'orange' });
+    this.fx.shake = Math.max(this.fx.shake, 2.5 + Math.min(dmg, 8) * 0.9);
+    this.emit('baseHit', { n: dmg });
+    sfx('baseHit');
+  }
+  // guard towers on the wall corners: twin machine guns against everything close to the fortress
+  updateFort(dt) {
+    const F = this.fort;
+    if (!F || !F.towers.length) return;
+    const dps = FORT.dps * (this.mods.fort || 1) * hpMultiplier(this.level.power, Math.max(1, this.wave)) / F.towers.length;
+    // reach is measured from the middle of the fortress, so every gate is covered even with a single guard tower
+    const R2 = FORT.range * FORT.range, inReach = (e) => (e.gx - F.cx) ** 2 + (e.gy - F.cy) ** 2 <= R2;
+    for (const t of F.towers) {
+      t.flash = Math.max(0, t.flash - dt);
+      const tg = t.target;
+      if (!tg || !tg.alive || untouchable(tg) || (tg.cloaked && !(tg.revealT > 0)) || !inReach(tg)) {
+        t.target = null;
+        let bd = Infinity;
+        for (const e of this.enemies) {
+          if (!e.alive || untouchable(e) || (e.cloaked && !(e.revealT > 0)) || !inReach(e)) continue;
+          const d = (e.gx - t.gx) ** 2 + (e.gy - t.gy) ** 2 - (e.siege ? 4 : 0);
+          if (d < bd) { bd = d; t.target = e; }
+        }
+      }
+      const want = t.target ? Math.atan2(t.target.gy - t.gy, t.target.gx - t.gx) : t.rest;
+      const da = angDiff(t.ang, want);
+      t.ang += Math.abs(da) < 6 * dt ? da : Math.sign(da) * 6 * dt;
+      if (!t.target || Math.abs(da) > 0.35) continue;
+      t.cool -= dt;
+      if (t.cool > 0) continue;
+      t.cool = 0.14;
+      const e = t.target;
+      this.damage(e, dps * 0.14, { ignoreArmor: true });
+      t.flash = 0.06;
+      const m = this.fortMuzzle(t), mx = m.x, my = m.y;
+      this.fx.tracer(mx, my, e.wx + rand(-8, 8), this.bodyY(e) + rand(-8, 8), 'rgba(255,210,120,');
+      if (Math.random() < 0.3) sfx('gatling');
     }
   }
 
@@ -1621,6 +1911,7 @@ export class Game {
       this.enemies = this.enemies.filter(e => e.alive);
     }
     for (const t of [...this.towers]) this.updateTower(t, dt);
+    this.updateFort(dt);
     this.updateShots(dt);
     this.fx.update(dt);
 
@@ -1657,6 +1948,7 @@ export class Game {
             const onGround = s.k === 'missile' && s.target && !s.target.air;
             this.fx.explosion(s.tx, s.ty, s.k === 'missile' ? 0.65 + 0.12 * (s.big || 1) : 0.6, onGround && Math.random() < 0.5 ? 'ground' : 'fire');
             if (s.k === 'missile') this.explode(s.tgx, s.tgy, s.dmg, s.splash, { airBonus: s.airBonus, src: s.src });
+            else if (s.fort != null) this.fortHit(s.fort, s.tx, s.ty);
             else this.damageTower(s.tower, s.dmg);
             sfx('explosion');
           }
@@ -1675,7 +1967,7 @@ export class Game {
               sfx('hit');
             } else {
               this.fx.explosion(s.tx, s.ty, 0.45);
-              this.damageTower(s.tower, s.dmg);
+              if (s.fort != null) this.fortHit(s.fort, s.tx, s.ty); else this.damageTower(s.tower, s.dmg);
             }
           } else { s.x += dx / d * step; s.y += dy / d * step; }
           break;
@@ -1699,7 +1991,7 @@ export class Game {
             s.dead = true;
             this.fx.explosion(s.tx, s.ty - 10, 0.7, 'ground');
             this.decals.push({ x: s.tx, y: s.ty, s: 60 });
-            this.damageTowersArea(s.tgx, s.tgy, s.dmg, s.splash);
+            if (s.fort != null) this.fortHit(s.fort, s.tx, s.ty); else this.damageTowersArea(s.tgx, s.tgy, s.dmg, s.splash);
             sfx('explosion');
           }
           break;
@@ -1731,7 +2023,8 @@ export class Game {
             this.fx.explosion(s.tx, s.ty - 14, s.enemy ? 0.7 : 0.8 * (s.big || 1), 'fire');
             this.fx.add({ k: 'ring', x: s.tx, y: s.ty, r0: 10, r1: 110 * (s.big || 1), life: 0.4, c: '230,200,150' });
             this.decals.push({ x: s.tx, y: s.ty, s: 90 });
-            if (s.enemy) this.damageTowersArea(s.tgx, s.tgy, s.dmg, s.splash);
+            if (s.fort != null) this.fortHit(s.fort, s.tx, s.ty);
+            else if (s.enemy) this.damageTowersArea(s.tgx, s.tgy, s.dmg, s.splash);
             else this.explode(s.tgx, s.tgy, s.dmg, s.splash, { air: false, src: s.src });
             sfx('explosion', true);
           }

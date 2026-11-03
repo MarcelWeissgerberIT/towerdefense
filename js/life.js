@@ -1,6 +1,6 @@
 // Life in the landscape (render only, no influence on the game): flocks of birds / bats per world, circling
-// vultures, drifting cloud shadows and ground fog, and our own troops around the headquarters - soldiers on
-// patrol, a jeep and two guard drones.
+// vultures, drifting cloud shadows and ground fog, and our own troops: the garrison behind the parapets of the
+// fortress (to scale, they fire at what attacks the walls) and two guard drones.
 import { HW, HH, ELEV_PX } from './config.js';
 import { toWorld, mulberry32 } from './iso.js';
 import { Models, Assets } from './assets.js';
@@ -43,16 +43,15 @@ export class Life {
     this.fog = [];
     if (biome === 'necro' || biome === 'ice') for (let i = 0; i < 9; i++) this.fog.push({ x: this.ext.x0 + this.rng() * (this.ext.x1 - this.ext.x0), y: this.rng() * this.ext.y1, r: 160 + this.rng() * 160, ph: this.rng() * 6 });
     this.wind = { x: 16, y: 5 };
-    // patrol around the headquarters (a loop just outside the 2x2 base)
-    const [bx, by] = game.level.base;
-    const cl = (v) => Math.max(0.35, Math.min(N - 0.35, v));
-    const loop = (o) => [[cl(bx - o), cl(by - o)], [cl(bx + 2 + o), cl(by - o)], [cl(bx + 2 + o), cl(by + 2 + o)], [cl(bx - o), cl(by + 2 + o)]];
-    const path = (pts) => { const seg = []; let L = 0; for (let i = 0; i < pts.length; i++) { const a = pts[i], b = pts[(i + 1) % pts.length]; const l = Math.hypot(b[0] - a[0], b[1] - a[1]); seg.push({ a, b, l, L }); L += l; } return { seg, L }; };
-    this.walkPath = path(loop(0.55));
-    this.drivePath = path(loop(1.25));
+    // garrison: a soldier behind the parapet of up to three wall sections, looking out
+    const [bx, by] = game.level.base, F = game.fort;
     this.troops = [];
-    for (let i = 0; i < 3; i++) this.troops.push({ kind: 'soldier', d: (i / 3) * this.walkPath.L + this.rng() * 0.6, v: 0.32 + this.rng() * 0.06, path: this.walkPath, walk: this.rng() });
-    this.troops.push({ kind: 'jeep', d: this.rng() * this.drivePath.L, v: 0.65, path: this.drivePath, walk: 0, puff: 0 });
+    const posts = F ? [...F.walls].sort((a, b) => ((a.cx * 7 + a.cy * 13) % 5) - ((b.cx * 7 + b.cy * 13) % 5)).slice(0, 3) : [];
+    const wallTop = Models.meta('p3d_fort_wall')?.topPx ?? 28;
+    for (const p of posts) {
+      const out = Math.atan2(p.gy - F.cy, p.gx - F.cx);
+      this.troops.push({ kind: 'soldier', post: p, ang: out, rest: out, gx: p.gx, gy: p.gy, wx: p.wx, wy: p.wy - wallTop * 0.62, sortY: p.wy + 1, walk: 0, fireT: this.rng() });
+    }
     const bw = toWorld(bx + 1, by + 1);
     this.drones = [0, 1].map(i => ({ cx: bw.x, cy: bw.y, a: i * Math.PI, v: 0.5 + i * 0.12, r: 120 + i * 40, alt: 80 + i * 18 }));
   }
@@ -84,16 +83,18 @@ export class Life {
       if (c.y - c.r > E.y1) c.y = -c.r;
     }
     for (const f of this.fog) { f.x += this.wind.x * 0.5 * dt; f.ph += dt * 0.3; if (f.x - f.r > E.x1) f.x = E.x0 - f.r; }
+    // the garrison turns to the nearest attacker and fires bursts (only for show - the guard towers do the damage)
     for (const t of this.troops) {
-      t.d = (t.d + t.v * dt) % t.path.L;
-      t.walk += t.v * dt;
-      const p = this.at(t.path, t.d);
-      t.gx = p.x; t.gy = p.y; t.ang = p.ang;
-      const w = toWorld(t.gx, t.gy), z = this.game.heightAt(Math.floor(t.gx), Math.floor(t.gy)) * ELEV_PX;
-      t.wx = w.x; t.wy = w.y - z;
-      if (t.kind === 'jeep' && (t.puff -= dt) <= 0) {
-        t.puff = 0.25;
-        this.game.fx.add({ k: 'smoke', x: t.wx - Math.cos(t.ang) * 22, y: t.wy - 8, vx: 0, vy: -14, s: 6, grow: 18, life: 0.9, a: 0.3 });
+      let best = null, bd = 16;
+      for (const e of this.game.enemies) { if (!e.alive || e.burrowed) continue; const d = (e.gx - t.gx) ** 2 + (e.gy - t.gy) ** 2; if (d < bd) { bd = d; best = e; } }
+      const want = best ? Math.atan2(best.gy - t.gy, best.gx - t.gx) : t.rest;
+      let da = (want - t.ang) % (Math.PI * 2); if (da > Math.PI) da -= Math.PI * 2; if (da < -Math.PI) da += Math.PI * 2;
+      t.ang += Math.max(-4 * dt, Math.min(4 * dt, da));
+      if (best && Math.abs(da) < 0.4 && (t.fireT -= dt) <= 0) {
+        t.fireT = 0.12 + (Math.random() < 0.2 ? 0.9 : 0);
+        const mx = t.wx + Math.cos(t.ang + Math.PI / 4) * 7, my = t.wy - 22 + Math.sin(t.ang + Math.PI / 4) * 4;
+        this.game.fx.muzzle(mx, my, 'orange', 10);
+        if (Math.random() < 0.5) this.game.fx.tracer(mx, my, best.wx + (Math.random() - 0.5) * 16, best.wy - 20 + (Math.random() - 0.5) * 16, 'rgba(255,220,140,');
       }
     }
     for (const d of this.drones) d.a += d.v * dt;
@@ -141,17 +142,14 @@ export class Life {
   // ---- depth-sorted ground units: soldiers and the jeep ----
   addToList(list) {
     if (!this.game) return;
-    for (const t of this.troops) if (t.wx != null && Models.meta('ally_' + t.kind)) list.push({ y: t.wy, o: t, k: 8 });
+    for (const t of this.troops) if (t.wx != null && Models.meta('ally_' + t.kind)) list.push({ y: t.sortY ?? t.wy, o: t, k: 8 });
   }
   drawTroop(ctx, t) {
     const name = 'ally_' + t.kind, m = Models.meta(name);
     if (!m) return;
     let f = Models.frameFor(name, t.ang);
     if (m.af) f = f * m.af + (Math.floor((t.walk / (m.rootDist ? m.rootDist * 0.8 : 0.5)) * m.af) % m.af);
-    ctx.globalAlpha = 0.5;
-    ctx.drawImage(Assets.fx.shadow, t.wx - 16, t.wy - 5, 32, 10);
-    ctx.globalAlpha = 1;
-    Models.draw(ctx, name, f, t.wx, t.wy, t.kind === 'jeep' ? 0.85 : 0.8);
+    Models.draw(ctx, name, f, t.wx, t.wy, 0.34);
   }
 
   // ---- air layer: drones, birds ----

@@ -342,5 +342,21 @@
  "ally_jeep": {
   "image_url": "https://cdn.openart.ai/openart-ai/production/2026-11/create-image/wRD6PTxSzjxZwjWN69MC/gpt-image-2-1_1793561054383_721e4c50.png",
   "polycount": 45000
+ },
+ "p3d_fort_wall": {
+  "image_url": "https://cdn.openart.ai/openart-ai/production/2026-11/create-image/wRD6PTxSzjxZwjWN69MC/gpt-image-2-1_1793682412945_61a16bc4.png",
+  "polycount": 30000
+ },
+ "p3d_fort_tower": {
+  "image_url": "https://cdn.openart.ai/openart-ai/production/2026-11/create-image/wRD6PTxSzjxZwjWN69MC/gpt-image-2-1_1793682422704_31456eb5.png",
+  "polycount": 40000
+ },
+ "p3d_fort_gate": {
+  "image_url": "https://cdn.openart.ai/openart-ai/production/2026-11/create-image/wRD6PTxSzjxZwjWN69MC/gpt-image-2-1_1793682423578_11a75427.png",
+  "polycount": 40000
+ },
+ "p3d_generator": {
+  "image_url": "https://cdn.openart.ai/openart-ai/production/2026-11/create-image/wRD6PTxSzjxZwjWN69MC/gpt-image-2-1_1793682419707_b3049a34.png",
+  "polycount": 40000
  }
 }

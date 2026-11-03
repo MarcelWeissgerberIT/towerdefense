@@ -72,6 +72,24 @@ export const TOWERS = {
     cost: 220, range: 2.8, dps: 14, frost: 55, ground: true, air: true, turn: 5, hp: 640, color: '#9fe6ff',
   },
 };
+// where towers may stand: heavy weapons only on heavy platforms or high ground, energy weapons only in the power grid
+for (const k of ['rail', 'mortar', 'laser']) TOWERS[k].heavy = true;
+for (const k of ['plasma', 'laser', 'emp', 'rail']) TOWERS[k].energy = true;
+export const BUILD = {
+  plots: 0.5,                 // share of the ground within reach of a road that is a build plot (concrete foundation)
+  heavy: [2, 3, 3, 4],        // heavy platforms by map size (<=13, <=17, <=21, bigger)
+  gens: [1, 2, 2, 3],         // power generators by map size
+  powerR: 3.4,                // a generator's grid radius (tiles)
+  hqPowerR: 3.9,              // the fortress has its own generator
+};
+// fortress around the headquarters: units that reach it stop at the gate and attack it until they are destroyed
+export const FORT = {
+  windup: 1.1,                // s until the first strike
+  every: 5,                   // s between strikes
+  later: 0.34,                // later strikes deal leak x later (rounded up, at least 1)
+  dps: 40,                    // firepower of all guard towers together, x hp scale of the wave (x mods.fort)
+  range: 4.3,                 // guard tower reach (tiles, from the middle of the fortress)
+};
 // effectiveness of each tower against the enemy classes (damage multiplier; 0 = cannot target)
 export const CLASS_NAME = { light: 'Leicht', armored: 'Gepanzert', heavy: 'Schwer gepanzert', air: 'Luftziel' };
 export const EFFECT = {
@@ -404,12 +422,12 @@ export const POWERUPS = {
 };
 // difficulty for the campaign: modifiers applied on top of every mission
 export const DIFFICULTY = [
-  { id: 'easy', name: 'LEICHT', desc: 'Die bisherige Balance – zum Kennenlernen.', mods: {} },
+  { id: 'easy', name: 'LEICHT', desc: 'Zum Kennenlernen – die Wachtürme der Festung schießen stärker.', mods: { fort: 1.4 } },
   { id: 'medium', name: 'MITTEL', desc: 'Zähere und mehr Gegner, weniger Credits pro Abschuss.', mods: { hp: 1.15, count: 1.08, reward: 0.9 } },
-  { id: 'hard', name: 'SCHWER', desc: 'Starke, schnelle Wellen, knappes Budget, nur 10 Leben, Fähigkeiten laden langsamer.', mods: { hp: 1.42, count: 1.18, speed: 1.06, armor: 1.1, reward: 0.8, lives: 10, cd: 1.25 } },
+  { id: 'hard', name: 'SCHWER', desc: 'Starke, schnelle Wellen, knappes Budget, nur 10 Leben, schwächere Festung, Fähigkeiten laden langsamer.', mods: { hp: 1.42, count: 1.18, speed: 1.06, armor: 1.1, reward: 0.8, lives: 10, cd: 1.25, fort: 0.8 } },
 ];
 // combine two modifier sets: factors multiply, lives take the stricter value, flags/lists of b win
-const MUL = ['hp', 'count', 'speed', 'credits', 'armor', 'reward', 'cd'];
+const MUL = ['hp', 'count', 'speed', 'credits', 'armor', 'reward', 'cd', 'fort'];
 export function mergeMods(a = {}, b = {}) {
   const o = { ...a, ...b };
   for (const k of MUL) if (a[k] != null && b[k] != null) o[k] = a[k] * b[k];

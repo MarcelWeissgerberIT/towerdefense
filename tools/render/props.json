@@ -458,5 +458,35 @@
   "P": 128,
   "pad": 0.04,
   "shadow": true
+ },
+ "p3d_fort_wall": {
+  "url": "glb/p3d_fort_wall.glb",
+  "mode": "prop",
+  "frames": 4,
+  "size": 1.0,
+  "yaw0": 0,
+  "P": 128,
+  "pad": 0.04,
+  "shadow": true
+ },
+ "p3d_fort_gate": {
+  "url": "glb/p3d_fort_gate.glb",
+  "mode": "prop",
+  "frames": 4,
+  "size": 1.0,
+  "yaw0": 0,
+  "P": 128,
+  "pad": 0.04,
+  "shadow": true
+ },
+ "p3d_generator": {
+  "url": "glb/p3d_generator.glb",
+  "mode": "prop",
+  "frames": 4,
+  "size": 0.86,
+  "yaw0": 0,
+  "P": 128,
+  "pad": 0.04,
+  "shadow": true
  }
 }

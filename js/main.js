@@ -5,7 +5,7 @@ import { CHAPTERS } from './level_specs.js';
 import { Assets, Models, drawIcon } from './assets.js';
 import { Renderer } from './render.js';
 import { Input } from './input.js';
-import { Game } from './game.js';
+import { Game, CELL } from './game.js';
 import { CHALLENGES, dailyChallenge, medalFor, MEDAL_NAME, todayKey } from './challenges.js';
 import { toWorld, toGrid } from './iso.js';
 import { sfx, unlockAudio, setSound, soundOn, music, musicPreload, musicLevel, setMusic, musicOn } from './audio.js';
@@ -203,16 +203,18 @@ function openBuildMenu(cx, cy) {
     return;
   }
   for (const k of TOWER_ORDER.filter(k => game.unlocked(k))) {
-    const def = TOWERS[k];
+    const def = TOWERS[k], why = game.buildBlock(k, cx, cy);
     const b = document.createElement('button');
-    b.className = 'bd-card';
-    b.innerHTML = `<img src="${icons[k] || ''}" alt=""><span class="bd-name">${def.name}</span><span class="bd-cost">${IC('credits')}${def.cost}</span>`;
+    b.className = 'bd-card' + (why ? ' blocked' : '');
+    // heavy weapons need a heavy platform / high ground, energy weapons the power grid
+    const badge = why === 'heavy' ? '<span class="bd-need">▣ SCHWERLAST</span>' : why === 'power' ? '<span class="bd-need">⚡ STROM</span>' : '';
+    b.innerHTML = `<img src="${icons[k] || ''}" alt="">${badge}<span class="bd-name">${def.name}</span><span class="bd-cost">${IC('credits')}${def.cost}</span>`;
     b.onclick = (e) => { e.stopPropagation(); chooseTower(k); };
     attachHold(b, () => showTowerInfo(k));
     box.appendChild(b);
     bmButtons.push({ el: b, k });
   }
-  $('bd-info').innerHTML = '<span class="bd-hint">Turm wählen – die Reichweite wird auf der Karte angezeigt</span>';
+  $('bd-info').innerHTML = `<span class="bd-hint">Turm wählen – die Reichweite wird auf der Karte angezeigt${game.plot[game.idx(cx, cy)] === 2 ? ' · <b>Schwerlast-Plattform</b>' : ''}${game.powered(cx, cy) ? ' · <b class="pw">⚡ Strom</b>' : ''}</span>`;
   $('bd-build').classList.add('hidden');
   $('builddrawer').classList.remove('hidden');
   closeArsenal();
@@ -267,9 +269,11 @@ function chooseTower(k) {
   $('bd-info').innerHTML = `<b>${def.name}</b> <span class="bd-role">${ROLE[k]}</span><br><small>${def.desc}</small>` +
     `<div class="bd-chips"><span>${IC('damage')} ${dmg}</span><span>${IC('range')} ${s.range.toFixed(1)}${hgt ? ` <em class="hg">▲+${Math.round(hgt * ELEV_RANGE * 100)}%</em>` : ''}</span><span>${IC('armor')} ${s.hp}</span></div>` +
     `<div class="bd-vs">${vsLine(k)}</div>`;
+  const why = game.buildBlock(k, ui.buildCell.x, ui.buildCell.y);
+  if (why) $('bd-info').innerHTML += `<div class="bd-block">${why === 'heavy' ? '▣ Braucht Schwerlast-Platz oder Anhöhe' : '⚡ Braucht Strom'} – grüne Felder zeigen, wo es geht</div>`;
   const bb = $('bd-build');
-  bb.innerHTML = `BAUEN · ${IC('credits')}${def.cost}`;
-  bb.disabled = game.credits < def.cost;
+  bb.innerHTML = why ? 'GESPERRT' : `BAUEN · ${IC('credits')}${def.cost}`;
+  bb.disabled = !!why || game.credits < def.cost;
   bb.classList.remove('hidden');
   requestAnimationFrame(() => ui.buildCell && ensureCellVisible(ui.buildCell.x, ui.buildCell.y));
   sfx('click');
@@ -278,6 +282,8 @@ function buildChosen() {
   if (!game || !ui.buildCell || !ui.previewType) return;
   const k = ui.previewType;
   if (k === 'barricade') { if (game.buildBarricade(ui.buildCell.x, ui.buildCell.y)) closeBuildMenu(); return; }
+  const why = game.buildBlock(k, ui.buildCell.x, ui.buildCell.y);
+  if (why) { sfx('error'); toast(game.blockText(k, why), 'bad', 2000); return; }
   if (game.credits < TOWERS[k].cost) { sfx('error'); toast('Nicht genug Credits', 'bad', 1200); return; }
   const t = game.build(k, ui.buildCell.x, ui.buildCell.y);
   if (t) closeBuildMenu();
@@ -623,6 +629,11 @@ function onTap(p) {
   }
   if (ui.buildCell || ui.selected) { closeBuildMenu(); closeTowerMenu(); return; }
   if (spot) openBuildMenu(c.x, c.y);
+  else if (inMap && game.cell(c.x, c.y) === CELL.FREE) {
+    // bare ground: show where the foundations are
+    renderer.plotFlash = 2.2; sfx('error');
+    if (!game._plotTip || game.time - game._plotTip > 6) { game._plotTip = game.time; toast('Nur auf Bauflächen (Betonfundamente) bauen – sie leuchten jetzt grün', 'bad', 2600); }
+  }
 }
 // ---------------- long press: hold 5 s for a detailed explanation ----------------
 // (a ring fills around the finger; a normal tap never opens these, so nothing pops up by accident)
@@ -687,6 +698,7 @@ function towerInfoHTML(k, t) {
     ['Ziele', def.ground && def.air ? 'Boden + Luft' : def.air ? 'nur Luft' : 'nur Boden'],
     ['Kosten', `${def.cost} · Upgrades ${[1, 2].map(l => upgradeCost(k, l)).join(' / ')}`],
     ['Haltbarkeit', `${s1.hp} → <b>${s3.hp}</b>`],
+    def.heavy || def.energy ? ['Bauplatz', [def.heavy ? '▣ Schwerlast-Plattform oder Anhöhe' : '', def.energy ? '⚡ im Stromnetz' : ''].filter(Boolean).join(' + ')] : ['Bauplatz', 'jedes Betonfundament'],
   ].filter(Boolean);
   const vs = ['light', 'armored', 'heavy', 'air'].map(c => {
     const m = c === 'air' ? (def.air ? E[c] : 0) : (def.ground ? E[c] : 0);
@@ -1145,7 +1157,7 @@ function updateHUD() {
       const poor = game.credits < priceOf(o.k);
       if (o.el._poor !== poor) { o.el._poor = poor; o.el.classList.toggle('poor', poor); }
     }
-    if (ui.previewType) { const bb = $('bd-build'); const poor = game.credits < priceOf(ui.previewType) || (ui.previewType === 'barricade' && game.barricades.length >= BAR.max); if (bb.disabled !== poor) bb.disabled = poor; }
+    if (ui.previewType) { const bb = $('bd-build'); const poor = game.credits < priceOf(ui.previewType) || (ui.previewType === 'barricade' && game.barricades.length >= BAR.max) || (ui.previewType !== 'barricade' && !!game.buildBlock(ui.previewType, ui.buildCell.x, ui.buildCell.y)); if (bb.disabled !== poor) bb.disabled = poor; }
     if (ui.buildCell.road ? !game.canBarricade(ui.buildCell.x, ui.buildCell.y) : !game.canBuild(ui.buildCell.x, ui.buildCell.y)) closeBuildMenu();
   }
   if (ui.selected) {
@@ -1411,11 +1423,18 @@ async function startLevel(i, ch = null, restored = null) {
     paused = true;
     modal(story[0], 'warn intel-title', `<p class="story">${story[1]}</p>`, 0, [['ZUM EINSATZ', 'primary', () => { closeModal(); paused = false; }]]);
   }
+  if (!save.data.fortHint && !paused) {
+    save.data.fortHint = true; save.write();
+    paused = true;
+    modal('FESTUNG & BAUFLÄCHEN', 'warn intel-title', `<p class="story">Dein HQ ist jetzt eine <b>Festung</b> mit Mauern, Tor und MG-Wachtürmen. Maschinen, die durchkommen, bleiben vor dem Tor stehen und <b>beschießen sie, bis sie zerstört sind</b> – jeder Treffer kostet Leben.<br><br>
+      Gebaut wird nur auf <b>Bauflächen</b>. <b>Railgun, Mörser, Laser:</b> Schwerlast-Plattform (gelber Ring) oder Anhöhe. <b>Plasma, EMP, Laser, Railgun:</b> Strom (blaue Buchse). Wählst du einen Turm, leuchten die passenden Felder grün.</p>`, 0,
+      [['VERSTANDEN', 'primary', () => { closeModal(); paused = false; }]]);
+  }
   if (ch) toast(`CHALLENGE: ${ch.name.toUpperCase()} – ${ch.desc}`, 'warn', 4500);
   else toast(`EINSATZ ${i + 1}: ${spec.name.toUpperCase()} – ${BIOMES[spec.biome].name} · ${DIFFICULTY[game.mods.diff].name}`, game.mods.diff ? 'warn' : '', 2600);
   const newTower = freePlay() ? null : TOWER_ORDER.find(k => TOWERS[k].unlock === i + 1 && i > 0);
   if (newTower) setTimeout(() => toast(`Neuer Turm verfügbar: ${TOWERS[newTower].name}`, 'warn', 3500), 900);
-  if (i === 0) setTimeout(() => toast('Tippe ein freies Feld an, um einen Turm zu bauen', '', 4000), 1200);
+  if (i === 0) setTimeout(() => toast('Tippe eine Baufläche (Betonfundament) an, um einen Turm zu bauen', '', 4000), 1200);
   else if (game.N > 15 && !save.data.bigMapHint) {
     save.data.bigMapHint = true; save.write();
     setTimeout(() => toast('Große Karte: mit zwei Fingern zoomen und verschieben – rote Pfeile zeigen Gegner außerhalb', '', 5000), 1200);
