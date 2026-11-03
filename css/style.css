@@ -553,7 +553,9 @@ button {
 .ch-card { display: flex; align-items: center; gap: 12px; text-align: left; padding: 10px 12px; background: rgba(14,16,18,0.88); border: 1px solid var(--line); color: #fff; font: inherit; cursor: pointer; }
 .ch-card.daily { border-color: rgba(80,200,255,0.6); background: linear-gradient(90deg, rgba(20,60,80,0.6), rgba(14,16,18,0.88)); }
 .ch-card.locked { filter: grayscale(1) brightness(0.55); }
-.ch-ic { width: 58px; height: 58px; }
+.ch-thumb { flex: none; position: relative; width: 112px; height: 63px; background: #111 center / cover no-repeat; border: 1px solid rgba(255,255,255,0.22); box-shadow: inset 0 0 18px rgba(0,0,0,0.6); }
+.ch-thumb .ic { position: absolute; left: 3px; bottom: 3px; width: 26px; height: 26px; filter: drop-shadow(0 1px 2px #000); }
+.ch-thumb b { position: absolute; right: 5px; top: 4px; width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; padding-left: 2px; font-size: 11px; color: #fff; background: rgba(0,0,0,0.6); border: 1px solid rgba(255,255,255,0.55); }
 .ch-body { flex: 1; min-width: 0; }
 .ch-name { font-family: var(--font-title); font-weight: 800; font-size: 17px; letter-spacing: 0.04em; }
 .ch-desc { font-size: 13px; color: #d4cfc4; line-height: 1.25; margin-top: 2px; }
@@ -812,6 +814,7 @@ body.xray.glitch #game { transform: translate(7px, -3px) skewX(-3deg); filter: g
 #intro video { width: 100%; height: 100%; object-fit: cover; }
 #intro-title { position: absolute; left: calc(18px + var(--sal, 0px)); bottom: calc(18px + var(--sab, 0px)); font-family: var(--font-title); font-weight: 800; font-size: clamp(22px, 5vw, 44px); letter-spacing: 0.12em; color: #fff; text-shadow: 0 2px 12px #000, 0 0 2px #000; opacity: 0; transition: opacity 1.2s; pointer-events: none; }
 #intro-title small { display: block; font-family: var(--font-body); font-weight: 600; font-size: 0.38em; letter-spacing: 0.2em; color: #ffcf6a; }
+#intro-title small.rule { max-width: min(78vw, 620px); margin-top: 6px; font-size: clamp(13px, 2.2vw, 18px); letter-spacing: 0.04em; line-height: 1.3; }
 #intro.show-title #intro-title { opacity: 1; }
 #intro-skip, #intro-sound { position: absolute; top: calc(12px + var(--sat, 0px)); padding: 8px 14px; font-family: var(--font-title); font-weight: 800; font-size: 13px; letter-spacing: 0.1em; color: #fff; background: rgba(0,0,0,0.55); border: 1px solid rgba(255,255,255,0.35); border-radius: 4px; }
 #intro-skip { right: calc(12px + var(--sar, 0px)); }

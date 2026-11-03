@@ -1305,7 +1305,11 @@ let challenge = null;
 // data loads behind it) and on demand from the mission list. Without a network the intro is simply skipped.
 const INTRO_SUB = { wasteland: 'Die Maschinen kommen', jungle: 'Grüne Hölle', desert: 'Sturm aus Sand und Stahl', ice: 'Eiskalte Front', volcano: 'Feuerprobe', city: 'Die letzte Stadt', necro: 'Dimensionsriss', inferno: 'Der Abgrund' };
 let introPlaying = false;
-function playIntro(biome) {
+function playIntro(biome) { return playClip(`assets/video/intro_${biome}.mp4`, BIOMES[biome].name.toUpperCase(), INTRO_SUB[biome] || ''); }
+// challenges have their own short clip (6 s) that shows the special rule; the rule text is the subtitle
+const chKey = (ch) => ch.daily ? 'daily' : ch.id;
+function playChallengeIntro(ch) { return playClip(`assets/video/ch_${chKey(ch)}.mp4`, ch.name.toUpperCase(), ch.desc, 'rule'); }
+function playClip(src, title, sub, subClass = '') {
   return new Promise((resolve) => {
     const box = $('intro'), v = $('intro-video');
     let done = false, titleT = 0;
@@ -1320,10 +1324,10 @@ function playIntro(biome) {
     };
     introPlaying = true;
     musicLevel(0, 0.3);
-    $('intro-title').innerHTML = `${BIOMES[biome].name.toUpperCase()}<small>${INTRO_SUB[biome] || ''}</small>`;
+    $('intro-title').innerHTML = `${title}<small class="${subClass}">${sub}</small>`;
     box.classList.remove('hidden');
     v.muted = !soundOn();
-    v.src = `assets/video/intro_${biome}.mp4`;
+    v.src = src;
     v.onended = finish;
     v.onerror = finish;
     $('intro-skip').onclick = (ev) => { ev.stopPropagation(); finish(); };
@@ -1342,6 +1346,9 @@ function playIntro(biome) {
 }
 function introDue(spec, ch, restored) {
   return !ch && !restored && navigator.onLine !== false && !save.data['intro_' + spec.biome];
+}
+function chIntroDue(ch, restored) {
+  return ch && !restored && navigator.onLine !== false && !save.data['chintro_' + chKey(ch)];
 }
 
 const RIFT_STORY = {
@@ -1366,6 +1373,7 @@ async function startLevel(i, ch = null, restored = null) {
   // the landscape intro starts right away (inside the tap) and covers the loading time
   let intro = null;
   if (introDue(spec, ch, restored)) { save.data['intro_' + spec.biome] = true; save.write(); intro = playIntro(spec.biome); }
+  else if (chIntroDue(ch, restored)) { save.data['chintro_' + chKey(ch)] = true; save.write(); intro = playChallengeIntro(ch); }
   const models = [...types].map(t => ENEMIES[t].model);
   models.push('p3d_hq_' + spec.biome);          // headquarters of this landscape (if there is one)
   musicPreload(['build', 'battle', 'battle2', ...(g.waves.some(w => w.groups.some(gr => ENEMIES[gr.type].boss)) ? ['boss'] : [])]);
@@ -1459,7 +1467,7 @@ function setLevelTab(tab) {
   $('diff-bar').classList.toggle('hidden', tab !== 'campaign');
 }
 $('tab-campaign').onclick = () => { sfx('click'); setLevelTab('campaign'); };
-$('tab-challenges').onclick = () => { sfx('click'); setLevelTab('challenges'); };
+$('tab-challenges').onclick = () => { sfx('click'); setLevelTab('challenges'); $('screen-levels').scrollTop = 0; };
 function medalHTML(m) { return m ? `<span class="medal-s m${m}">${IC('trophy')}${MEDAL_NAME[m]}</span>` : '<span class="medal-s m0">offen</span>'; }
 function renderChallenges() {
   const list = $('challenge-list');
@@ -1477,7 +1485,7 @@ function renderChallenges() {
     const b = document.createElement('button');
     b.className = 'ch-card' + (locked ? ' locked' : '') + (ch.daily ? ' daily' : '');
     const map = ch.level != null && !locked ? `Karte: Einsatz ${ch.level + 1} · ${LEVEL_SPECS[ch.level].name}` : '';
-    b.innerHTML = `<i class="ic ic-${locked ? 'lock' : ch.icon} ch-ic"></i>
+    b.innerHTML = `<span class="ch-thumb" role="button" aria-label="Video ansehen" style="background-image:url(assets/ui/ch_${chKey(ch)}.jpg)"><i class="ic ic-${locked ? 'lock' : ch.icon}"></i><b>▶</b></span>
       <div class="ch-body"><div class="ch-name">${ch.name}</div><div class="ch-desc">${ch.desc}</div>
       <div class="ch-meta">${locked ? `Freischalten: Einsatz ${ch.req} abschließen` : map}${!locked && ch.mods && ch.mods.endless && r.best ? ` · Rekord: Welle ${r.best - 1}` : ''}</div></div>
       <div class="ch-medal">${locked ? '' : medalHTML(r.medal)}</div>`;
@@ -1485,6 +1493,8 @@ function renderChallenges() {
       if (locked) { sfx('error'); toast(`Schließe zuerst Einsatz ${ch.req} ab`, 'bad'); return; }
       sfx('click'); startLevel(ch.level, ch);
     };
+    // the thumbnail plays the challenge clip (also as a teaser while the challenge is still locked)
+    b.querySelector('.ch-thumb').onclick = (ev) => { ev.stopPropagation(); unlockAudio(); sfx('click'); playChallengeIntro(ch); };
     list.appendChild(b);
   }
 }
